@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use inox2d;
+use std::borrow::Cow;
 use std::cell::RefCell;
 
 use crate::document::Document;
@@ -19,6 +20,7 @@ pub enum Section {
 pub enum PathComponent {
     Section(Section),
     PuppetNode(inox2d::node::InoxNodeUuid),
+    PuppetParam(String),
 }
 
 #[derive(Default)]
@@ -47,23 +49,24 @@ impl NavigationItem {
         selfpoi
     }
 
-    pub fn name<'a>(&self, document: &'a Document) -> &'a str {
+    pub fn name<'a>(&self, document: &'a Document) -> Cow<'a, str> {
         match self.imp().path.borrow().as_ref().expect("a path") {
-            PathComponent::Section(Section::ModelTextures) => "Textures",
-            PathComponent::Section(Section::PuppetMeta) => "Metadata",
-            PathComponent::Section(Section::PuppetNode) => "Nodes",
-            PathComponent::Section(Section::PuppetParams) => "Params",
-            PathComponent::Section(Section::PuppetPhysics) => "Physics",
-            PathComponent::Section(Section::VendorData) => "VendorData",
+            PathComponent::Section(Section::ModelTextures) => "Textures".into(),
+            PathComponent::Section(Section::PuppetMeta) => "Metadata".into(),
+            PathComponent::Section(Section::PuppetNode) => "Nodes".into(),
+            PathComponent::Section(Section::PuppetParams) => "Params".into(),
+            PathComponent::Section(Section::PuppetPhysics) => "Physics".into(),
+            PathComponent::Section(Section::VendorData) => "VendorData".into(),
             PathComponent::PuppetNode(node_id) => {
                 let node = document.puppet_data.nodes().get_node(*node_id);
 
                 if let Some(node) = node {
-                    &node.name
+                    (&node.name).into()
                 } else {
-                    "<MISSING OR INVALID NODE>"
+                    "<MISSING OR INVALID NODE>".into()
                 }
             }
+            PathComponent::PuppetParam(name) => name.to_string().into(),
         }
     }
 
@@ -74,6 +77,20 @@ impl NavigationItem {
                 let list = gio::ListStore::builder().build();
                 list.extend_from_slice(&[Self::new(PathComponent::PuppetNode(root_node))]);
 
+                Some(list.into())
+            }
+            PathComponent::Section(Section::PuppetParams) => {
+                let mut param_paths = vec![];
+                for param in document.puppet_data.params.keys() {
+                    param_paths.push(Self::new(PathComponent::PuppetParam(param.clone())));
+                }
+
+                if param_paths.len() == 0 {
+                    return None;
+                }
+
+                let list = gio::ListStore::builder().build();
+                list.extend_from_slice(param_paths.as_slice());
                 Some(list.into())
             }
             PathComponent::PuppetNode(node_id) => {
