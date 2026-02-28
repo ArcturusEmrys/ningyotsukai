@@ -82,6 +82,10 @@ impl NavigationItem {
                     child_node_paths.push(Self::new(PathComponent::PuppetNode(child_node.uuid)));
                 }
 
+                if child_node_paths.len() == 0 {
+                    return None;
+                }
+
                 let list = gio::ListStore::builder().build();
                 list.extend_from_slice(child_node_paths.as_slice());
                 Some(list.into())
