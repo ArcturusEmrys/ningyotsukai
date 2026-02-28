@@ -186,9 +186,6 @@ impl WindowController {
                 }
             }
 
-            //TODO: TreeItemStore gives you TreeListRows instead of your actual item type.
-            //We need to keep unwrapping it until we get a NavigationItem or run out of items.
-
             let nav = maybe_nav
                 .downcast::<NavigationItem>()
                 .expect("our own child");
