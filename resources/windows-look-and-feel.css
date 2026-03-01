@@ -1,3 +1,5 @@
+@import "look-and-feel.css";
+
 :root {
     --Windows-destructive_action: #C42B1C;
     --window_control_hover: rgba(255, 255, 255, 0.1);

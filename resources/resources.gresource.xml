@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <gresources>
     <gresource prefix="/live/arcturus/puppet-inspector">
+        <file compressed="true">look-and-feel.css</file>
         <file compressed="true">windows-look-and-feel.css</file>
         <file compressed="true" preprocess="xml-stripblanks">window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">metadata_inspector.ui</file>
