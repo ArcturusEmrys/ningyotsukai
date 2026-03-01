@@ -1,3 +1,4 @@
+use gdk4::prelude::DisplayExtManual;
 use gtk4;
 
 use windows::Foundation::TypedEventHandler;
@@ -6,13 +7,49 @@ use windows::UI::ViewManagement::{UIColorType, UISettings};
 
 use std::cell::RefCell;
 
-trait ColorExt {
+fn wcag_value_to_float(v: u8) -> f32 {
+    let vf = v as f32 / 255.0;
+    if vf < 0.03928 {
+        vf / 12.92
+    } else {
+        ((vf + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+trait ColorExt: Sized + Copy {
     fn into_css_hex(self) -> String;
+    fn wcag_relative_luma(self) -> f32;
+
+    fn contrast_ratio(self, counter: Self) -> f32 {
+        let self_luma = self.wcag_relative_luma();
+        let counter_luma = counter.wcag_relative_luma();
+
+        if self_luma > counter_luma {
+            ((self_luma + 0.05) / (counter_luma + 0.05))
+        } else {
+            ((counter_luma + 0.05) / (self_luma + 0.05))
+        }
+    }
+
+    fn contrast(self, counter1: Self, counter2: Self) -> Self {
+        let ratio1 = self.contrast_ratio(counter1);
+        let ratio2 = self.contrast_ratio(counter2);
+
+        if ratio1 > ratio2 { counter1 } else { counter2 }
+    }
 }
 
 impl ColorExt for Color {
     fn into_css_hex(self) -> String {
         format!("#{:02X}{:02X}{:02X}{:02X}", self.R, self.G, self.B, self.A)
+    }
+
+    fn wcag_relative_luma(self) -> f32 {
+        let r = wcag_value_to_float(self.R);
+        let g = wcag_value_to_float(self.G);
+        let b = wcag_value_to_float(self.B);
+
+        0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 }
 
@@ -87,8 +124,8 @@ impl LAFProvider {
         let bg_color = self
             .ui_settings
             .GetColorValue(UIColorType::Background)
-            .expect("bg color")
-            .into_css_hex();
+            .expect("bg color");
+        let bg_color_hex = bg_color.into_css_hex();
         let fg_color = self
             .ui_settings
             .GetColorValue(UIColorType::Foreground)
@@ -97,17 +134,87 @@ impl LAFProvider {
         let accent_color = self
             .ui_settings
             .GetColorValue(UIColorType::Accent)
+            .expect("accent color");
+
+        let white = Color {
+            A: 255,
+            R: 255,
+            G: 255,
+            B: 255,
+        };
+        let black = Color {
+            A: 255,
+            R: 0,
+            G: 0,
+            B: 0,
+        };
+
+        let contrast_color = accent_color.contrast(white, black).into_css_hex();
+        let accent_color = accent_color.into_css_hex();
+
+        // GTK on Windows does NOT automatically detect dark/light.
+        // Which is very bad as it ships with Adwaita look and feel which supports it.
+        // Also, for some reason our own CSS doesn't pull color scheme data from settings.
+        let display = gdk4::Display::default().expect("display");
+        let color_scheme = if bg_color.contrast(white, black) == white {
+            gtk4::InterfaceColorScheme::Dark
+        } else {
+            gtk4::InterfaceColorScheme::Light
+        };
+        gtk4::Settings::default()
+            .expect("wot no default")
+            .set_gtk_interface_color_scheme(color_scheme);
+        self.laf_css.set_prefers_color_scheme(color_scheme);
+        self.color_css.set_prefers_color_scheme(color_scheme);
+
+        let accent_light1_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentLight1)
+            .expect("accent color")
+            .into_css_hex();
+        let accent_light2_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentLight2)
+            .expect("accent color")
+            .into_css_hex();
+        let accent_light3_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentLight3)
+            .expect("accent color")
+            .into_css_hex();
+        let accent_dark1_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentDark1)
+            .expect("accent color")
+            .into_css_hex();
+        let accent_dark2_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentDark2)
+            .expect("accent color")
+            .into_css_hex();
+        let accent_dark3_color = self
+            .ui_settings
+            .GetColorValue(UIColorType::AccentDark3)
             .expect("accent color")
             .into_css_hex();
 
         //I'm surprised GTK doesn't have a convenience method to define CSS variables.
-        self.color_css.load_from_data(&format!(
+        let css = format!(
             ":root {{
-            --Windows-background: {bg_color};
+            --Windows-background: {bg_color_hex};
             --Windows-foreground: {fg_color};
             --Windows-accent: {accent_color};
+            --contrasts_with_Windows_accent: {contrast_color};
+            --Windows-accent--light1: {accent_light1_color};
+            --Windows-accent--light2: {accent_light2_color};
+            --Windows-accent--light3: {accent_light3_color};
+            --Windows-accent--dark1: {accent_dark1_color};
+            --Windows-accent--dark2: {accent_dark2_color};
+            --Windows-accent--dark3: {accent_dark3_color};
         }}"
-        ));
+        );
+
+        self.color_css.load_from_data(&css);
     }
 }
 

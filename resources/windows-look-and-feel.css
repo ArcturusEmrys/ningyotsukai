@@ -1,3 +1,8 @@
+:root {
+    --Windows-destructive_action: #C42B1C;
+    --window_control_hover: rgba(255, 255, 255, 0.1);
+}
+
 window {
     background: var(--Windows-background);
     color: var(--Windows-foreground);
@@ -5,4 +10,24 @@ window {
 
 headerbar {
     background: var(--Windows-accent);
+    color: var(--contrasts_with_Windows_accent);
+}
+
+windowcontrols button {
+    color: var(--contrasts_with_Windows_accent);
+    border-radius: 0px;
+    padding: 8px 20px;
+    margin: 0;
+}
+
+windowcontrols button:hover {
+    background: var(--window_control_hover);
+}
+
+windowcontrols button.close:hover {
+    background: var(--Windows-destructive_action);
+}
+
+windowcontrols button:hover image {
+    background: none;
 }

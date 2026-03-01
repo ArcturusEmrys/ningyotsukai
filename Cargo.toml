@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-gtk4 = { version = "0.11.0", features = ["v4_10"] }
+gtk4 = { version = "0.11.0", features = ["v4_20"] }
 glib = { version = "0.22.0" }
 gio = { version = "0.22.1" }
-gdk4 = { version = "0.11.0", features = ["v4_10"] }
+gdk4 = { version = "0.11.0", features = ["v4_20"] }
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "14f4fab5d975e60261e22b8b7347f0c54123c724" }
 json = "0.12.4"
 
