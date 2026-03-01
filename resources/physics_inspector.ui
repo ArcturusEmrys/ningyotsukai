@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIPuppetPhysicsInspector" parent="GtkGrid">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Pixels per meter</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">0</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkTextView" id="ppm_scale_field">
+                <property name="hexpand">true</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="row">0</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Gravity</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">1</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkTextView" id="gconstant_field">
+                <property name="hexpand">true</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="row">1</property>
+                </layout>
+            </object>
+        </child>
+    </template>
+</interface>

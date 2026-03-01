@@ -3,10 +3,10 @@ use glib;
 use gtk4;
 use gtk4::prelude::*;
 
+mod detail_views;
 mod document;
 mod io_adapter;
 mod navigation_item;
-mod puppet;
 mod string_ext;
 mod window;
 

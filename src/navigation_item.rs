@@ -7,8 +7,8 @@ use std::cell::RefCell;
 use std::fmt::{Debug, Error as FmtError, Formatter};
 use std::sync::Arc;
 
+use crate::detail_views::{MetadataInspector, PhysicsInspector};
 use crate::document::Document;
-use crate::puppet::MetadataInspector;
 
 #[derive(Debug)]
 pub enum Section {
@@ -118,6 +118,9 @@ impl NavigationItem {
     pub fn child_inspector(&self, document: Arc<Document>) -> gtk4::Widget {
         match self.imp().path.borrow().as_ref().expect("a path") {
             PathComponent::Section(Section::PuppetMeta) => MetadataInspector::new(document).into(),
+            PathComponent::Section(Section::PuppetPhysics) => {
+                PhysicsInspector::new(document).into()
+            }
             path => gtk4::Label::builder()
                 .label(format!("Not yet implemented: {:?}", path))
                 .build()

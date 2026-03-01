@@ -7,7 +7,7 @@ edition = "2024"
 gtk4 = { version = "0.11.0", features = ["v4_10"] }
 glib = { version = "0.22.0" }
 gio = { version = "0.22.1" }
-inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "e4f48dfb51c4e3fa506d07cf5ddbe8d0f3fcebb6" }
+inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "14f4fab5d975e60261e22b8b7347f0c54123c724" }
 json = "0.12.4"
 
 [build-dependencies]
