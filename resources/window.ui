@@ -3,9 +3,34 @@
     <template class="PIWindowController" parent="GtkApplicationWindow">
         <child>
             <object class="GtkBox" id="contents">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
                 <child>
-                    <object class="GtkLabel">
-                        <property name="label">Please open a document</property>
+                    <object class="GtkFrame">
+                        <property name="hexpand">true</property>
+                        <property name="halign">center</property>
+                        <property name="valign">center</property>
+                        <property name="css-classes">Window-empty</property>
+                        <child>
+                            <object class="GtkBox">
+                                <property name="orientation">vertical</property>
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">No puppet document is open.</property>
+                                    </object>
+                                </child>
+                                <child>
+                                    <object class="GtkButton">
+                                        <property name="action-name">win.open</property>
+                                        <child>
+                                            <object class="GtkLabel">
+                                                <property name="label">Open...</property>
+                                            </object>
+                                        </child>
+                                    </object>
+                                </child>
+                            </object>
+                        </child>
                     </object>
                 </child>
             </object>

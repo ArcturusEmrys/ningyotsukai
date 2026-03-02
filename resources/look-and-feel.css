@@ -1,0 +1,15 @@
+.Window-empty {
+    padding: 15px 30px;
+}
+
+.Window-empty label {
+    margin: 15px 0;
+}
+
+.Window-empty button {
+    margin: 15px 0;
+}
+
+.Window-empty button label {
+    margin: unset;
+}
