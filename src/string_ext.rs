@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-pub trait StrExt : ToOwned {
+pub trait StrExt: ToOwned {
     /// Replace nulls with \0 for round-trippable display.
     ///
     /// Several Inochi files I have put trailing nulls everywhere.

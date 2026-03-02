@@ -92,9 +92,7 @@ impl MetadataInspector {
         self.imp()
             .version_field
             .buffer()
-            .set_text(document.puppet_data.meta.version
-                .escape_nulls()
-                .as_ref());
+            .set_text(document.puppet_data.meta.version.escape_nulls().as_ref());
         self.imp().rigger_field.buffer().set_text(
             document
                 .puppet_data
