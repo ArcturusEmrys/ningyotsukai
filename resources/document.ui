@@ -6,23 +6,42 @@
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
                 <property name="start_child">
-                    <object class="GtkScrolledWindow">
+                    <object class="GtkNotebook">
                         <child>
-                            <object class="GtkListView">
-                                <property name="factory">
-                                    <object class="GtkSignalListItemFactory" id="navigation_factory">
-                                    </object>
-                                </property>
-                                <property name="model">
-                                    <object class="GtkSingleSelection" id="navigation_selection">
-                                        <!-- We can NOT build the tree model inside here for reasons -->
+                            <object class="GtkScrolledWindow">
+                                <child>
+                                    <object class="GtkListView">
+                                        <property name="factory">
+                                            <object class="GtkSignalListItemFactory" id="navigation_factory">
+                                            </object>
+                                        </property>
                                         <property name="model">
-                                            <object class="GtkTreeListModel">
-                                                <property name="passthrough">false</property>
+                                            <object class="GtkSingleSelection" id="navigation_selection">
+                                                <!-- We can NOT build the tree model inside here for reasons -->
+                                                <property name="model">
+                                                    <object class="GtkTreeListModel">
+                                                        <property name="passthrough">false</property>
+                                                    </object>
+                                                </property>
                                             </object>
                                         </property>
                                     </object>
-                                </property>
+                                </child>
+                            </object>
+                        </child>
+                        <child type="tab">
+                            <object class="GtkLabel">
+                                <property name="label">Inspector</property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="label">JSON inspector not yet implemented</property>
+                            </object>
+                        </child>
+                        <child type="tab">
+                            <object class="GtkLabel">
+                                <property name="label">JSON</property>
                             </object>
                         </child>
                     </object>
