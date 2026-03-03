@@ -7,14 +7,16 @@ edition = "2024"
 glib = { version = "0.22.0" }
 gio = { version = "0.22.1" }
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "9a04b433400f4f427c2d53acf25010b48437d36e" }
+inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "9a04b433400f4f427c2d53acf25010b48437d36e" }
 json = "0.12.4"
+glow = "0.14.1"
 
 [target.'cfg(not(windows))'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_10"] }
 gdk4 = { version = "0.11.0", features = ["v4_10"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = ["UI_ViewManagement"] }
+windows = { version = "0.62.2", features = ["UI_ViewManagement", "Win32_Graphics_OpenGL"] }
 gtk4 = { version = "0.11.0", features = ["v4_20"] }
 gdk4 = { version = "0.11.0", features = ["v4_20"] }
 

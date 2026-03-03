@@ -7,7 +7,7 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
 use crate::string_ext::StrExt;
@@ -15,7 +15,7 @@ use crate::string_ext::StrExt;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/param_inspector.ui")]
 pub struct ParamInspectorImp {
-    document: RefCell<Option<(Arc<Document>, String)>>,
+    document: RefCell<Option<(Arc<Mutex<Document>>, String)>>,
 
     #[template_child]
     name_field: TemplateChild<gtk4::TextView>,
@@ -57,7 +57,7 @@ glib::wrapper! {
 }
 
 impl ParamInspector {
-    pub fn new(document: Arc<Document>, param_name: String) -> Self {
+    pub fn new(document: Arc<Mutex<Document>>, param_name: String) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
         *selfish.imp().document.borrow_mut() = Some((document, param_name));
@@ -67,9 +67,10 @@ impl ParamInspector {
     }
 
     fn bind(&self) {
-        let (document, param_name) = self.imp().document.borrow().as_ref().unwrap().clone();
+        let (document_arc, param_name) = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document = document_arc.lock().unwrap();
         let param = document
-            .puppet_data
+            .puppet_data()
             .params()
             .get(&param_name)
             .expect("valid param");

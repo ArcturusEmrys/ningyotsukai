@@ -7,7 +7,7 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use inox2d::node::InoxNodeUuid;
 
@@ -17,7 +17,7 @@ use crate::string_ext::StrExt;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/node_inspector.ui")]
 pub struct NodeInspectorImp {
-    document: RefCell<Option<(Arc<Document>, InoxNodeUuid)>>,
+    document: RefCell<Option<(Arc<Mutex<Document>>, InoxNodeUuid)>>,
 
     #[template_child]
     name_field: TemplateChild<gtk4::TextView>,
@@ -63,7 +63,7 @@ glib::wrapper! {
 }
 
 impl NodeInspector {
-    pub fn new(document: Arc<Document>, uuid: InoxNodeUuid) -> Self {
+    pub fn new(document: Arc<Mutex<Document>>, uuid: InoxNodeUuid) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
         *selfish.imp().document.borrow_mut() = Some((document, uuid));
@@ -73,9 +73,10 @@ impl NodeInspector {
     }
 
     fn bind(&self) {
-        let (document, uuid) = self.imp().document.borrow().as_ref().unwrap().clone();
+        let (document_arc, uuid) = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document = document_arc.lock().unwrap();
         let node = document
-            .puppet_data
+            .puppet_data()
             .nodes()
             .get_node(uuid)
             .expect("valid node");

@@ -10,7 +10,7 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
 use crate::navigation_item::{NavigationItem, Path, Section};
@@ -20,7 +20,7 @@ use crate::string_ext::StrExt;
 /// Hence the mutability hack.
 #[derive(Default)]
 pub struct DocumentControllerState {
-    open_doc: Option<Arc<Document>>,
+    open_doc: Option<Arc<Mutex<Document>>>,
     navigation_tree: Option<gtk4::TreeListModel>,
     json_tree: Option<gtk4::TreeListModel>,
     root_nav_list: Option<gio::ListStore>,
@@ -77,7 +77,7 @@ glib::wrapper! {
 }
 
 impl DocumentController {
-    pub fn new(open_doc: Arc<Document>) -> Self {
+    pub fn new(open_doc: Arc<Mutex<Document>>) -> Self {
         let selfish: DocumentController = glib::Object::builder().build();
 
         selfish.imp().state.borrow_mut().open_doc = Some(open_doc.clone());
@@ -109,7 +109,7 @@ impl DocumentController {
                     let document = state.open_doc.as_ref();
 
                     if let Some(document) = document {
-                        nav.child_list(document)
+                        nav.child_list(&document.lock().unwrap())
                     } else {
                         None
                     }
@@ -135,7 +135,7 @@ impl DocumentController {
                     let document = state.open_doc.as_ref();
 
                     if let Some(document) = document {
-                        nav.child_list(document)
+                        nav.child_list(&document.lock().unwrap())
                     } else {
                         None
                     }
@@ -146,7 +146,16 @@ impl DocumentController {
         }
 
         let mut root_json = vec![NavigationItem::new(Path::PuppetJson(Vec::new()))];
-        for (index, _) in state.open_doc.as_ref().unwrap().vendors.iter().enumerate() {
+        for (index, _) in state
+            .open_doc
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .vendors()
+            .iter()
+            .enumerate()
+        {
             root_json.push(NavigationItem::new(Path::VendorJson(index, Vec::new())))
         }
 
@@ -200,6 +209,11 @@ impl DocumentController {
                 let model = match page_num {
                     0 => &notebook_self.imp().navigation_selection, //Resources page
                     1 => &notebook_self.imp().json_selection,       //JSON page
+                    2 => {
+                        //OpenGL render page
+                        return notebook_self
+                            .populate_detail(NavigationItem::new(Path::RenderPreview));
+                    }
                     unk => panic!("Unknown page {}", unk),
                 };
 
@@ -275,7 +289,7 @@ impl DocumentController {
             let state = factory_callback_self.imp().state.borrow();
 
             if let Some(document) = state.open_doc.as_ref() {
-                label.set_label(nav.name(&document).escape_nulls().as_ref());
+                label.set_label(nav.name(&document.lock().unwrap()).escape_nulls().as_ref());
             } else {
                 label.set_label("Wot! No document?");
             }

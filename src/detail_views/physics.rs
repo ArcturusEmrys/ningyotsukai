@@ -7,14 +7,14 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/physics_inspector.ui")]
 pub struct PhysicsInspectorImp {
-    document: RefCell<Option<Arc<Document>>>,
+    document: RefCell<Option<Arc<Mutex<Document>>>>,
 
     #[template_child]
     ppm_scale_field: TemplateChild<gtk4::TextView>,
@@ -54,7 +54,7 @@ glib::wrapper! {
 }
 
 impl PhysicsInspector {
-    pub fn new(document: Arc<Document>) -> Self {
+    pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
         *selfish.imp().document.borrow_mut() = Some(document);
@@ -64,11 +64,12 @@ impl PhysicsInspector {
     }
 
     fn bind(&self) {
-        let document = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document_arc = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document = document_arc.lock().unwrap();
 
         self.imp().ppm_scale_field.buffer().set_text(&format!(
             "{}",
-            document.puppet_data.physics().pixels_per_meter
+            document.puppet_data().physics().pixels_per_meter
         ));
     }
 }

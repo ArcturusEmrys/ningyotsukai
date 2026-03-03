@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIInoxRenderPreview" parent="GtkBox">
+        <child>
+            <object class="GtkGLArea" id="gl_view">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+            </object>
+        </child>
+        <object class="GtkFrame" id="error_view">
+            <property name="hexpand">true</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <property name="css-classes">Window-empty</property>
+            <child>
+                <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <child>
+                        <object class="GtkLabel" id="error_label">
+                            <property name="label">Error not specified</property>
+                        </object>
+                    </child>
+                </object>
+            </child>
+        </object>
+    </template>
+</interface>

@@ -5,12 +5,13 @@ use inox2d;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use json::JsonValue;
 
 use crate::detail_views::{
-    JsonInspector, JsonValueExt, MetadataInspector, NodeInspector, ParamInspector, PhysicsInspector,
+    InoxRenderPreview, JsonInspector, JsonValueExt, MetadataInspector, NodeInspector,
+    ParamInspector, PhysicsInspector,
 };
 use crate::document::Document;
 
@@ -37,6 +38,7 @@ pub enum Path {
     PuppetParam(String),
     PuppetJson(Vec<JsonNavigationPath>),
     VendorJson(usize, Vec<JsonNavigationPath>),
+    RenderPreview,
 }
 
 #[derive(Default)]
@@ -74,7 +76,7 @@ impl NavigationItem {
             Path::Section(Section::PuppetPhysics) => "Physics".into(),
             Path::Section(Section::VendorData) => "VendorData".into(),
             Path::PuppetNode(node_id) => {
-                let node = document.puppet_data.nodes().get_node(*node_id);
+                let node = document.puppet_data().nodes().get_node(*node_id);
 
                 if let Some(node) = node {
                     (&node.name).into()
@@ -100,20 +102,21 @@ impl NavigationItem {
                         JsonNavigationPath::ListIndex(index) => format!("{}", index).into(),
                     }
                 } else {
-                    if let Some(blk) = document.vendors.get(*blk) {
+                    if let Some(blk) = document.vendors().get(*blk) {
                         (&blk.name).into()
                     } else {
                         format!("Vendor block {}", blk).into()
                     }
                 }
             }
+            Path::RenderPreview => "Test Preview Please Ignore".into(),
         }
     }
 
     pub fn child_list(&self, document: &Document) -> Option<gio::ListModel> {
         match self.imp().path.borrow().as_ref().expect("a path") {
             Path::Section(Section::PuppetNode) => {
-                let root_node = document.puppet_data.nodes().root_node_id;
+                let root_node = document.puppet_data().nodes().root_node_id;
                 let list = gio::ListStore::builder().build();
                 list.extend_from_slice(&[Self::new(Path::PuppetNode(root_node))]);
 
@@ -121,7 +124,7 @@ impl NavigationItem {
             }
             Path::Section(Section::PuppetParams) => {
                 let mut param_paths = vec![];
-                for param in document.puppet_data.params.keys() {
+                for param in document.puppet_data().params.keys() {
                     param_paths.push(Self::new(Path::PuppetParam(param.clone())));
                 }
 
@@ -135,7 +138,7 @@ impl NavigationItem {
             }
             Path::PuppetNode(node_id) => {
                 let mut child_node_paths = vec![];
-                for child_node in document.puppet_data.nodes().get_children(*node_id) {
+                for child_node in document.puppet_data().nodes().get_children(*node_id) {
                     child_node_paths.push(Self::new(Path::PuppetNode(child_node.uuid)));
                 }
 
@@ -187,7 +190,7 @@ impl NavigationItem {
             }
             Path::VendorJson(block, path) => {
                 let value = document
-                    .vendors
+                    .vendors()
                     .get(*block)?
                     .payload
                     .traverse_path(path.as_slice())?;
@@ -231,7 +234,7 @@ impl NavigationItem {
         }
     }
 
-    pub fn child_inspector(&self, document: Arc<Document>) -> gtk4::Widget {
+    pub fn child_inspector(&self, document: Arc<Mutex<Document>>) -> gtk4::Widget {
         match self.imp().path.borrow().as_ref().expect("a path") {
             Path::Section(Section::PuppetMeta) => MetadataInspector::new(document).into(),
             Path::Section(Section::PuppetPhysics) => PhysicsInspector::new(document).into(),
@@ -241,6 +244,7 @@ impl NavigationItem {
             Path::VendorJson(blk, path) => {
                 JsonInspector::new_vendor_json(document, *blk, path.clone()).into()
             }
+            Path::RenderPreview => InoxRenderPreview::new(document).into(),
             path => gtk4::Label::builder()
                 .label(format!("Not yet implemented: {:?}", path))
                 .build()

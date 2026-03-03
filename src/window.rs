@@ -11,7 +11,7 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::document::{Document, DocumentController};
 
@@ -19,7 +19,7 @@ use crate::document::{Document, DocumentController};
 /// Hence the mutability hack.
 #[derive(Default)]
 pub struct WindowControllerState {
-    open_doc: Option<Arc<Document>>,
+    open_doc: Option<Arc<Mutex<Document>>>,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -112,7 +112,7 @@ impl WindowController {
         let stream = file.read(Some(&gio::Cancellable::new()))?;
         let stream_adapter = crate::io_adapter::FileIn::from(stream);
 
-        let document = Arc::new(Document::open(stream_adapter)?);
+        let document = Arc::new(Mutex::new(Document::open(stream_adapter)?));
 
         self.imp().state.borrow_mut().open_doc = Some(document.clone());
 

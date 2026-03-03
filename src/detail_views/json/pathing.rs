@@ -7,7 +7,7 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use json::{JsonValue, object::Object as JsonObject};
 

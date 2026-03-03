@@ -7,7 +7,7 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
 use crate::string_ext::StrExt;
@@ -15,7 +15,7 @@ use crate::string_ext::StrExt;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/metadata_inspector.ui")]
 pub struct MetadataInspectorImp {
-    document: RefCell<Option<Arc<Document>>>,
+    document: RefCell<Option<Arc<Mutex<Document>>>>,
 
     #[template_child]
     name_field: TemplateChild<gtk4::TextView>,
@@ -67,7 +67,7 @@ glib::wrapper! {
 }
 
 impl MetadataInspector {
-    pub fn new(document: Arc<Document>) -> Self {
+    pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
         *selfish.imp().document.borrow_mut() = Some(document);
@@ -77,11 +77,12 @@ impl MetadataInspector {
     }
 
     fn bind(&self) {
-        let document = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document_arc = self.imp().document.borrow().as_ref().unwrap().clone();
+        let document = document_arc.lock().unwrap();
 
         self.imp().name_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .name
                 .as_deref()
@@ -92,10 +93,10 @@ impl MetadataInspector {
         self.imp()
             .version_field
             .buffer()
-            .set_text(document.puppet_data.meta.version.escape_nulls().as_ref());
+            .set_text(document.puppet_data().meta.version.escape_nulls().as_ref());
         self.imp().rigger_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .rigger
                 .as_deref()
@@ -105,7 +106,7 @@ impl MetadataInspector {
         );
         self.imp().artist_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .artist
                 .as_deref()
@@ -115,7 +116,7 @@ impl MetadataInspector {
         );
         self.imp().copyright_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .copyright
                 .as_deref()
@@ -125,7 +126,7 @@ impl MetadataInspector {
         );
         self.imp().license_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .license_url
                 .as_deref()
@@ -135,7 +136,7 @@ impl MetadataInspector {
         );
         self.imp().contact_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .contact
                 .as_deref()
@@ -145,7 +146,7 @@ impl MetadataInspector {
         );
         self.imp().reference_field.buffer().set_text(
             document
-                .puppet_data
+                .puppet_data()
                 .meta
                 .reference
                 .as_deref()

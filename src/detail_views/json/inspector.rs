@@ -8,7 +8,7 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use json::{JsonValue, object::Object as JsonObject};
 
@@ -21,7 +21,7 @@ use crate::string_ext::StrExt;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/json_inspector.ui")]
 pub struct JsonInspectorImp {
-    document: RefCell<Option<(Arc<Document>, JsonPath, gio::ListStore)>>,
+    document: RefCell<Option<(Arc<Mutex<Document>>, JsonPath, gio::ListStore)>>,
 
     #[template_child]
     column_view: TemplateChild<gtk4::ColumnView>,
@@ -67,7 +67,7 @@ glib::wrapper! {
 }
 
 impl JsonInspector {
-    pub fn new_puppet_json(document: Arc<Document>, path: Vec<JsonNavigationPath>) -> Self {
+    pub fn new_puppet_json(document: Arc<Mutex<Document>>, path: Vec<JsonNavigationPath>) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
         *selfish.imp().document.borrow_mut() = Some((
@@ -81,7 +81,7 @@ impl JsonInspector {
     }
 
     pub fn new_vendor_json(
-        document: Arc<Document>,
+        document: Arc<Mutex<Document>>,
         vendor_block: usize,
         path: Vec<JsonNavigationPath>,
     ) -> Self {
@@ -99,11 +99,12 @@ impl JsonInspector {
 
     fn bind(&self) {
         let state = self.imp().document.borrow();
-        let (document, path, list_store) = state.as_ref().unwrap();
+        let (document_arc, path, list_store) = state.as_ref().unwrap();
+        let document = document_arc.lock().unwrap();
         let (value, path) = match path {
             JsonPath::PuppetJson(path) => (Some(&document.puppet_json), path),
             JsonPath::VendorJson(block, path) => {
-                (document.vendors.get(*block).map(|v| &v.payload), path)
+                (document.vendors().get(*block).map(|v| &v.payload), path)
             }
         };
 
@@ -167,11 +168,12 @@ impl JsonInspector {
                     let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
 
                     let state = type_self.imp().document.borrow();
-                    let (document, path, list_store) = state.as_ref().unwrap();
+                    let (document_arc, path, list_store) = state.as_ref().unwrap();
+                    let document = document_arc.lock().unwrap();
                     let (value, path) = match path {
                         JsonPath::PuppetJson(path) => (Some(&document.puppet_json), path),
                         JsonPath::VendorJson(block, path) => {
-                            (document.vendors.get(*block).map(|v| &v.payload), path)
+                            (document.vendors().get(*block).map(|v| &v.payload), path)
                         }
                     };
 
@@ -204,11 +206,12 @@ impl JsonInspector {
                     let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
 
                     let state = value_self.imp().document.borrow();
-                    let (document, path, list_store) = state.as_ref().unwrap();
+                    let (document_arc, path, list_store) = state.as_ref().unwrap();
+                    let document = document_arc.lock().unwrap();
                     let (value, path) = match path {
                         JsonPath::PuppetJson(path) => (Some(&document.puppet_json), path),
                         JsonPath::VendorJson(block, path) => {
-                            (document.vendors.get(*block).map(|v| &v.payload), path)
+                            (document.vendors().get(*block).map(|v| &v.payload), path)
                         }
                     };
 
