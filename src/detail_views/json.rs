@@ -128,7 +128,7 @@ impl JsonInspector {
 
             self.imp().key_factory.connect_setup(|_factory, object| {
                 let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-                list_item.set_child(Some(&gtk4::Label::builder().build()));
+                list_item.set_child(Some(&gtk4::Label::builder().halign(gtk4::Align::Start).build()));
             });
 
             self.imp().key_factory.connect_bind(|_factory, object| {
@@ -148,7 +148,7 @@ impl JsonInspector {
 
             self.imp().type_factory.connect_setup(|_factory, object| {
                 let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-                list_item.set_child(Some(&gtk4::Label::builder().build()));
+                list_item.set_child(Some(&gtk4::Label::builder().halign(gtk4::Align::Start).build()));
             });
 
             let type_self = self.clone();
@@ -181,7 +181,7 @@ impl JsonInspector {
 
             self.imp().value_factory.connect_setup(|_factory, object| {
                 let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-                list_item.set_child(Some(&gtk4::Label::builder().build()));
+                list_item.set_child(Some(&gtk4::Label::builder().halign(gtk4::Align::Start).build()));
             });
 
             let value_self = self.clone();
