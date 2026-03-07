@@ -1,6 +1,6 @@
 use json::{JsonValue, object::Object as JsonObject};
 
-use crate::navigation_item::JsonIndex;
+use crate::navigation::JsonIndex;
 
 pub trait JsonValueExt {
     fn as_object(&self) -> Option<&JsonObject>;

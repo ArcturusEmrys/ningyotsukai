@@ -13,7 +13,7 @@ use inox2d::node::InoxNodeUuid;
 
 use crate::document::Document;
 use crate::json::JsonValueExt;
-use crate::navigation_item::{NavigationItem, Path};
+use crate::navigation::{NavigationItem, Path};
 use crate::string_ext::StrExt;
 
 #[derive(CompositeTemplate, Default)]

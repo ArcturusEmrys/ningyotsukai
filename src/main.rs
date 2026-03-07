@@ -8,7 +8,7 @@ mod document;
 mod io_adapter;
 mod json;
 mod look_and_feel;
-mod navigation_item;
+mod navigation;
 mod string_ext;
 mod window;
 

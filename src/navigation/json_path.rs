@@ -3,7 +3,7 @@ use glib::subclass::prelude::*;
 
 use std::cell::RefCell;
 
-use crate::navigation_item::enums::{JsonIndex, JsonPath};
+use crate::navigation::enums::{JsonIndex, JsonPath};
 
 #[derive(Default)]
 pub struct JsonPathItemImp(RefCell<Option<JsonPath>>);

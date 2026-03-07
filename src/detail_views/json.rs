@@ -14,7 +14,7 @@ use json::JsonValue;
 
 use crate::document::Document;
 use crate::json::JsonValueExt;
-use crate::navigation_item::{JsonIndex, JsonIndexItem, JsonPath};
+use crate::navigation::{JsonIndex, JsonIndexItem, JsonPath};
 use crate::string_ext::StrExt;
 
 #[derive(CompositeTemplate, Default)]

@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
-use crate::navigation_item::{NavigationItem, Path, Section};
+use crate::navigation::{NavigationItem, Path, Section};
 use crate::string_ext::StrExt;
 
 /// For some reason, glib-rs does not support mutating private/impl structs.
@@ -333,38 +333,93 @@ impl DocumentController {
 
         self.imp().tabs.set_current_page(Some(notebook_page));
 
-        // TODO: Some kind of evil tree walking structure that records the
-        // path for us and then proceeds to open the specific rows in question
-        // As it stands you cannot jump to closed rows
-        match notebook_page {
-            0 => {
-                for (index, row) in self
-                    .imp()
-                    .navigation_selection
-                    .iter::<glib::Object>()
-                    .enumerate()
-                {
-                    let row = row.unwrap().downcast::<gtk4::TreeListRow>().unwrap();
-                    let item = row.item().unwrap().downcast::<NavigationItem>().unwrap();
+        let tree_selection = match notebook_page {
+            0 => self.imp().navigation_selection.clone(),
+            1 => self.imp().json_selection.clone(),
+            _ => return,
+        };
 
-                    if item.as_path() == path {
-                        self.imp().navigation_selection.set_selected(index as u32);
-                        return;
+        // Literally open the entire tree until we run out of shit to open.
+        // I hate that we have to do this, but GTK's fancy tree list model
+        // gives us no other choice. The entire tree has to be forcibly
+        // materialized before we can search it.
+        //
+        // (Well, I COULD work backwards from the JSON but that would be even
+        // dumber than this, and it would tie my hands more with regards to
+        // application design.)
+        let mut newly_opened_rows = vec![];
+        let mut our_row_and_precursors = vec![];
+        loop {
+            let mut did_open_a_row = false;
+            for item in tree_selection.iter::<glib::Object>() {
+                let item_row = item.unwrap().downcast::<gtk4::TreeListRow>().unwrap();
+                let item_row_item = item_row
+                    .item()
+                    .unwrap()
+                    .downcast::<NavigationItem>()
+                    .unwrap();
+
+                if item_row_item.as_path() == path {
+                    // Ladies and gentlemen, we got 'em.
+                    let mut parent = item_row.parent();
+
+                    our_row_and_precursors.push(item_row);
+                    while parent.is_some() {
+                        let parent_unwrap = parent.unwrap();
+                        let gp = parent_unwrap.parent();
+
+                        our_row_and_precursors.push(parent_unwrap);
+                        parent = gp;
                     }
+                    break;
+                }
+
+                if item_row.is_expandable() && !item_row.is_expanded() {
+                    item_row.set_expanded(true);
+
+                    // We have to break here as we just invalidated our
+                    // iterator. Yes, GTK-rs reinvented iterator invalidation
+                    // in Rust. Somehow.
+                    did_open_a_row = true;
+                    newly_opened_rows.push(item_row);
+                    break;
                 }
             }
-            1 => {
-                for (index, row) in self.imp().json_selection.iter::<glib::Object>().enumerate() {
-                    let row = row.unwrap().downcast::<gtk4::TreeListRow>().unwrap();
-                    let item = row.item().unwrap().downcast::<NavigationItem>().unwrap();
 
-                    if item.as_path() == path {
-                        self.imp().json_selection.set_selected(index as u32);
-                        return;
-                    }
-                }
+            if !did_open_a_row {
+                break;
             }
-            _ => {}
+        }
+
+        // Opening the entire tree is going to be VERY disorienting to the
+        // user, so let's close everything we opened.
+        for row in newly_opened_rows {
+            if our_row_and_precursors.contains(&row) {
+                continue;
+            }
+
+            row.set_expanded(false);
+        }
+
+        // FINALLY, we can do a proper linear scan for our row in the
+        // selection model.
+        let mut desired_index = None;
+        for (linear_index, object) in tree_selection.iter::<glib::Object>().enumerate() {
+            let tree_row = object.unwrap().downcast::<gtk4::TreeListRow>().unwrap();
+            let path_item = tree_row
+                .item()
+                .unwrap()
+                .downcast::<NavigationItem>()
+                .unwrap();
+
+            if path_item.as_path() == path {
+                desired_index = Some(linear_index);
+                break;
+            }
+        }
+
+        if let Some(desired_index) = desired_index {
+            tree_selection.set_selected(desired_index as u32);
         }
     }
 }

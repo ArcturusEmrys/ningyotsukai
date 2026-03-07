@@ -15,7 +15,7 @@ use crate::detail_views::{
 };
 use crate::document::Document;
 use crate::json::JsonValueExt;
-use crate::navigation_item::enums::{JsonIndex, JsonPath, Path, Section};
+use crate::navigation::enums::{JsonIndex, JsonPath, Path, Section};
 
 #[derive(Default)]
 pub struct NavigationItemImp {
