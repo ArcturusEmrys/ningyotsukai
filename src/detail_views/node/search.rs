@@ -99,7 +99,9 @@ impl NodeSearch {
 
         self.imp().id_factory.connect_setup(|_fac, object| {
             let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(&gtk4::Label::builder().build()));
+            list_item.set_child(Some(
+                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
+            ));
         });
 
         self.imp().id_factory.connect_bind(move |_fac, object| {
@@ -116,7 +118,9 @@ impl NodeSearch {
 
         self.imp().name_factory.connect_setup(|_fac, object| {
             let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(&gtk4::Label::builder().build()));
+            list_item.set_child(Some(
+                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
+            ));
         });
 
         let name_document = document_arc.clone();

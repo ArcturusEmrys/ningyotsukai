@@ -69,56 +69,61 @@
             </object>
         </child>
         <child>
-            <object class="GtkColumnView" id="results_view">
-                <property name="hexpand">true</property>
-                <property name="vexpand">true</property>
-                <property name="css-classes">data-table</property>
-                <property name="model">
-                    <object class="GtkSingleSelection" id="results_selection">
-                    </object>
-                </property>
+            <object class="GtkScrolledWindow">
                 <child>
-                    <object class="GtkColumnViewColumn">
-                        <property name="title">ID</property>
-                        <property name="factory">
-                            <object class="GtkSignalListItemFactory" id="id_factory">
+                    <object class="GtkColumnView" id="results_view">
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="css-classes">data-table</property>
+                        <property name="model">
+                            <object class="GtkSingleSelection" id="results_selection">
                             </object>
                         </property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkColumnViewColumn">
-                        <property name="title">Name</property>
-                        <property name="factory">
-                            <object class="GtkSignalListItemFactory" id="name_factory">
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">ID</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="id_factory">
+                                    </object>
+                                </property>
                             </object>
-                        </property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkColumnViewColumn">
-                        <property name="title">Kind</property>
-                        <property name="factory">
-                            <object class="GtkSignalListItemFactory" id="kind_factory">
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Name</property>
+                                <property name="expand">true</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="name_factory">
+                                    </object>
+                                </property>
                             </object>
-                        </property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkColumnViewColumn">
-                        <property name="title">ZSort</property>
-                        <property name="factory">
-                            <object class="GtkSignalListItemFactory" id="zsort_factory">
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Kind</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="kind_factory">
+                                    </object>
+                                </property>
                             </object>
-                        </property>
-                    </object>
-                </child>
-                <child>
-                    <object class="GtkColumnViewColumn">
-                        <property name="factory">
-                            <object class="GtkSignalListItemFactory" id="link_factory">
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">ZSort</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="zsort_factory">
+                                    </object>
+                                </property>
                             </object>
-                        </property>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="link_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
                     </object>
                 </child>
             </object>
