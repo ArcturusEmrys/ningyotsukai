@@ -159,10 +159,9 @@ impl InoxRenderPreview {
             };
 
             // TODO: GLDebug logging
-            let renderer = {
-                let state = &realize_self.imp().state.borrow();
-                OpenglRenderer::new(gl, &state.as_ref().unwrap().document.lock().unwrap().model)
-            };
+            let renderer = OpenglRenderer::new(gl, &document.model);
+            drop(document);
+            drop(annoying_self_borrow);
 
             match renderer {
                 Ok(mut renderer) => {
