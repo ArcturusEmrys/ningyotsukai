@@ -23,6 +23,8 @@ pub struct NodeSearchImp {
 
     #[template_child]
     id_field: TemplateChild<gtk4::Entry>,
+    #[template_child]
+    name_field: TemplateChild<gtk4::Entry>,
 
     #[template_child]
     results_view: TemplateChild<gtk4::ColumnView>,
@@ -253,21 +255,26 @@ impl NodeSearch {
             Err(_) => None,
         };
 
-        if uuid.is_some() {
-            let mut new_results = vec![];
+        let name = self.imp().name_field.buffer().text();
+        let mut new_results = vec![];
 
-            for node in document.model.puppet.nodes().iter() {
-                if let Some(uuid) = uuid
-                    && <InoxNodeUuid as Into<u32>>::into(node.uuid) == uuid
-                {
-                    new_results.push(NavigationItem::from_node(node.uuid));
-                }
+        for node in document.model.puppet.nodes().iter() {
+            if let Some(uuid) = uuid
+                && <InoxNodeUuid as Into<u32>>::into(node.uuid) != uuid
+            {
+                continue;
             }
 
-            drop(document);
+            if !node.name.contains(&*name) {
+                continue;
+            }
 
-            results.remove_all();
-            results.extend_from_slice(&new_results.as_slice());
+            new_results.push(NavigationItem::from_node(node.uuid));
         }
+
+        drop(document);
+
+        results.remove_all();
+        results.extend_from_slice(&new_results.as_slice());
     }
 }
