@@ -8,10 +8,11 @@ use std::sync::{Arc, Mutex};
 use json::JsonValue;
 
 use inox2d::node::InoxNodeUuid;
+use inox2d::params::ParamUuid;
 
 use crate::detail_views::{
     InoxRenderPreview, JsonInspector, MetadataInspector, NodeInspector, NodeSearch, ParamInspector,
-    PhysicsInspector,
+    ParamSearch, PhysicsInspector,
 };
 use crate::document::Document;
 use crate::json::JsonValueExt;
@@ -47,6 +48,10 @@ impl NavigationItem {
         Self::new(Path::PuppetNode(node_id.into()))
     }
 
+    pub fn from_param(param_id: ParamUuid) -> Self {
+        Self::new(Path::PuppetParam(param_id.into()))
+    }
+
     pub fn as_path(&self) -> Path {
         self.imp().path.borrow().as_ref().expect("a path").clone()
     }
@@ -54,6 +59,13 @@ impl NavigationItem {
     pub fn as_puppet_node(&self) -> Option<InoxNodeUuid> {
         match self.imp().path.borrow().as_ref().expect("a path") {
             Path::PuppetNode(node_id) => Some((*node_id).into()),
+            _ => None,
+        }
+    }
+
+    pub fn as_puppet_param(&self) -> Option<ParamUuid> {
+        match self.imp().path.borrow().as_ref().expect("a path") {
+            Path::PuppetParam(param_id) => Some((*param_id).into()),
             _ => None,
         }
     }
@@ -75,7 +87,19 @@ impl NavigationItem {
                     "<MISSING OR INVALID NODE>".into()
                 }
             }
-            Path::PuppetParam(name) => name.to_string().into(),
+            Path::PuppetParam(uuid) => {
+                if let Some((name, _)) = document
+                    .model
+                    .puppet
+                    .params
+                    .iter()
+                    .find(|(_k, v)| v.uuid.0 == uuid.0)
+                {
+                    (name).into()
+                } else {
+                    "<MISSING OR INVALID PARAM>".into()
+                }
+            }
             Path::PuppetJson(path) => {
                 if let Some(first) = path.last() {
                     match first {
@@ -115,8 +139,8 @@ impl NavigationItem {
             }
             Path::Section(Section::PuppetParams) => {
                 let mut param_paths = vec![];
-                for param in document.puppet_data().params.keys() {
-                    param_paths.push(Self::new(Path::PuppetParam(param.clone())));
+                for param in document.puppet_data().params.values() {
+                    param_paths.push(Self::new(Path::PuppetParam(param.uuid.into())));
                 }
 
                 if param_paths.len() == 0 {
@@ -234,8 +258,9 @@ impl NavigationItem {
             Path::Section(Section::PuppetMeta) => MetadataInspector::new(document).into(),
             Path::Section(Section::PuppetPhysics) => PhysicsInspector::new(document).into(),
             Path::Section(Section::PuppetNode) => NodeSearch::new(document).into(),
+            Path::Section(Section::PuppetParams) => ParamSearch::new(document).into(),
             Path::PuppetNode(node) => NodeInspector::new(document, (*node).into()).into(),
-            Path::PuppetParam(param) => ParamInspector::new(document, param.clone()).into(),
+            Path::PuppetParam(param) => ParamInspector::new(document, param.clone().into()).into(),
             Path::PuppetJson(path) => JsonInspector::new_puppet_json(document, path.clone()).into(),
             Path::VendorJson(blk, path) => {
                 JsonInspector::new_vendor_json(document, *blk, path.clone()).into()
@@ -318,7 +343,24 @@ impl NavigationItem {
 
                 Some(JsonPath::PuppetJson(reverse_parent_path))
             }
-            Path::PuppetParam(_name) => None, //TODO: Unimplemented!
+            Path::PuppetParam(uuid) => {
+                let params_list = document.puppet_json.as_object()?.get("param")?.as_list()?;
+
+                for (index, val) in params_list.iter().enumerate() {
+                    if let Some(obj) = val.as_object() {
+                        if let Some(obj_uuid) = obj.get("uuid").and_then(|v| v.as_u32()) {
+                            if obj_uuid == uuid.0 {
+                                return Some(JsonPath::PuppetJson(vec![
+                                    JsonIndex::ObjectKey("param".to_string()),
+                                    JsonIndex::ListIndex(index as u64),
+                                ]));
+                            }
+                        }
+                    }
+                }
+
+                None
+            }
             Path::RenderPreview => Some(JsonPath::PuppetJson(vec![])),
         }
     }

@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIPuppetParamSearch" parent="GtkBox">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+        <property name="orientation">vertical</property>
+        <child>
+            <object class="GtkFrame">
+                <property name="css-classes">Search-form</property>
+                <property name="label">Search for param...</property>
+                <child>
+                    <object class="GtkGrid">
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="label">ID</property>
+                                <property name="xalign">0.0</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">0</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkEntry" id="id_field">
+                                <property name="hexpand">true</property>
+                                <layout>
+                                    <property name="column-span">2</property>
+                                    <property name="column">1</property>
+                                    <property name="row">0</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="label">Name</property>
+                                <property name="xalign">0.0</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkEntry" id="name_field">
+                                <property name="hexpand">true</property>
+                                <layout>
+                                    <property name="column-span">2</property>
+                                    <property name="column">1</property>
+                                    <property name="row">1</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="search">
+                                <property name="action-name">form.search</property>
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Search</property>
+                                    </object>
+                                </child>
+                                <layout>
+                                    <property name="column">2</property>
+                                    <property name="row">2</property>
+                                </layout>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
+        <child>
+            <object class="GtkScrolledWindow">
+                <child>
+                    <object class="GtkColumnView" id="results_view">
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="css-classes">data-table</property>
+                        <property name="model">
+                            <object class="GtkSingleSelection" id="results_selection">
+                            </object>
+                        </property>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">ID</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="id_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Name</property>
+                                <property name="expand">true</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="name_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Dim.</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="dim_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="link_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

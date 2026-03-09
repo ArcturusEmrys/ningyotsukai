@@ -9,6 +9,7 @@
         <file compressed="true" preprocess="xml-stripblanks">physics_inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">node_search.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">node_inspector.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">param_search.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">param_inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">json_inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">inox_render_preview.ui</file>

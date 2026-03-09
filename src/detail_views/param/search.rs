@@ -9,16 +9,14 @@ use glib::subclass::InitializingObject;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
-use inox2d::node::InoxNodeUuid;
-
 use crate::document::Document;
 use crate::json::JsonValueExt;
 use crate::navigation::NavigationItem;
 use crate::string_ext::StrExt;
 
 #[derive(CompositeTemplate, Default)]
-#[template(resource = "/live/arcturus/puppet-inspector/node_search.ui")]
-pub struct NodeSearchImp {
+#[template(resource = "/live/arcturus/puppet-inspector/param_search.ui")]
+pub struct ParamSearchImp {
     state: RefCell<Option<(Arc<Mutex<Document>>, gio::ListStore)>>,
 
     #[template_child]
@@ -35,17 +33,15 @@ pub struct NodeSearchImp {
     #[template_child]
     name_factory: TemplateChild<gtk4::SignalListItemFactory>,
     #[template_child]
-    kind_factory: TemplateChild<gtk4::SignalListItemFactory>,
-    #[template_child]
-    zsort_factory: TemplateChild<gtk4::SignalListItemFactory>,
+    dim_factory: TemplateChild<gtk4::SignalListItemFactory>,
     #[template_child]
     link_factory: TemplateChild<gtk4::SignalListItemFactory>,
 }
 
 #[glib::object_subclass]
-impl ObjectSubclass for NodeSearchImp {
-    const NAME: &'static str = "PIPuppetNodeSearch";
-    type Type = NodeSearch;
+impl ObjectSubclass for ParamSearchImp {
+    const NAME: &'static str = "PIPuppetParamSearch";
+    type Type = ParamSearch;
     type ParentType = gtk4::Box;
 
     fn class_init(class: &mut Self::Class) {
@@ -57,23 +53,23 @@ impl ObjectSubclass for NodeSearchImp {
     }
 }
 
-impl ObjectImpl for NodeSearchImp {
+impl ObjectImpl for ParamSearchImp {
     fn constructed(&self) {
         self.parent_constructed();
     }
 }
 
-impl WidgetImpl for NodeSearchImp {}
+impl WidgetImpl for ParamSearchImp {}
 
-impl BoxImpl for NodeSearchImp {}
+impl BoxImpl for ParamSearchImp {}
 
 glib::wrapper! {
-    pub struct NodeSearch(ObjectSubclass<NodeSearchImp>)
+    pub struct ParamSearch(ObjectSubclass<ParamSearchImp>)
         @extends gtk4::Box, gtk4::Widget,
         @implements gtk4::Buildable, gtk4::Orientable, gtk4::ConstraintTarget, gtk4::Accessible;
 }
 
-impl NodeSearch {
+impl ParamSearch {
     pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
@@ -108,7 +104,7 @@ impl NodeSearch {
             let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
             let nav_item = list_item.item().unwrap();
             let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-            let id: u32 = nav.as_puppet_node().unwrap().into();
+            let id: u32 = nav.as_puppet_param().unwrap().0;
 
             let label_child = list_item.child().unwrap();
             let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
@@ -138,57 +134,33 @@ impl NodeSearch {
             label.set_text(&name.escape_nulls());
         });
 
-        self.imp().kind_factory.connect_setup(|_fac, object| {
+        self.imp().dim_factory.connect_setup(|_fac, object| {
             let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
             list_item.set_child(Some(&gtk4::Label::builder().build()));
         });
 
-        let kind_document = document_arc.clone();
-        self.imp().kind_factory.connect_bind(move |_fac, object| {
-            let document = kind_document.lock().unwrap();
+        let dim_document = document_arc.clone();
+        self.imp().dim_factory.connect_bind(move |_fac, object| {
+            let document = dim_document.lock().unwrap();
 
             let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
             let nav_item = list_item.item().unwrap();
             let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
+            let uuid = nav.as_puppet_param().unwrap();
+            let (_k, param) = document
+                .model
+                .puppet
+                .params
+                .iter()
+                .find(|(_k, v)| v.uuid == uuid)
+                .unwrap();
 
-            //Inox doesn't actually store the Kind of a node, so we have to get it ourselves.
-            //This is really dumb.
-            let json_path = nav.as_json_path(&document).unwrap();
-            let node_json = document.puppet_json.traverse_path(json_path.as_path());
+            let dim = if param.is_vec2 { "2D" } else { "1D" };
 
-            if let Some(kind) = node_json.and_then(|j| j.as_object()?.get("type")?.as_str()) {
-                let label_child = list_item.child().unwrap();
-                let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
-
-                label.set_text(&kind.escape_nulls());
-            }
-        });
-
-        self.imp().zsort_factory.connect_setup(|_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(&gtk4::Label::builder().build()));
-        });
-
-        let zsort_document = document_arc.clone();
-        self.imp().zsort_factory.connect_bind(move |_fac, object| {
-            let document = zsort_document.lock().unwrap();
-
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
             let label_child = list_item.child().unwrap();
             let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
 
-            label.set_text(&format!(
-                "{}",
-                document
-                    .model
-                    .puppet
-                    .nodes()
-                    .get_node(nav.as_puppet_node().unwrap())
-                    .unwrap()
-                    .zsort
-            ));
+            label.set_text(dim);
         });
 
         let link_factory_document = document_arc.clone();
@@ -200,7 +172,7 @@ impl NodeSearch {
             let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
 
             let jump_button = gtk4::Button::builder()
-                .label("Jump to node...")
+                .label("Jump to param...")
                 .action_name("win.jump")
                 .action_target(&nav.as_path().to_variant())
                 .build();
@@ -262,18 +234,18 @@ impl NodeSearch {
         let name = self.imp().name_field.buffer().text();
         let mut new_results = vec![];
 
-        for node in document.model.puppet.nodes().iter() {
+        for (name, param) in document.model.puppet.params().iter() {
             if let Some(uuid) = uuid
-                && <InoxNodeUuid as Into<u32>>::into(node.uuid) != uuid
+                && param.uuid.0 != uuid
             {
                 continue;
             }
 
-            if !node.name.contains(&*name) {
+            if !param.name.contains(&*name) {
                 continue;
             }
 
-            new_results.push(NavigationItem::from_node(node.uuid));
+            new_results.push(NavigationItem::from_param(param.uuid));
         }
 
         drop(document);

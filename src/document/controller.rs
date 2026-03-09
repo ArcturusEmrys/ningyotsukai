@@ -369,8 +369,8 @@ impl DocumentController {
                         .unwrap();
 
                     if path_item.as_path() == path {
+                        desired_index = Some(linear_index);
                         if tree_row.is_expandable() && !tree_row.is_expanded() {
-                            desired_index = Some(linear_index);
                             tree_row.set_expanded(true);
                         }
 

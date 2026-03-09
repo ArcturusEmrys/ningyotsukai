@@ -69,12 +69,29 @@ impl From<inox2d::node::InoxNodeUuid> for InoxNodeUuid {
     }
 }
 
+/// Shim type for serializing Inox2D param UUIDs into a GVariant.
+#[derive(Clone, Copy, Hash, Eq, PartialEq, Debug, glib::Variant)]
+#[repr(transparent)]
+pub struct ParamUuid(pub u32);
+
+impl Into<inox2d::params::ParamUuid> for ParamUuid {
+    fn into(self) -> inox2d::params::ParamUuid {
+        inox2d::params::ParamUuid(self.0)
+    }
+}
+
+impl From<inox2d::params::ParamUuid> for ParamUuid {
+    fn from(param: inox2d::params::ParamUuid) -> Self {
+        Self(param.0)
+    }
+}
+
 /// A specific detail page in the app.
 #[derive(Clone, Debug, glib::Variant, PartialEq, Eq)]
 pub enum Path {
     Section(Section),
     PuppetNode(InoxNodeUuid),
-    PuppetParam(String), //TODO: These also have UUIDs, we should use those.
+    PuppetParam(ParamUuid),
     PuppetJson(Vec<JsonIndex>),
     VendorJson(u64, Vec<JsonIndex>),
     RenderPreview,
