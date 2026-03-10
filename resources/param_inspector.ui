@@ -167,13 +167,53 @@
             </object>
         </child>
         <child>
-            <object class="GtkBox">
-                <!-- Todo: bindings table -->
+            <object class="GtkScrolledWindow">
                 <layout>
                     <property name="column">0</property>
-                    <property name="column-span">2</property>
+                    <property name="column-span">3</property>
                     <property name="row">9</property>
                 </layout>
+                
+                <child>
+                    <object class="GtkColumnView" id="bindings_view">
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="css-classes">data-table</property>
+                        <property name="model">
+                            <object class="GtkSingleSelection" id="bindings_selection">
+                            </object>
+                        </property>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Node</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="bound_node_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Property</property>
+                                <property name="expand">true</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="bound_property_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Value</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="bound_value_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <!-- TODO: Drill-down to a separate binding inspector detail view -->
+                    </object>
+                </child>
             </object>
         </child>
     </template>

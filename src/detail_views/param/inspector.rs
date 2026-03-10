@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 use inox2d::params::ParamUuid;
 
 use crate::document::Document;
+use crate::json::JsonValueExt;
+use crate::navigation::{NavigationItem, Path};
 use crate::string_ext::StrExt;
 
 #[derive(CompositeTemplate, Default)]
@@ -37,6 +39,16 @@ pub struct ParamInspectorImp {
     default_y_field: TemplateChild<gtk4::Entry>,
     #[template_child]
     is_vec2_check: TemplateChild<gtk4::CheckButton>,
+    #[template_child]
+    bindings_view: TemplateChild<gtk4::ColumnView>,
+    #[template_child]
+    bindings_selection: TemplateChild<gtk4::SingleSelection>,
+    #[template_child]
+    bound_node_factory: TemplateChild<gtk4::SignalListItemFactory>,
+    #[template_child]
+    bound_property_factory: TemplateChild<gtk4::SignalListItemFactory>,
+    #[template_child]
+    bound_value_factory: TemplateChild<gtk4::SignalListItemFactory>,
 }
 
 #[glib::object_subclass]
@@ -82,45 +94,164 @@ impl ParamInspector {
 
     fn bind(&self) {
         let (document_arc, param_uuid) = self.imp().document.borrow().as_ref().unwrap().clone();
-        let document = document_arc.lock().unwrap();
-        let (name, param) = document
-            .puppet_data()
-            .params()
-            .iter()
-            .find(|(_k, v)| v.uuid == param_uuid)
-            .expect("valid param");
+
+        self.imp().bound_node_factory.connect_setup(|_, object| {
+            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            //TODO: Add a Jump To button for the node
+            list_item.set_child(Some(
+                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
+            ));
+        });
+
+        let node_document = document_arc.clone();
+        self.imp()
+            .bound_node_factory
+            .connect_bind(move |_, object| {
+                let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                let nav_item = list_item.item().unwrap();
+                let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
+                let (param_id, bind_id) = nav.as_puppet_param_binding().unwrap();
+
+                let document = node_document.lock().unwrap();
+                let param = document
+                    .model
+                    .puppet
+                    .params()
+                    .iter()
+                    .find(|(_, p)| p.uuid == param_id);
+                let binding = param.and_then(|(_, p)| p.bindings.get(bind_id));
+                let node = binding.and_then(|b| document.model.puppet.nodes().get_node(b.node));
+
+                if let Some(node) = node {
+                    let label_child = list_item.child().unwrap();
+                    let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
+
+                    label.set_text(&node.name.escape_nulls());
+                }
+            });
 
         self.imp()
-            .name_field
-            .buffer()
-            .set_text(name.escape_nulls().as_ref());
+            .bound_property_factory
+            .connect_setup(|_, object| {
+                let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                list_item.set_child(Some(
+                    &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
+                ));
+            });
+
+        let prop_document = document_arc.clone();
         self.imp()
-            .uuid_label
-            .set_label(&format!("{}", param.uuid.0));
+            .bound_property_factory
+            .connect_bind(move |_, object| {
+                let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                let nav_item = list_item.item().unwrap();
+                let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
+
+                let document = prop_document.lock().unwrap();
+                let bind_path = nav.as_json_path(&document).unwrap();
+                let property = document
+                    .puppet_json
+                    .traverse_path(bind_path.as_path())
+                    .and_then(|v| v.as_object())
+                    .and_then(|o| o.get("param_name"))
+                    .and_then(|s| s.as_str());
+
+                if let Some(property) = property {
+                    let label_child = list_item.child().unwrap();
+                    let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
+
+                    label.set_text(&property.escape_nulls());
+                }
+            });
+
+        self.imp().bound_value_factory.connect_setup(|_, object| {
+            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+            list_item.set_child(Some(
+                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
+            ));
+        });
+
+        let val_document = document_arc.clone();
         self.imp()
-            .min_x_field
-            .buffer()
-            .set_text(&format!("{}", param.min.x));
-        self.imp()
-            .min_y_field
-            .buffer()
-            .set_text(&format!("{}", param.min.y));
-        self.imp()
-            .max_x_field
-            .buffer()
-            .set_text(&format!("{}", param.max.x));
-        self.imp()
-            .max_y_field
-            .buffer()
-            .set_text(&format!("{}", param.max.y));
-        self.imp()
-            .default_x_field
-            .buffer()
-            .set_text(&format!("{}", param.defaults.x));
-        self.imp()
-            .default_y_field
-            .buffer()
-            .set_text(&format!("{}", param.defaults.y));
-        self.imp().is_vec2_check.set_active(param.is_vec2);
+            .bound_value_factory
+            .connect_bind(move |_, object| {
+                let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                let nav_item = list_item.item().unwrap();
+                let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
+                let (param_id, bind_id) = nav.as_puppet_param_binding().unwrap();
+
+                let document = val_document.lock().unwrap();
+                let param = document
+                    .model
+                    .puppet
+                    .params()
+                    .iter()
+                    .find(|(_, p)| p.uuid == param_id);
+                let binding = param.and_then(|(_, p)| p.bindings.get(bind_id));
+
+                if let Some(binding) = binding {
+                    let label_child = list_item.child().unwrap();
+                    let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
+
+                    label.set_text(&format!("{:?}", binding.values).escape_nulls());
+                }
+            });
+
+        let mut bindings = vec![];
+        {
+            let document = document_arc.lock().unwrap();
+            let (name, param) = document
+                .puppet_data()
+                .params()
+                .iter()
+                .find(|(_k, v)| v.uuid == param_uuid)
+                .expect("valid param");
+
+            self.imp()
+                .name_field
+                .buffer()
+                .set_text(name.escape_nulls().as_ref());
+            self.imp()
+                .uuid_label
+                .set_label(&format!("{}", param.uuid.0));
+            self.imp()
+                .min_x_field
+                .buffer()
+                .set_text(&format!("{}", param.min.x));
+            self.imp()
+                .min_y_field
+                .buffer()
+                .set_text(&format!("{}", param.min.y));
+            self.imp()
+                .max_x_field
+                .buffer()
+                .set_text(&format!("{}", param.max.x));
+            self.imp()
+                .max_y_field
+                .buffer()
+                .set_text(&format!("{}", param.max.y));
+            self.imp()
+                .default_x_field
+                .buffer()
+                .set_text(&format!("{}", param.defaults.x));
+            self.imp()
+                .default_y_field
+                .buffer()
+                .set_text(&format!("{}", param.defaults.y));
+            self.imp().is_vec2_check.set_active(param.is_vec2);
+
+            for (index, _) in param.bindings.iter().enumerate() {
+                bindings.push(NavigationItem::new(Path::PuppetParamBinding(
+                    param_uuid.into(),
+                    index as u64,
+                )));
+            }
+        }
+
+        // We can't add the bindings to the list while we're holding the
+        // document lock or we'll deadlock.
+        let list_store = gio::ListStore::builder().build();
+        list_store.extend_from_slice(&bindings);
+        self.imp().bindings_selection.set_model(Some(&list_store));
     }
 }
