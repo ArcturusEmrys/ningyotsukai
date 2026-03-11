@@ -6,6 +6,7 @@ use gtk4::subclass::prelude::*;
 
 use glib::subclass::InitializingObject;
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
@@ -193,7 +194,15 @@ impl ParamInspector {
                     let label_child = list_item.child().unwrap();
                     let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
 
-                    label.set_text(&format!("{:?}", binding.values).escape_nulls());
+                    label.set_text(
+                        &match &binding.values {
+                            inox2d::params::BindingValues::Deform(_) => {
+                                Cow::Borrowed("(Deform vertices...)")
+                            }
+                            v => format!("{:?}", v).into(),
+                        }
+                        .escape_nulls(),
+                    );
                 }
             });
 
