@@ -132,7 +132,7 @@ impl ParamInspector {
                     let button = gtk4::Button::builder()
                         .halign(gtk4::Align::End)
                         .icon_name("go-jump")
-                        .action_name("win.jump")
+                        .action_name("doc.jump")
                         .action_target(&Path::PuppetNode(node.uuid.into()).to_variant())
                         .build();
 

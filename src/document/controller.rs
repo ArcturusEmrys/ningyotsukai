@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
+use crate::gtk_ext::WidgetExt2;
 use crate::navigation::{NavigationItem, Path, Section};
 use crate::string_ext::StrExt;
 
@@ -25,6 +26,9 @@ pub struct DocumentControllerState {
     json_tree: Option<gtk4::TreeListModel>,
     root_nav_list: Option<gio::ListStore>,
     root_json_list: Option<gio::ListStore>,
+    history: Vec<Path>,
+    current: Option<Path>,
+    future: Vec<Path>,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -82,6 +86,7 @@ impl DocumentController {
 
         selfish.imp().state.borrow_mut().open_doc = Some(open_doc.clone());
         selfish.populate_navigation();
+        selfish.bind_actions();
 
         selfish
     }
@@ -322,14 +327,89 @@ impl DocumentController {
 
     fn populate_detail(&self, item: NavigationItem) {
         let detail_view = self.imp().detail_view.clone();
-        let document = self.imp().state.borrow().open_doc.clone().unwrap();
+        let mut state = self.imp().state.borrow_mut();
+        if let Some(prior) = state.current.take() {
+            state.history.push(prior);
+        }
+        state.current = Some(item.as_path());
 
+        let document = state.open_doc.clone().unwrap();
+
+        drop(state);
         detail_view.set_child(Some(&item.child_inspector(document)));
     }
 
-    pub fn jump_to_path(&self, item: NavigationItem) {
-        let notebook_page = item.notebook_page();
-        let path = item.as_path();
+    pub fn bind_actions(&self) {
+        let doc = gio::SimpleActionGroup::new();
+
+        let doc_controller_jump = self.clone();
+        let doc_controller_back = self.clone();
+        let doc_controller_fwd = self.clone();
+        doc.add_action_entries([
+            gio::ActionEntry::builder("jump")
+                .activate(move |_, _, variant| {
+                    if let Some(path) = variant.and_then(|v| Path::from_variant(v)) {
+                        doc_controller_jump.jump_to(path);
+                    }
+                })
+                .parameter_type(Some(&Path::static_variant_type()))
+                .build(),
+            gio::ActionEntry::builder("back")
+                .activate(move |_, _, _| {
+                    doc_controller_back.jump_back();
+                })
+                .build(),
+            gio::ActionEntry::builder("fwd")
+                .activate(move |_, _, _| {
+                    doc_controller_fwd.jump_fwd();
+                })
+                .build(),
+        ]);
+
+        self.connect_realize(move |selfpoi| {
+            selfpoi
+                .window()
+                .unwrap()
+                .insert_action_group("doc", Some(&doc));
+        });
+    }
+
+    fn jump_back(&self) {
+        let mut state = self.imp().state.borrow_mut();
+        let back = state.history.pop();
+
+        if let Some(back) = back {
+            // By clearing current here we ensure populate_detail does not put
+            // it back on the history stack
+            if let Some(current) = state.current.take() {
+                state.future.push(current);
+            }
+
+            drop(state);
+            self.jump_to_inner(back);
+        }
+    }
+
+    fn jump_fwd(&self) {
+        let mut state = self.imp().state.borrow_mut();
+        let fwd = state.future.pop();
+        drop(state);
+
+        if let Some(fwd) = fwd {
+            self.jump_to_inner(fwd);
+        }
+    }
+
+    fn jump_to(&self, path: Path) {
+        let mut state = self.imp().state.borrow_mut();
+        state.future.clear();
+
+        drop(state);
+        self.jump_to_inner(path);
+    }
+
+    fn jump_to_inner(&self, path: Path) {
+        let notebook_page = path.notebook_page();
 
         self.imp().tabs.set_current_page(Some(notebook_page));
 

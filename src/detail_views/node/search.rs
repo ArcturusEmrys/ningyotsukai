@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use inox2d::node::InoxNodeUuid;
 
 use crate::document::Document;
+use crate::gtk_ext::WidgetExt2;
 use crate::json::JsonValueExt;
 use crate::navigation::NavigationItem;
 use crate::string_ext::StrExt;
@@ -201,12 +202,12 @@ impl NodeSearch {
 
             let jump_button = gtk4::Button::builder()
                 .label("Jump to node...")
-                .action_name("win.jump")
+                .action_name("doc.jump")
                 .action_target(&nav.as_path().to_variant())
                 .build();
             let json_jump_button = gtk4::Button::builder()
                 .label("Jump to JSON...")
-                .action_name("win.jump")
+                .action_name("doc.jump")
                 .action_target(&nav.as_json_path(&document).unwrap().to_variant())
                 .build();
 
@@ -224,25 +225,7 @@ impl NodeSearch {
         let (document_arc, results) = self.imp().state.borrow().as_ref().unwrap().clone();
         let document = document_arc.lock().unwrap();
 
-        // GTK3 had a get_window, GTK4 removed it.
-        // Dunno why, but there's a forum thread where someone
-        // basically says you shouldn't need to get the current
-        // window because you don't need to touch GDK as often.
-        // Guess he didn't read GTK's own alert API.
-        let mut maybe_window = self.parent();
-        let mut window = None;
-        while maybe_window.is_some() {
-            if let Some(awindow) = maybe_window
-                .as_ref()
-                .unwrap()
-                .downcast_ref::<gtk4::Window>()
-            {
-                window = Some(awindow.clone());
-                break;
-            }
-
-            maybe_window = maybe_window.unwrap().parent();
-        }
+        let window = self.window();
 
         let uuid = self.imp().id_field.buffer().text();
         let uuid = match str::parse::<u32>(&uuid) {

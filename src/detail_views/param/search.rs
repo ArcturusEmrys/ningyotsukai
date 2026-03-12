@@ -173,12 +173,12 @@ impl ParamSearch {
 
             let jump_button = gtk4::Button::builder()
                 .label("Jump to param...")
-                .action_name("win.jump")
+                .action_name("doc.jump")
                 .action_target(&nav.as_path().to_variant())
                 .build();
             let json_jump_button = gtk4::Button::builder()
                 .label("Jump to JSON...")
-                .action_name("win.jump")
+                .action_name("doc.jump")
                 .action_target(&nav.as_json_path(&document).unwrap().to_variant())
                 .build();
 
