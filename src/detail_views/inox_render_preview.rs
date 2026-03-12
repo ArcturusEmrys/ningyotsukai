@@ -149,7 +149,7 @@ impl InoxRenderPreview {
             // grumpy.
             //
             // SAFETY: I have no idea what happens if you give this a bad name
-            let (mut gl, native_gl) = unsafe {
+            let (gl, native_gl) = unsafe {
                 let gl = glow::Context::from_loader_function_cstr(|p| lookup_gl_symbol(p));
                 let stupid_box = Box::new(|p| lookup_gl_symbol_from_ptr(p));
                 let native_lookup: &dyn Fn(*const u8) -> *const c_void = &stupid_box;

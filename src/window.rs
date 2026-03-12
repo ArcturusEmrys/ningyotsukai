@@ -14,7 +14,6 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use crate::document::{Document, DocumentController};
-use crate::navigation::{NavigationItem, Path};
 
 /// For some reason, glib-rs does not support mutating private/impl structs.
 /// Hence the mutability hack.
@@ -82,7 +81,6 @@ impl WindowController {
 
         let picker = selfish.imp().filepicker.clone();
         let callback_self = selfish.clone();
-        let jump_self = selfish.clone();
         selfish.add_action_entries([gio::ActionEntry::builder("open")
             .activate(move |window: &WindowController, _, _| {
                 let callback_self = callback_self.clone();

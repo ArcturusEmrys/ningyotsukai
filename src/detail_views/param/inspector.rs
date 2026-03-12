@@ -96,7 +96,7 @@ impl ParamInspector {
     fn bind(&self) {
         let (document_arc, param_uuid) = self.imp().document.borrow().as_ref().unwrap().clone();
 
-        self.imp().bound_node_factory.connect_setup(|_, object| {});
+        self.imp().bound_node_factory.connect_setup(|_, _| {});
 
         let node_document = document_arc.clone();
         self.imp()

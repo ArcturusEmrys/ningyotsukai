@@ -10,7 +10,6 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
-use crate::json::JsonValueExt;
 use crate::navigation::NavigationItem;
 use crate::string_ext::StrExt;
 
@@ -234,7 +233,7 @@ impl ParamSearch {
         let name = self.imp().name_field.buffer().text();
         let mut new_results = vec![];
 
-        for (name, param) in document.model.puppet.params().iter() {
+        for (_, param) in document.model.puppet.params().iter() {
             if let Some(uuid) = uuid
                 && param.uuid.0 != uuid
             {
