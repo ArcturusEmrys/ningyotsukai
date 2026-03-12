@@ -26,6 +26,7 @@ pub struct DocumentControllerState {
     json_tree: Option<gtk4::TreeListModel>,
     root_nav_list: Option<gio::ListStore>,
     root_json_list: Option<gio::ListStore>,
+    doc: Option<gio::SimpleActionGroup>,
     history: Vec<Path>,
     current: Option<Path>,
     future: Vec<Path>,
@@ -85,8 +86,8 @@ impl DocumentController {
         let selfish: DocumentController = glib::Object::builder().build();
 
         selfish.imp().state.borrow_mut().open_doc = Some(open_doc.clone());
-        selfish.populate_navigation();
         selfish.bind_actions();
+        selfish.populate_navigation();
 
         selfish
     }
@@ -333,6 +334,21 @@ impl DocumentController {
         }
         state.current = Some(item.as_path());
 
+        state
+            .doc
+            .as_ref()
+            .unwrap()
+            .lookup_action("back")
+            .unwrap()
+            .set_property("enabled", state.history.len() > 0);
+        state
+            .doc
+            .as_ref()
+            .unwrap()
+            .lookup_action("fwd")
+            .unwrap()
+            .set_property("enabled", state.future.len() > 0);
+
         let document = state.open_doc.clone().unwrap();
 
         drop(state);
@@ -366,6 +382,15 @@ impl DocumentController {
                 .build(),
         ]);
 
+        doc.lookup_action("back")
+            .unwrap()
+            .set_property("enabled", false);
+        doc.lookup_action("fwd")
+            .unwrap()
+            .set_property("enabled", false);
+
+        self.imp().state.borrow_mut().doc = Some(doc.clone());
+
         self.connect_realize(move |selfpoi| {
             selfpoi
                 .window()
@@ -393,8 +418,8 @@ impl DocumentController {
     fn jump_fwd(&self) {
         let mut state = self.imp().state.borrow_mut();
         let fwd = state.future.pop();
-        drop(state);
 
+        drop(state);
         if let Some(fwd) = fwd {
             self.jump_to_inner(fwd);
         }
