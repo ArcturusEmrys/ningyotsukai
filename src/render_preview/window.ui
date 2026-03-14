@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIInoxRenderPreview" parent="GtkWindow">
+        <property name="title">Preview</property>
+        <property name="default-width">640</property>
+        <property name="default-height">480</property>
+        <child>
+            <object class="GtkPaned" id="paned_view">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <property name="resize-start-child">false</property>
+                <property name="resize-end-child">true</property>
+                <property name="start_child">
+                    <object class="GtkLabel">
+                        <property name="halign">center</property>
+                        <property name="valign">center</property>
+                        <property name="label">Params under active development</property>
+                    </object>
+                </property>
+                <property name="end_child">
+                    <object class="GtkGLArea" id="gl_view">
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="auto-render">true</property>
+                    </object>
+                </property>
+            </object>
+        </child>
+        <object class="GtkFrame" id="error_view">
+            <property name="hexpand">true</property>
+            <property name="halign">center</property>
+            <property name="valign">center</property>
+            <property name="css-classes">Window-empty</property>
+            <child>
+                <object class="GtkBox">
+                    <property name="orientation">vertical</property>
+                    <child>
+                        <object class="GtkLabel" id="error_label">
+                            <property name="label">Error not specified</property>
+                        </object>
+                    </child>
+                </object>
+            </child>
+        </object>
+    </template>
+</interface>

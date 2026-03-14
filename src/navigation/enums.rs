@@ -5,8 +5,8 @@ use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 use crate::detail_views::{
-    InoxRenderPreview, JsonInspector, MetadataInspector, NodeInspector, NodeSearch, ParamInspector,
-    ParamSearch, PhysicsInspector, TextureBrowser,
+    JsonInspector, MetadataInspector, NodeInspector, NodeSearch, ParamInspector, ParamSearch,
+    PhysicsInspector, TextureBrowser,
 };
 use crate::document::Document;
 use crate::json::JsonValueExt;
@@ -147,7 +147,6 @@ pub enum Path {
     ModelTexture(u64),
     PuppetJson(Vec<JsonIndex>),
     VendorJson(u64, Vec<JsonIndex>),
-    RenderPreview,
 }
 
 impl Path {
@@ -240,7 +239,6 @@ impl Path {
                     }
                 }
             }
-            Path::RenderPreview => "Test Preview Please Ignore".into(),
         }
     }
 
@@ -256,7 +254,6 @@ impl Path {
             | Path::PuppetParamBinding(_, _)
             | Path::ModelTexture(_) => 0,
             Path::PuppetJson(_) | Path::VendorJson(_, _) => 1,
-            Path::RenderPreview => 2,
         }
     }
 
@@ -294,7 +291,6 @@ impl Path {
             )),
             // Root Vendor JSON
             Path::VendorJson(_, _) => None,
-            Path::RenderPreview => None,
         }
     }
 
@@ -388,7 +384,6 @@ impl Path {
                     .with_object_key("bindings")
                     .with_list_index(*bind_index),
             ),
-            Path::RenderPreview => Some(JsonPath::PuppetJson(vec![])),
             Path::ModelTexture(_) => None,
         }
     }
@@ -503,7 +498,6 @@ impl Path {
             Path::VendorJson(blk, path) => {
                 JsonInspector::new_vendor_json(document, *blk, path.clone()).into()
             }
-            Path::RenderPreview => InoxRenderPreview::new(document).into(),
             path => gtk4::Label::builder()
                 .label(format!("Not yet implemented: {:?}", path))
                 .build()

@@ -10,6 +10,7 @@ mod io_adapter;
 mod json;
 mod look_and_feel;
 mod navigation;
+mod render_preview;
 mod string_ext;
 mod window;
 

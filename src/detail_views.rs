@@ -1,4 +1,3 @@
-mod inox_render_preview;
 mod json;
 mod metadata;
 mod node;
@@ -6,7 +5,6 @@ mod param;
 mod physics;
 mod texture;
 
-pub use inox_render_preview::InoxRenderPreview;
 pub use json::JsonInspector;
 pub use metadata::MetadataInspector;
 pub use node::NodeInspector;

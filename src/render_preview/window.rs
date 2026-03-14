@@ -26,10 +26,12 @@ struct State {
 }
 
 #[derive(CompositeTemplate, Default)]
-#[template(resource = "/live/arcturus/puppet-inspector/inox_render_preview.ui")]
+#[template(resource = "/live/arcturus/puppet-inspector/render_preview/window.ui")]
 pub struct InoxRenderPreviewImp {
     state: RefCell<Option<State>>,
 
+    #[template_child]
+    paned_view: TemplateChild<gtk4::Paned>,
     #[template_child]
     gl_view: TemplateChild<gtk4::GLArea>,
     #[template_child]
@@ -42,7 +44,7 @@ pub struct InoxRenderPreviewImp {
 impl ObjectSubclass for InoxRenderPreviewImp {
     const NAME: &'static str = "PIInoxRenderPreview";
     type Type = InoxRenderPreview;
-    type ParentType = gtk4::Box;
+    type ParentType = gtk4::Window;
 
     fn class_init(class: &mut Self::Class) {
         class.bind_template();
@@ -61,12 +63,13 @@ impl ObjectImpl for InoxRenderPreviewImp {
 
 impl WidgetImpl for InoxRenderPreviewImp {}
 
-impl BoxImpl for InoxRenderPreviewImp {}
+impl WindowImpl for InoxRenderPreviewImp {}
 
 glib::wrapper! {
     pub struct InoxRenderPreview(ObjectSubclass<InoxRenderPreviewImp>)
-        @extends gtk4::Box, gtk4::Widget,
-        @implements gtk4::Buildable, gtk4::Orientable, gtk4::ConstraintTarget, gtk4::Accessible;
+        @extends gtk4::Window, gtk4::Widget,
+        @implements gtk4::Buildable, gtk4::ConstraintTarget, gtk4::Accessible,
+            gtk4::Native, gtk4::Root, gtk4::ShortcutManager;
 }
 
 #[allow(unsafe_op_in_unsafe_fn)]
@@ -112,9 +115,9 @@ impl InoxRenderPreview {
     }
 
     fn display_error(&self, error: &str) {
-        self.remove(&self.imp().gl_view.get());
-        self.append(&self.imp().error_view.get());
-
+        self.imp()
+            .paned_view
+            .set_start_child(Some(&*self.imp().error_view));
         self.imp().error_label.set_label(error);
     }
 

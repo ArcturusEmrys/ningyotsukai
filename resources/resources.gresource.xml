@@ -3,8 +3,8 @@
     <gresource prefix="/live/arcturus/puppet-inspector">
         <file compressed="true">look-and-feel.css</file>
         <file compressed="true">windows-look-and-feel.css</file>
-        <file compressed="true" preprocess="xml-stripblanks">window.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">document.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">window/controller.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">document/controller.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/metadata/inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/physics/inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/node/search.ui</file>
@@ -12,7 +12,7 @@
         <file compressed="true" preprocess="xml-stripblanks">detail_views/param/search.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/param/inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/json/inspector.ui</file>
-        <file compressed="true" preprocess="xml-stripblanks">inox_render_preview.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">render_preview/window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/texture/browser.ui</file>
     </gresource>
 </gresources>

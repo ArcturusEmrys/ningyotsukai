@@ -57,6 +57,13 @@
                         <property name="icon-name">open-menu-symbolic</property>
                     </object>
                 </child>
+                <child type="end">
+                    <object class="GtkButton" id="preview_button">
+                        <property name="icon-name">open-menu-symbolic</property>
+                        <property name="label">Preview</property>
+                        <property name="action-name">doc.preview</property>
+                    </object>
+                </child>
             </object>
         </property>
         <object class="GtkFileDialog" id="filepicker">

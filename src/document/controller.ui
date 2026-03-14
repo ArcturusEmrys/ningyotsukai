@@ -63,18 +63,6 @@
                                 <property name="label">JSON</property>
                             </object>
                         </child>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="halign">center</property>
-                                <property name="valign">center</property>
-                                <property name="label">Params under active development</property>
-                            </object>
-                        </child>
-                        <child type="tab">
-                            <object class="GtkLabel">
-                                <property name="label">Render</property>
-                            </object>
-                        </child>
                     </object>
                 </property>
                 <property name="end_child">

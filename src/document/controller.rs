@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use crate::document::Document;
 use crate::gtk_ext::WidgetExt2;
 use crate::navigation::{NavigationItem, Path, Section};
+use crate::render_preview::InoxRenderPreview;
 use crate::string_ext::StrExt;
 
 /// For some reason, glib-rs does not support mutating private/impl structs.
@@ -33,7 +34,7 @@ pub struct DocumentControllerState {
 }
 
 #[derive(CompositeTemplate, Default)]
-#[template(resource = "/live/arcturus/puppet-inspector/document.ui")]
+#[template(resource = "/live/arcturus/puppet-inspector/document/controller.ui")]
 pub struct DocumentControllerImp {
     #[template_child]
     navigation_factory: TemplateChild<gtk4::SignalListItemFactory>,
@@ -218,11 +219,6 @@ impl DocumentController {
                 let model = match page_num {
                     0 => &notebook_self.imp().navigation_selection, //Resources page
                     1 => &notebook_self.imp().json_selection,       //JSON page
-                    2 => {
-                        //OpenGL render page
-                        return notebook_self
-                            .populate_detail(NavigationItem::new(Path::RenderPreview));
-                    }
                     unk => panic!("Unknown page {}", unk),
                 };
 
@@ -361,6 +357,7 @@ impl DocumentController {
         let doc_controller_jump = self.clone();
         let doc_controller_back = self.clone();
         let doc_controller_fwd = self.clone();
+        let doc_controller_preview = self.clone();
         doc.add_action_entries([
             gio::ActionEntry::builder("jump")
                 .activate(move |_, _, variant| {
@@ -378,6 +375,21 @@ impl DocumentController {
             gio::ActionEntry::builder("fwd")
                 .activate(move |_, _, _| {
                     doc_controller_fwd.jump_fwd();
+                })
+                .build(),
+            gio::ActionEntry::builder("preview")
+                .activate(move |_, _, _| {
+                    let document = doc_controller_preview
+                        .imp()
+                        .state
+                        .borrow()
+                        .open_doc
+                        .as_ref()
+                        .unwrap()
+                        .clone();
+                    let rp_window = InoxRenderPreview::new(document);
+
+                    rp_window.present();
                 })
                 .build(),
         ]);
