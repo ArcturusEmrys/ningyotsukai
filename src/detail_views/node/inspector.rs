@@ -20,13 +20,13 @@ pub struct NodeInspectorImp {
     document: RefCell<Option<(Arc<Mutex<Document>>, InoxNodeUuid)>>,
 
     #[template_child]
-    name_field: TemplateChild<gtk4::TextView>,
+    name_field: TemplateChild<gtk4::Entry>,
     #[template_child]
-    uuid_label: TemplateChild<gtk4::Label>,
+    uuid_label: TemplateChild<gtk4::Entry>,
     #[template_child]
     enabled_field: TemplateChild<gtk4::CheckButton>,
     #[template_child]
-    zsort_field: TemplateChild<gtk4::TextView>,
+    zsort_field: TemplateChild<gtk4::Entry>,
     #[template_child]
     lock_to_root_field: TemplateChild<gtk4::CheckButton>,
 }
@@ -87,7 +87,8 @@ impl NodeInspector {
             .set_text(node.name.escape_nulls().as_ref());
         self.imp()
             .uuid_label
-            .set_label(&format!("{}", Into::<u32>::into(uuid)));
+            .buffer()
+            .set_text(&format!("{}", Into::<u32>::into(uuid)));
         self.imp().enabled_field.set_active(node.enabled);
         self.imp()
             .zsort_field

@@ -7,6 +7,7 @@
             <object class="GtkLabel">
                 <property name="label">Name</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="row">0</property>
@@ -16,6 +17,7 @@
         <child>
             <object class="GtkEntry" id="name_field">
                 <property name="hexpand">true</property>
+                <property name="editable">false</property>
                 <layout>
                     <property name="column-span">2</property>
                     <property name="column">1</property>
@@ -27,6 +29,7 @@
             <object class="GtkLabel">
                 <property name="label">UUID</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="row">1</property>
@@ -34,9 +37,9 @@
             </object>
         </child>
         <child>
-            <object class="GtkLabel" id="uuid_label">
+            <object class="GtkEntry" id="uuid_label">
                 <property name="hexpand">true</property>
-                <property name="xalign">0.0</property>
+                <property name="editable">false</property>
                 <layout>
                     <property name="column-span">2</property>
                     <property name="column">1</property>
@@ -59,6 +62,7 @@
             <object class="GtkLabel">
                 <property name="label">Min</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="row">3</property>
@@ -67,6 +71,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="min_x_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">1</property>
                     <property name="row">3</property>
@@ -75,6 +80,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="min_y_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">2</property>
                     <property name="row">3</property>
@@ -85,6 +91,7 @@
             <object class="GtkLabel">
                 <property name="label">Max</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="row">4</property>
@@ -93,6 +100,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="max_x_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">1</property>
                     <property name="row">4</property>
@@ -101,6 +109,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="max_y_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">2</property>
                     <property name="row">4</property>
@@ -111,6 +120,7 @@
             <object class="GtkLabel">
                 <property name="label">Default</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="row">5</property>
@@ -119,6 +129,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="default_x_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">1</property>
                     <property name="row">5</property>
@@ -127,6 +138,7 @@
         </child>
         <child>
             <object class="GtkEntry" id="default_y_field">
+                <property name="editable">false</property>
                 <layout>
                     <property name="column">2</property>
                     <property name="row">5</property>
@@ -137,6 +149,7 @@
             <object class="GtkLabel">
                 <property name="label">Axis points</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="column-span">2</property>
@@ -159,6 +172,7 @@
             <object class="GtkLabel">
                 <property name="label">Bindings</property>
                 <property name="xalign">0.0</property>
+                <property name="yalign">0.0</property>
                 <layout>
                     <property name="column">0</property>
                     <property name="column-span">2</property>

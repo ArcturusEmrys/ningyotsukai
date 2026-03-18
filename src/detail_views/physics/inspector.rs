@@ -17,9 +17,9 @@ pub struct PhysicsInspectorImp {
     document: RefCell<Option<Arc<Mutex<Document>>>>,
 
     #[template_child]
-    ppm_scale_field: TemplateChild<gtk4::TextView>,
+    ppm_scale_field: TemplateChild<gtk4::Entry>,
     #[template_child]
-    gconstant_field: TemplateChild<gtk4::TextView>,
+    gconstant_field: TemplateChild<gtk4::Entry>,
 }
 
 #[glib::object_subclass]

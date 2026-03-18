@@ -24,7 +24,7 @@ pub struct ParamInspectorImp {
     #[template_child]
     name_field: TemplateChild<gtk4::Entry>,
     #[template_child]
-    uuid_label: TemplateChild<gtk4::Label>,
+    uuid_label: TemplateChild<gtk4::Entry>,
     #[template_child]
     min_x_field: TemplateChild<gtk4::Entry>,
     #[template_child]
@@ -232,7 +232,8 @@ impl ParamInspector {
                 .set_text(name.escape_nulls().as_ref());
             self.imp()
                 .uuid_label
-                .set_label(&format!("{}", param.uuid.0));
+                .buffer()
+                .set_text(&format!("{}", param.uuid.0));
             self.imp()
                 .min_x_field
                 .buffer()
