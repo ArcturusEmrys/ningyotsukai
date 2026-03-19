@@ -1,28 +1,3 @@
-[package]
-name = "puppet-inspector"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-glib = { version = "0.22.0" }
-gio = { version = "0.22.1" }
-inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "394f3b3f93d7dc8fb10e6fc3e08773e630e9f92d" }
-inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "394f3b3f93d7dc8fb10e6fc3e08773e630e9f92d" }
-json = "0.12.4"
-glow = "0.14.1"
-gl46 = "0.2.1"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-egl = "0.2.7"
-
-[target.'cfg(not(windows))'.dependencies]
-gtk4 = { version = "0.11.0", features = ["v4_10"] }
-gdk4 = { version = "0.11.0", features = ["v4_10"] }
-
-[target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = ["UI_ViewManagement", "Win32_Graphics_OpenGL"] }
-gtk4 = { version = "0.11.0", features = ["v4_20"] }
-gdk4 = { version = "0.11.0", features = ["v4_20"] }
-
-[build-dependencies]
-glib-build-tools = "0.22.0"
+[workspace]
+resolver="3"
+members = ["puppet-inspector"]
