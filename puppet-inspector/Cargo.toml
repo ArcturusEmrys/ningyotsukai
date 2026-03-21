@@ -6,8 +6,8 @@ edition = "2024"
 [dependencies]
 glib = { version = "0.22.0" }
 gio = { version = "0.22.1" }
-inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "394f3b3f93d7dc8fb10e6fc3e08773e630e9f92d" }
-inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "394f3b3f93d7dc8fb10e6fc3e08773e630e9f92d" }
+inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "b92be8c7d12e3c790a4d6273a28399214720623b" }
+inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "b92be8c7d12e3c790a4d6273a28399214720623b" }
 json = "0.12.4"
 glow = "0.14.1"
 gl46 = "0.2.1"
