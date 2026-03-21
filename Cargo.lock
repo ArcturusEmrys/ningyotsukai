@@ -879,6 +879,7 @@ dependencies = [
  "gio",
  "glib",
  "glib-build-tools",
+ "graphene-rs",
  "gtk4",
  "json",
  "smol",

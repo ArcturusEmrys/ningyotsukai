@@ -7,7 +7,7 @@ use crate::io::error::IoThreadError;
 use crate::io::vts::VtsPacket;
 
 /// Represents a message sent to the IO thread.
-/// 
+///
 /// The C parameter stands for cookie; any value that may be used to identify
 /// particular requests and associate them with responses.
 pub enum IoMessage<C> {
@@ -32,7 +32,7 @@ impl<C> IoMessage<C> {
     }
 
     /// Retrieve the cookie value for this request.
-    /// 
+    ///
     /// A cookie is a value used to identify requests and responses. The
     /// sender of a request sets the cookie, and any response messages
     /// associated with the same request get the same cookie value.
@@ -45,7 +45,7 @@ impl<C> IoMessage<C> {
 }
 
 /// Represents a response from the IO thread back to the sender.
-/// 
+///
 /// Since responses are asynchronous to their requests, we use cookie values
 /// to identify them. Responses will always have the same cookie as the
 /// message that triggered the response.

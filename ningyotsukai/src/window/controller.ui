@@ -13,6 +13,10 @@
                 </child>
             </object>
         </property>
+        <child>
+            <object class="NGTDocumentController" id="document_controller">
+            </object>
+        </child>
     </template>
     <menu id="main_menu">
         <section>

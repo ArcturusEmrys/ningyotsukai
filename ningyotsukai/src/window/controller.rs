@@ -6,13 +6,7 @@ use glib::subclass::InitializingObject;
 use gtk4::CompositeTemplate;
 use gtk4::subclass::prelude::*;
 
-use std::cell::RefCell;
-
-/// For some reason, glib-rs does not support mutating private/impl structs.
-/// Hence the mutability hack.
-#[derive(Default)]
-pub struct WindowControllerState {
-}
+use crate::document::DocumentController;
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/ningyotsukai/window/controller.ui")]
@@ -21,7 +15,8 @@ pub struct WindowControllerImp {
     main_menu: TemplateChild<gio::MenuModel>,
     #[template_child]
     main_menu_button: TemplateChild<gtk4::MenuButton>,
-    state: RefCell<WindowControllerState>,
+    #[template_child]
+    document_controller: TemplateChild<DocumentController>,
 }
 
 #[glib::object_subclass]
@@ -63,10 +58,14 @@ impl WindowController {
         let selfish: WindowController =
             glib::Object::builder().property("application", app).build();
 
-        let main_menu = selfish.imp().main_menu.clone();
-        let main_menu_button = selfish.imp().main_menu_button.clone();
-        main_menu_button.set_menu_model(Some(&main_menu));
+        selfish.bind();
 
         selfish
+    }
+
+    fn bind(&self) {
+        let main_menu = self.imp().main_menu.clone();
+        let main_menu_button = self.imp().main_menu_button.clone();
+        main_menu_button.set_menu_model(Some(&main_menu));
     }
 }

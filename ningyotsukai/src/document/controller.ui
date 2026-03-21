@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="NGTDocumentController" parent="GtkBox">
+        <child>
+            <object class="GtkScrolledWindow">
+                <property name="hexpand">true</property>
+                <property name="vexpand">true</property>
+                <child>
+                    <object class="NGTStageWidget" id="stage">
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>
