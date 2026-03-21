@@ -17,7 +17,7 @@
             <object class="GtkActionBar">
                 <child type="end">
                     <object class="GtkEditableLabel" id="zoom_label">
-                        <property name="text">Hi</property>
+                        <property name="max-width-chars">0</property>
                     </object>
                 </child>
                 <child type="end">
@@ -25,6 +25,16 @@
                         <property name="orientation">horizontal</property>
                         <property name="adjustment">zoom_adjust</property>
                         <property name="width-request">200</property>
+
+                        <marks>
+                            <mark value="-1" position="bottom"></mark> <!-- 10% -->
+                            <mark value="-0.60" position="bottom"></mark> <!-- 25% -->
+                            <mark value="-0.30" position="bottom"></mark> <!-- 50% -->
+                            <mark value="0" position="bottom"></mark> <!-- 100% -->
+                            <mark value="0.30" position="bottom"></mark> <!-- 200% -->
+                            <mark value="0.60" position="bottom"></mark> <!-- 400% -->
+                            <mark value="1" position="bottom"></mark> <!-- 1000% -->
+                        </marks>
                     </object>
                 </child>
             </object>
