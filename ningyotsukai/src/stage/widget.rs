@@ -13,10 +13,13 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
+use crate::stage::border::StageBorderGizmo;
 
 #[derive(Default)]
 pub struct StageWidgetState {
     document: Arc<Mutex<Document>>,
+
+    border_gizmo: Option<StageBorderGizmo>
 }
 
 #[derive(glib::Properties)]
@@ -58,7 +61,9 @@ impl ObjectSubclass for StageWidgetImp {
     type ParentType = gtk4::Widget;
     type Interfaces = (gtk4::Scrollable,);
 
-    fn class_init(class: &mut Self::Class) {}
+    fn class_init(class: &mut Self::Class) {
+        class.set_css_name("ningyo-stage");
+    }
 
     fn instance_init(obj: &InitializingObject<Self>) {}
 }
@@ -67,6 +72,17 @@ impl ObjectSubclass for StageWidgetImp {
 impl ObjectImpl for StageWidgetImp {
     fn constructed(&self) {
         self.parent_constructed();
+        
+        let border_gizmo = StageBorderGizmo::new();
+
+        border_gizmo.set_parent(&*self.obj());
+        self.state.borrow_mut().border_gizmo = Some(border_gizmo);
+    }
+
+    fn dispose(&self) {
+        if let Some(gizmo) = self.state.borrow_mut().border_gizmo.take() {
+            gizmo.unparent();
+        }
     }
 }
 
@@ -104,8 +120,9 @@ impl WidgetImpl for StageWidgetImp {
             &graphene::Rect::new(0.0, 0.0, size.x(), size.y()),
         );
 
-        // TODO: Add a border and make it CSS styleable
-        //snapshot.append_border(outline, border_width, border_color);
+        if let Some(ref border) = self.state.borrow().border_gizmo {
+            self.obj().snapshot_child(border, snapshot);
+        }
 
         snapshot.pop();
     }
@@ -120,25 +137,43 @@ impl WidgetImpl for StageWidgetImp {
 impl ScrollableImpl for StageWidgetImp {}
 
 impl StageWidgetImp {
+    /// Configure all the GTK properties to match the current state of the
+    /// stage. Must be called whenever:
+    /// 
+    /// 1. The contents of the stage change
+    /// 2. Adjustments are set
+    /// 3. The window is resized
     fn configure_adjustments(&self) {
         let state = self.state.borrow();
         let document = state.document.lock().unwrap();
+
+        let width = self.obj().width();
+        let height = self.obj().height();
+
+        let stage_width = document.stage().size().x();
+        let stage_height = document.stage().size().y();
 
         //TODO: Off-stage scrolling should be limited to:
         // 1. Minimum: 3/4ths the window size (so you can't normally scroll the stage off)
         // 2. The furthest stage object in that direction (so you can get at things you accidentally put there)
         if let Some(ref adjust) = *self.hadjustment.borrow() {
-            adjust.set_lower((document.stage().size().x() * -1.0) as f64);
-            adjust.set_upper((document.stage().size().x() * 2.0) as f64);
-            adjust.set_page_increment(self.obj().width() as f64);
-            adjust.set_page_size(self.obj().width() as f64);
+            adjust.set_lower((stage_width * -1.0) as f64);
+            adjust.set_upper((stage_width * 2.0) as f64);
+            adjust.set_page_increment(width as f64);
+            adjust.set_page_size(width as f64);
         }
 
         if let Some(ref adjust) = *self.vadjustment.borrow() {
-            adjust.set_lower((document.stage().size().y() * -1.0) as f64);
-            adjust.set_upper((document.stage().size().y() * 2.0) as f64);
-            adjust.set_page_increment(self.obj().height() as f64);
-            adjust.set_page_size(self.obj().height() as f64);
+            adjust.set_lower((stage_height * -1.0) as f64);
+            adjust.set_upper((stage_height * 2.0) as f64);
+            adjust.set_page_increment(height as f64);
+            adjust.set_page_size(height as f64);
+        }
+
+        if let Some(ref border) = self.state.borrow().border_gizmo {
+            // If we don't measure our children, GTK complains
+            border.measure(gtk4::Orientation::Horizontal, stage_width as i32);
+            border.allocate(stage_width as i32, stage_height as i32, -1, None);
         }
     }
 

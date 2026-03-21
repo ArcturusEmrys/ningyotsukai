@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<gresources>
+    <gresource prefix="/live/arcturus/ningyo-laf">
+        <file compressed="true">look-and-feel.css</file>
+        <file compressed="true">windows-look-and-feel.css</file>
+    </gresource>
+</gresources>

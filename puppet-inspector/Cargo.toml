@@ -11,6 +11,7 @@ inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "b92be8
 json = "0.12.4"
 glow = "0.14.1"
 gl46 = "0.2.1"
+ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 egl = "0.2.7"
@@ -20,7 +21,7 @@ gtk4 = { version = "0.11.0", features = ["v4_10"] }
 gdk4 = { version = "0.11.0", features = ["v4_10"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = ["UI_ViewManagement", "Win32_Graphics_OpenGL"] }
+windows = { version = "0.62.2", features = ["Win32_Graphics_OpenGL"] }
 gtk4 = { version = "0.11.0", features = ["v4_20"] }
 gdk4 = { version = "0.11.0", features = ["v4_20"] }
 

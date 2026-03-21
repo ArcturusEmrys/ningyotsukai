@@ -872,6 +872,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ningyo-look-and-feel"
+version = "0.1.0"
+dependencies = [
+ "gdk4",
+ "gio",
+ "glib",
+ "glib-build-tools",
+ "gtk4",
+ "windows",
+]
+
+[[package]]
 name = "ningyotsukai"
 version = "0.1.0"
 dependencies = [
@@ -882,6 +894,7 @@ dependencies = [
  "graphene-rs",
  "gtk4",
  "json",
+ "ningyo-look-and-feel",
  "smol",
  "thiserror 2.0.18",
 ]
@@ -1014,6 +1027,7 @@ dependencies = [
  "inox2d",
  "inox2d-opengl",
  "json",
+ "ningyo-look-and-feel",
  "windows",
 ]
 

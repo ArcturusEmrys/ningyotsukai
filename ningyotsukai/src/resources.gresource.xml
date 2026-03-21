@@ -3,5 +3,7 @@
     <gresource prefix="/live/arcturus/ningyotsukai">
         <file compressed="true" preprocess="xml-stripblanks">window/controller.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">document/controller.ui</file>
+        <file compressed="true">style.css</file>
+        <file compressed="true">stage/stage.css</file>
     </gresource>
 </gresources>

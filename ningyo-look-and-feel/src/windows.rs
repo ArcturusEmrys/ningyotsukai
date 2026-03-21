@@ -69,7 +69,7 @@ impl LAFProvider {
         }
 
         let laf_css = gtk4::CssProvider::new();
-        laf_css.load_from_resource("/live/arcturus/puppet-inspector/windows-look-and-feel.css");
+        laf_css.load_from_resource("/live/arcturus/ningyo-laf/windows-look-and-feel.css");
 
         let color_css = gtk4::CssProvider::new();
 

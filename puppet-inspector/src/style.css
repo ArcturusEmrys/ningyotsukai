@@ -1,0 +1,6 @@
+@import "window/controller.css";
+@import "detail_views/search.css";
+
+textview {
+    padding: 4px;
+}
