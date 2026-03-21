@@ -6,7 +6,7 @@ use gtk4;
 
 use glib::subclass::InitializingObject;
 use gtk4::CompositeTemplate;
-use gtk4::prelude::{AdjustmentExt, ScrollableExt, SnapshotExt, SnapshotExtManual, WidgetExt};
+use gtk4::prelude::{AdjustmentExt, GestureDragExt, ScrollableExt, SnapshotExt, SnapshotExtManual, WidgetExt};
 use gtk4::subclass::prelude::*;
 
 use std::cell::{Cell, RefCell};
@@ -18,8 +18,13 @@ use crate::stage::border::StageBorderGizmo;
 #[derive(Default)]
 pub struct StageWidgetState {
     document: Arc<Mutex<Document>>,
+    
+    /// Internal accounting widget for the border around the stage.
+    border_gizmo: Option<StageBorderGizmo>,
 
-    border_gizmo: Option<StageBorderGizmo>
+    /// The scroll position at the time our middle-click drag recognizer
+    /// started.
+    starting_drag_position: Option<[i32; 2]>,
 }
 
 #[derive(glib::Properties)]
@@ -77,6 +82,29 @@ impl ObjectImpl for StageWidgetImp {
 
         border_gizmo.set_parent(&*self.obj());
         self.state.borrow_mut().border_gizmo = Some(border_gizmo);
+
+        let drag = gtk4::GestureDrag::builder().button(gdk4::BUTTON_MIDDLE).build();
+        
+        let drag_begin_self = self.obj().clone();
+        drag.connect_drag_begin(move |_, _, _| {
+            let mut state = drag_begin_self.imp().state.borrow_mut();
+
+            if let (Some(h_adjust), Some(v_adjust)) = (&*drag_begin_self.imp().hadjustment.borrow(), &*drag_begin_self.imp().vadjustment.borrow()) {
+                state.starting_drag_position = Some([h_adjust.value() as i32, v_adjust.value() as i32]);
+            }
+        });
+
+        let drag_drag_self = self.obj().clone();
+        drag.connect_drag_update(move |_, offset_x, offset_y| {
+            let state = drag_drag_self.imp().state.borrow();
+
+            if let (Some(starting_drag_position), Some(h_adjust), Some(v_adjust)) = (state.starting_drag_position, &*drag_drag_self.imp().hadjustment.borrow(), &*drag_drag_self.imp().vadjustment.borrow()) {
+                h_adjust.set_value(starting_drag_position[0] as f64 - offset_x);
+                v_adjust.set_value(starting_drag_position[1] as f64 - offset_y);
+            }
+        });
+
+        self.obj().add_controller(drag);
     }
 
     fn dispose(&self) {
