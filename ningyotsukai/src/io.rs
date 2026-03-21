@@ -1,9 +1,9 @@
 //! Asynchronous I/O thread
- 
-mod vts;
-mod error;
+
 mod comm;
+mod error;
 mod main;
+mod vts;
 
 pub use main::start;
 
