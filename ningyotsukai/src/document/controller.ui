@@ -1,15 +1,46 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <interface>
     <template class="NGTDocumentController" parent="GtkBox">
+        <property name="orientation">vertical</property>
         <child>
             <object class="GtkScrolledWindow">
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
                 <child>
                     <object class="NGTStageWidget" id="stage">
+                        <property name="zadjustment">zoom_adjust</property>
+                    </object>
+                </child>
+            </object>
+        </child>
+        <child>
+            <object class="GtkActionBar">
+                <child type="end">
+                    <object class="GtkEditableLabel" id="zoom_label">
+                        <property name="text">Hi</property>
+                    </object>
+                </child>
+                <child type="end">
+                    <object class="GtkScale">
+                        <property name="orientation">horizontal</property>
+                        <property name="adjustment">zoom_adjust</property>
+                        <property name="width-request">200</property>
                     </object>
                 </child>
             </object>
         </child>
     </template>
+    <!-- This is a logarithmic scale from 10% to 1000% in order to ensure that
+         zooming has equal amounts of control between 10%, 100%, and 1000%.
+
+         Because of this, code that needs to display the zoom value to the
+         user or draw with it must first raise 10 to the power of the zoom
+         factor.
+      -->
+    <object class="GtkAdjustment" id="zoom_adjust">
+        <property name="lower">-1</property>
+        <property name="upper">1</property>
+        <property name="value">0</property>
+        <property name="step_increment">0.1</property>
+    </object>
 </interface>

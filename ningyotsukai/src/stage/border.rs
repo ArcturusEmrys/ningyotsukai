@@ -6,8 +6,7 @@ use glib::subclass::InitializingObject;
 use gtk4::subclass::prelude::*;
 
 #[derive(Default)]
-pub struct StageBorderGizmoImp {
-}
+pub struct StageBorderGizmoImp {}
 
 #[glib::object_subclass]
 impl ObjectSubclass for StageBorderGizmoImp {

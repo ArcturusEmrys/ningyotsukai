@@ -4,6 +4,7 @@ use gtk4;
 
 use glib::subclass::InitializingObject;
 use gtk4::CompositeTemplate;
+use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
@@ -22,6 +23,11 @@ pub struct DocumentControllerState {
 pub struct DocumentControllerImp {
     #[template_child]
     stage: TemplateChild<StageWidget>,
+    #[template_child]
+    zoom_label: TemplateChild<gtk4::EditableLabel>,
+    #[template_child]
+    zoom_adjust: TemplateChild<gtk4::Adjustment>,
+
     state: RefCell<DocumentControllerState>,
 }
 
@@ -43,6 +49,52 @@ impl ObjectSubclass for DocumentControllerImp {
 impl ObjectImpl for DocumentControllerImp {
     fn constructed(&self) {
         self.parent_constructed();
+
+        self.stage
+            .set_document(self.state.borrow().document.clone());
+
+        self.zoom_label.set_text(&format!(
+            "{:.0}%",
+            10.0_f64.powf(self.zoom_adjust.value()) * 100.0
+        ));
+
+        let zoom_adjust_self = self.obj().clone();
+        self.zoom_adjust.connect_value_changed(move |adj| {
+            zoom_adjust_self
+                .imp()
+                .zoom_label
+                .set_text(&format!("{:.0}%", 10.0_f64.powf(adj.value()) * 100.0));
+        });
+
+        let zoom_label_self = self.obj().clone();
+        self.zoom_label.connect_editing_notify(move |label| {
+            if label.is_editing() {
+                //Do nothing until the user enters a value.
+                return;
+            }
+
+            let label_value = label.text();
+            let mut label_value = label_value.trim();
+            if label_value.ends_with("%") {
+                label_value = label_value.trim_end_matches("%");
+            }
+
+            let value = if let Ok(value) = label_value.parse::<f64>() {
+                (value / 100.0).log(10.0)
+            } else {
+                f64::NAN
+            };
+
+            if value.is_finite() && !value.is_nan() {
+                zoom_label_self.imp().zoom_adjust.set_value(value);
+            } else {
+                //This resets the label, so the user can try again
+                zoom_label_self
+                    .imp()
+                    .zoom_adjust
+                    .set_value(zoom_label_self.imp().zoom_adjust.value());
+            }
+        });
     }
 }
 
@@ -61,14 +113,6 @@ impl DocumentController {
         let selfish: DocumentController =
             glib::Object::builder().property("application", app).build();
 
-        selfish.bind();
-
         selfish
-    }
-
-    fn bind(&self) {
-        self.imp()
-            .stage
-            .set_document(self.imp().state.borrow().document.clone());
     }
 }

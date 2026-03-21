@@ -1,12 +1,9 @@
-use gio;
 use glib;
-use glib::object::ObjectExt;
 use graphene;
 use gtk4;
 
 use glib::subclass::InitializingObject;
-use gtk4::CompositeTemplate;
-use gtk4::prelude::{AdjustmentExt, GestureDragExt, ScrollableExt, SnapshotExt, SnapshotExtManual, WidgetExt};
+use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::{Cell, RefCell};
@@ -18,13 +15,16 @@ use crate::stage::border::StageBorderGizmo;
 #[derive(Default)]
 pub struct StageWidgetState {
     document: Arc<Mutex<Document>>,
-    
+
     /// Internal accounting widget for the border around the stage.
     border_gizmo: Option<StageBorderGizmo>,
 
     /// The scroll position at the time our middle-click drag recognizer
     /// started.
     starting_drag_position: Option<[i32; 2]>,
+
+    /// Whether or not the middle mouse button is down.
+    middle_mouse_button_down: bool,
 }
 
 #[derive(glib::Properties)]
@@ -45,6 +45,10 @@ pub struct StageWidgetImp {
 
     #[property(name="vscroll-policy", get, set, override_interface=gtk4::Scrollable)]
     vscroll_policy: Cell<gtk4::ScrollablePolicy>,
+
+    //Our zoom adjustment. Might be wired up to a widget at some point.
+    #[property(get, set=Self::set_zadjustment)]
+    zadjustment: RefCell<Option<gtk4::Adjustment>>,
 }
 
 impl Default for StageWidgetImp {
@@ -55,6 +59,7 @@ impl Default for StageWidgetImp {
             vadjustment: RefCell::new(None),
             hscroll_policy: Cell::new(gtk4::ScrollablePolicy::Natural),
             vscroll_policy: Cell::new(gtk4::ScrollablePolicy::Natural),
+            zadjustment: RefCell::new(None),
         }
     }
 }
@@ -77,20 +82,26 @@ impl ObjectSubclass for StageWidgetImp {
 impl ObjectImpl for StageWidgetImp {
     fn constructed(&self) {
         self.parent_constructed();
-        
+
         let border_gizmo = StageBorderGizmo::new();
 
         border_gizmo.set_parent(&*self.obj());
         self.state.borrow_mut().border_gizmo = Some(border_gizmo);
 
-        let drag = gtk4::GestureDrag::builder().button(gdk4::BUTTON_MIDDLE).build();
-        
+        let drag = gtk4::GestureDrag::builder()
+            .button(gdk4::BUTTON_MIDDLE)
+            .build();
+
         let drag_begin_self = self.obj().clone();
         drag.connect_drag_begin(move |_, _, _| {
             let mut state = drag_begin_self.imp().state.borrow_mut();
 
-            if let (Some(h_adjust), Some(v_adjust)) = (&*drag_begin_self.imp().hadjustment.borrow(), &*drag_begin_self.imp().vadjustment.borrow()) {
-                state.starting_drag_position = Some([h_adjust.value() as i32, v_adjust.value() as i32]);
+            if let (Some(h_adjust), Some(v_adjust)) = (
+                &*drag_begin_self.imp().hadjustment.borrow(),
+                &*drag_begin_self.imp().vadjustment.borrow(),
+            ) {
+                state.starting_drag_position =
+                    Some([h_adjust.value() as i32, v_adjust.value() as i32]);
             }
         });
 
@@ -98,13 +109,65 @@ impl ObjectImpl for StageWidgetImp {
         drag.connect_drag_update(move |_, offset_x, offset_y| {
             let state = drag_drag_self.imp().state.borrow();
 
-            if let (Some(starting_drag_position), Some(h_adjust), Some(v_adjust)) = (state.starting_drag_position, &*drag_drag_self.imp().hadjustment.borrow(), &*drag_drag_self.imp().vadjustment.borrow()) {
+            if let (Some(starting_drag_position), Some(h_adjust), Some(v_adjust)) = (
+                state.starting_drag_position,
+                &*drag_drag_self.imp().hadjustment.borrow(),
+                &*drag_drag_self.imp().vadjustment.borrow(),
+            ) {
                 h_adjust.set_value(starting_drag_position[0] as f64 - offset_x);
                 v_adjust.set_value(starting_drag_position[1] as f64 - offset_y);
             }
         });
 
         self.obj().add_controller(drag);
+
+        let middle_click = gtk4::GestureClick::builder()
+            .button(gdk4::BUTTON_MIDDLE)
+            .build();
+        let middle_click_pressed_self = self.obj().clone();
+        middle_click.connect_pressed(move |_, _, _, _| {
+            middle_click_pressed_self
+                .imp()
+                .state
+                .borrow_mut()
+                .middle_mouse_button_down = true;
+        });
+
+        let middle_click_released_self = self.obj().clone();
+        middle_click.connect_released(move |_, _, _, _| {
+            middle_click_released_self
+                .imp()
+                .state
+                .borrow_mut()
+                .middle_mouse_button_down = false;
+        });
+
+        self.obj().add_controller(middle_click);
+
+        let scroll_wheel = gtk4::EventControllerScroll::builder()
+            .flags(gtk4::EventControllerScrollFlags::VERTICAL)
+            .build();
+
+        let scroll_wheel_self = self.obj().clone();
+        scroll_wheel.connect_scroll(move |_, _, dy| {
+            let mmb_down = scroll_wheel_self
+                .imp()
+                .state
+                .borrow()
+                .middle_mouse_button_down;
+            if mmb_down {
+                // With a normal mouse, dy yields either 1 or -1.
+                if let Some(ref z_adjust) = *scroll_wheel_self.imp().zadjustment.borrow() {
+                    z_adjust.set_value(z_adjust.value() + z_adjust.step_increment() * dy * -1.0);
+                }
+
+                return glib::Propagation::Stop;
+            }
+
+            glib::Propagation::Proceed
+        });
+
+        self.obj().add_controller(scroll_wheel);
     }
 
     fn dispose(&self) {
@@ -127,6 +190,18 @@ impl WidgetImpl for StageWidgetImp {
         ));
 
         let size = document.stage().size();
+
+        // This is a log scale, but we need linear zoom.
+        // See document/controller.ui for more info
+        let zoom = 10.0_f32.powf(
+            self.zadjustment
+                .borrow()
+                .as_ref()
+                .map(|z| z.value())
+                .unwrap_or(1.0) as f32,
+        );
+
+        snapshot.scale(zoom, zoom);
 
         let hscroll_offset = self
             .hadjustment
@@ -167,7 +242,7 @@ impl ScrollableImpl for StageWidgetImp {}
 impl StageWidgetImp {
     /// Configure all the GTK properties to match the current state of the
     /// stage. Must be called whenever:
-    /// 
+    ///
     /// 1. The contents of the stage change
     /// 2. Adjustments are set
     /// 3. The window is resized
@@ -227,6 +302,19 @@ impl StageWidgetImp {
         }
 
         *self.vadjustment.borrow_mut() = adjust;
+
+        self.configure_adjustments();
+    }
+
+    fn set_zadjustment(&self, adjust: Option<gtk4::Adjustment>) {
+        let self_obj = self.obj().clone();
+        if let Some(ref adjust) = adjust {
+            adjust.connect_value_changed(move |_| {
+                self_obj.queue_draw();
+            });
+        }
+
+        *self.zadjustment.borrow_mut() = adjust;
 
         self.configure_adjustments();
     }
