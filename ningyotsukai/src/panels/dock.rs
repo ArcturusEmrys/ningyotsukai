@@ -1,6 +1,5 @@
 use gdk4;
 use glib;
-use graphene;
 use gtk4;
 
 use glib::subclass::InitializingObject;
@@ -81,7 +80,7 @@ impl ObjectImpl for PanelDockImp {
             false
         });
 
-        self.obj().add_controller(drop_target);
+        //self.obj().add_controller(drop_target);
     }
 }
 

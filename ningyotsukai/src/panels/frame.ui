@@ -2,14 +2,11 @@
 <interface>
     <template class="NGTPanelFrame" parent="GtkBox">
         <property name="orientation">vertical</property>
-        <child>
-            <object class="GtkLabel" id="handle">
-                <property name="label">My frame</property>
-                <property name="halign">start</property>
-            </object>
-        </child>
-        <child>
-            <object class="GtkFrame" id="contents">
+        <property name="can-focus">true</property>
+        <child type="panel-frame-internal-notebook">
+            <object class="GtkNotebook" id="contents">
+                <property name="scrollable">true</property>
+                <property name="enable-popup">false</property>
             </object>
         </child>
     </template>

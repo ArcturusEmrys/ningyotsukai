@@ -4,20 +4,27 @@
         <property name="orientation">vertical</property>
         <child>
             <object class="GtkPaned">
+                <property name="resize-start-child">false</property>
                 <child type="start">
                     <object class="NGTPanelDock">
                         <child>
                             <object class="NGTPanelFrame">
-                                <property name="name">Child 1</property>
+                                <property name="group-name">Panel Dock</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 1</property>
+                                    </object>
+                                </child>
+                                <child type="tab">
+                                    <object class="GtkLabel">
+                                        <property name="label">Tab</property>
                                     </object>
                                 </child>
                             </object>
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="group-name">Panel Dock</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 2</property>
@@ -27,6 +34,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="group-name">Panel Dock</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 3</property>
@@ -36,6 +44,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="group-name">Panel Dock</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 4</property>
@@ -45,6 +54,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="group-name">Panel Dock</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 5</property>
@@ -56,6 +66,7 @@
                 </child>
                 <child type="end">
                     <object class="GtkPaned">
+                        <property name="resize-end-child">false</property>
                         <child type="start">
                             <object class="GtkScrolledWindow">
                                 <property name="hexpand">true</property>

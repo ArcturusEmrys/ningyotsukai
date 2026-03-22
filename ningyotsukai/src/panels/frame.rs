@@ -13,13 +13,13 @@ use std::cell::RefCell;
 #[properties(wrapper_type=PanelFrame)]
 pub struct PanelFrameImp {
     #[template_child]
-    handle: TemplateChild<gtk4::Label>,
+    contents: TemplateChild<gtk4::Notebook>,
 
-    #[template_child]
-    contents: TemplateChild<gtk4::Frame>,
+    #[property(name="group-name", get, set)]
+    group_name: RefCell<String>,
 
-    #[property(get, set)]
-    name: RefCell<String>
+    /// Fix for a reference handling bug in the specific version of GTK I'm using.
+    added_widgets: RefCell<Vec<gtk4::Widget>>
 }
 
 #[glib::object_subclass]
@@ -27,6 +27,7 @@ impl ObjectSubclass for PanelFrameImp {
     const NAME: &'static str = "NGTPanelFrame";
     type Type = PanelFrame;
     type ParentType = gtk4::Box;
+    type Interfaces = (gtk4::Buildable,);
 
     fn class_init(class: &mut Self::Class) {
         class.bind_template();
@@ -38,10 +39,12 @@ impl ObjectSubclass for PanelFrameImp {
     }
 }
 
+#[glib::derived_properties]
 impl ObjectImpl for PanelFrameImp {
     fn constructed(&self) {
         self.parent_constructed();
 
+        /*
         let drag_source = gtk4::DragSource::new();
 
         let drag_source_prepare_self = self.obj().clone();
@@ -56,9 +59,11 @@ impl ObjectImpl for PanelFrameImp {
             source.set_icon(Some(&preview), 0, 0);
         });
 
-        self.handle.add_controller(drag_source);
+        self.handle.add_controller(drag_source); */
 
-        self.obj().bind_property("name", &*self.handle, "label").build();
+        self.obj()
+            .bind_property("group-name", &*self.contents, "group-name")
+            .build();
     }
 }
 
@@ -69,7 +74,21 @@ impl BoxImpl for PanelFrameImp {}
 impl BuildableImpl for PanelFrameImp {
     fn add_child(&self, builder: &gtk4::Builder, object: &glib::Object, name: Option<&str>) {
         if let Some(widget) = object.downcast_ref::<gtk4::Widget>() {
-            self.contents.set_child(Some(widget))
+            self.added_widgets.borrow_mut().push(widget.clone());
+            match name {
+                Some("panel-frame-internal-notebook") => {
+                    self.parent_add_child(builder, object, name)
+                }
+                Some("tab") => {
+                    let last_page = self.contents.nth_page(Some(self.contents.n_pages() - 1)).unwrap();
+                    self.contents.set_tab_label(&last_page, Some(widget));
+                }
+                _ => {
+                    self.contents.append_page(widget, None::<&gtk4::Widget>);
+                    self.contents.set_tab_detachable(widget, true);
+                    self.contents.set_tab_reorderable(widget, true);
+                }
+            }
         } else {
             self.parent_add_child(builder, object, name)
         }
