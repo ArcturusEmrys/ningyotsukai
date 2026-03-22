@@ -36,7 +36,7 @@ impl ObjectImpl for PanelDockImp {
 
         let drop_target = gtk4::DropTarget::new(PanelFrame::static_type(), gdk4::DragAction::COPY);
         let drop_target_drop_self = self.obj().clone();
-        drop_target.connect_drop(move |_, value, x, y| {
+        drop_target.connect_drop(move |_, value, _x, y| {
             if let Ok(frame) = value.get::<PanelFrame>() {
                 let mut my_child = drop_target_drop_self.first_child();
                 let mut index = 0;
@@ -58,12 +58,10 @@ impl ObjectImpl for PanelDockImp {
                     index += 1;
                 }
 
-                if let Some(old_dock) = frame.parent() {
-                    old_dock.downcast::<PanelDock>().unwrap().remove(&frame);
-                }
-
                 if let Some((pre, pre_index)) = drop_target_widget {
                     if pre != frame.clone().upcast::<gtk4::Widget>() {
+                        frame.unparent();
+
                         if let Some(frame_index) = frame_child_index
                             && frame_index < pre_index
                         {
@@ -73,6 +71,7 @@ impl ObjectImpl for PanelDockImp {
                         }
                     }
                 } else {
+                    frame.unparent();
                     drop_target_drop_self.append(&frame);
                 }
                 return true;
