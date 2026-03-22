@@ -115,4 +115,20 @@
         <property name="value">0</property>
         <property name="step_increment">0.1</property>
     </object>
+    <object class="GtkFileDialog" id="filepicker_puppet">
+        <property name="title" translatable="yes">Select puppet...</property>
+        <property name="filters">
+            <object class="GListStore">
+                <child>
+                    <object class="GtkFileFilter">
+                        <property name="name" translatable="yes">Inochi2D Puppet (*.inp)</property>
+                        <!-- TODO: Does Inochi have a mimetype? -->
+                        <patterns>
+                            <pattern>*.inp</pattern>
+                        </patterns>
+                    </object>
+                </child>
+            </object>
+        </property>
+    </object>
 </interface>

@@ -262,6 +262,8 @@ impl WidgetImpl for StageWidgetImp {
             self.obj().snapshot_child(border, snapshot);
         }
 
+        for puppet in document.stage().iter() {}
+
         snapshot.pop();
     }
 

@@ -27,6 +27,12 @@
         </section>
         <section>
             <item>
+                <attribute name="label" translatable="yes">Import Puppet...</attribute>
+                <attribute name="action">doc.import-puppet</attribute>
+            </item>
+        </section>
+        <section>
+            <item>
                 <attribute name="label" translatable="yes">Exit</attribute>
                 <attribute name="action">window.close</attribute>
             </item>

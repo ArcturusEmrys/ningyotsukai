@@ -17,4 +17,8 @@ impl Document {
     pub fn stage(&self) -> &Stage {
         &self.stage
     }
+
+    pub fn stage_mut(&mut self) -> &mut Stage {
+        &mut self.stage
+    }
 }

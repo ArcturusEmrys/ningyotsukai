@@ -7,10 +7,13 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use crate::document::model::Document;
-use crate::stage::StageWidget;
+use crate::stage::{Puppet, StageWidget};
+
+use ningyo_extensions::{FileIn, WidgetExt2};
 
 #[derive(Default)]
 pub struct DocumentControllerState {
@@ -26,6 +29,8 @@ pub struct DocumentControllerImp {
     zoom_label: TemplateChild<gtk4::EditableLabel>,
     #[template_child]
     zoom_adjust: TemplateChild<gtk4::Adjustment>,
+    #[template_child]
+    filepicker_puppet: TemplateChild<gtk4::FileDialog>,
 
     state: RefCell<DocumentControllerState>,
 }
@@ -51,6 +56,37 @@ impl ObjectImpl for DocumentControllerImp {
 
         self.stage
             .set_document(self.state.borrow().document.clone());
+
+        // Wire up document specific actions
+        let doc = gio::SimpleActionGroup::new();
+
+        let doc_controller_import_puppet = self.obj().clone();
+        doc.add_action_entries([gio::ActionEntry::builder("import-puppet")
+            .activate(move |_, _, _| {
+                let callback_self = doc_controller_import_puppet.clone();
+                doc_controller_import_puppet.imp().filepicker_puppet.open(
+                    doc_controller_import_puppet.window().as_ref(),
+                    Some(&gio::Cancellable::new()),
+                    move |file_or_error| {
+                        let maybe_error: Result<(), Box<dyn Error>> = (|| {
+                            callback_self.open_document(file_or_error?)?;
+                            Ok(())
+                        })();
+
+                        if let Err(e) = maybe_error {
+                            eprintln!("{:?}", e);
+                        }
+                    },
+                )
+            })
+            .build()]);
+
+        self.obj().connect_realize(move |selfpoi| {
+            selfpoi
+                .window()
+                .unwrap()
+                .insert_action_group("doc", Some(&doc));
+        });
 
         self.zoom_label.set_text(&format!(
             "{:.0}%",
@@ -113,5 +149,20 @@ impl DocumentController {
             glib::Object::builder().property("application", app).build();
 
         selfish
+    }
+
+    pub fn open_document(&self, file: gio::File) -> Result<(), Box<dyn Error>> {
+        let stream = file.read(Some(&gio::Cancellable::new()))?;
+        let stream_adapter = FileIn::from(stream);
+
+        let puppet = Puppet::open(stream_adapter)?;
+        let state = self.imp().state.borrow_mut();
+        let mut document = state.document.lock().unwrap();
+
+        document.stage_mut().add_puppet(puppet);
+
+        self.imp().stage.queue_draw();
+
+        Ok(())
     }
 }

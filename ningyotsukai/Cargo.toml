@@ -12,7 +12,10 @@ thiserror="2.0.18"
 glib = { version = "0.22.0" }
 gio = { version = "0.22.1" }
 graphene = { package="graphene-rs", version = "0.22.0" }
+inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "b92be8c7d12e3c790a4d6273a28399214720623b" }
+inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "b92be8c7d12e3c790a4d6273a28399214720623b" }
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
+ningyo-extensions = { path = "../ningyo-extensions" }
 
 [target.'cfg(not(windows))'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_10"] }
