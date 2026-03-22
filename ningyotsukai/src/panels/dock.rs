@@ -37,27 +37,41 @@ impl ObjectImpl for PanelDockImp {
         let drop_target = gtk4::DropTarget::new(PanelFrame::static_type(), gdk4::DragAction::COPY);
         let drop_target_drop_self = self.obj().clone();
         drop_target.connect_drop(move |_, value, x, y| {
-            let point = graphene::Point::new(x as f32, y as f32);
             if let Ok(frame) = value.get::<PanelFrame>() {
+                let mut my_child = drop_target_drop_self.first_child();
+                let mut index = 0;
+                let mut drop_target_widget = None;
+                let mut frame_child_index = None;
+                while let Some(child) = my_child {
+                    let bounds = child.compute_bounds(&drop_target_drop_self);
+                    if let Some(bounds) = bounds {
+                        if bounds.y() <= y as f32 && (y as f32) < bounds.y() + bounds.height() {
+                            drop_target_widget = Some((child.clone(), index));
+                        }
+                    }
+
+                    if child == frame.clone().upcast::<gtk4::Widget>() {
+                        frame_child_index = Some(index);
+                    }
+
+                    my_child = child.next_sibling();
+                    index += 1;
+                }
+
                 if let Some(old_dock) = frame.parent() {
                     old_dock.downcast::<PanelDock>().unwrap().remove(&frame);
                 }
 
-                let mut my_child = drop_target_drop_self.first_child();
-                let mut eligible_predecessor = None;
-                while let Some(child) = my_child {
-                    let child_rel = drop_target_drop_self.compute_point(&child, &point);
-                    if let Some(child_rel) = child_rel {
-                        if child_rel.y() >= 0.0 {
-                            eligible_predecessor = Some(child.clone());
+                if let Some((pre, pre_index)) = drop_target_widget {
+                    if pre != frame.clone().upcast::<gtk4::Widget>() {
+                        if let Some(frame_index) = frame_child_index
+                            && frame_index < pre_index
+                        {
+                            frame.insert_after(&drop_target_drop_self, Some(&pre));
+                        } else {
+                            frame.insert_before(&drop_target_drop_self, Some(&pre));
                         }
                     }
-
-                    my_child = child.next_sibling();
-                }
-
-                if let Some(pre) = eligible_predecessor {
-                    frame.insert_before(&drop_target_drop_self, Some(&pre));
                 } else {
                     drop_target_drop_self.append(&frame);
                 }
