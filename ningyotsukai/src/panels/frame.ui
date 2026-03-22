@@ -9,7 +9,7 @@
             </object>
         </child>
         <child>
-            <object class="GtkFrame">
+            <object class="GtkFrame" id="contents">
             </object>
         </child>
     </template>

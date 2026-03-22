@@ -8,22 +8,47 @@
                     <object class="NGTPanelDock">
                         <child>
                             <object class="NGTPanelFrame">
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Test Child 1</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Test Child 2</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Test Child 3</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Test Child 4</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <child>
+                                    <object class="GtkLabel">
+                                        <property name="label">Test Child 5</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                     </object>

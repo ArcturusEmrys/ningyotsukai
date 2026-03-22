@@ -11,6 +11,9 @@ use gtk4::subclass::prelude::*;
 pub struct PanelFrameImp {
     #[template_child]
     handle: TemplateChild<gtk4::Label>,
+
+    #[template_child]
+    contents: TemplateChild<gtk4::Frame>,
 }
 
 #[glib::object_subclass]
@@ -54,6 +57,16 @@ impl ObjectImpl for PanelFrameImp {
 impl WidgetImpl for PanelFrameImp {}
 
 impl BoxImpl for PanelFrameImp {}
+
+impl BuildableImpl for PanelFrameImp {
+    fn add_child(&self, builder: &gtk4::Builder, object: &glib::Object, name: Option<&str>) {
+        if let Some(widget) = object.downcast_ref::<gtk4::Widget>() {
+            self.contents.set_child(Some(widget))
+        } else {
+            self.parent_add_child(builder, object, name)
+        }
+    }
+}
 
 glib::wrapper! {
     pub struct PanelFrame(ObjectSubclass<PanelFrameImp>)
