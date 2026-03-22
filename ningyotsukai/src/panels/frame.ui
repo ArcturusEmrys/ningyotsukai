@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="NGTPanelFrame" parent="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+            <object class="GtkLabel" id="handle">
+                <property name="label">My frame</property>
+                <property name="halign">start</property>
+            </object>
+        </child>
+        <child>
+            <object class="GtkFrame">
+            </object>
+        </child>
+    </template>
+</interface>

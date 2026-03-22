@@ -3,12 +3,48 @@
     <template class="NGTDocumentController" parent="GtkBox">
         <property name="orientation">vertical</property>
         <child>
-            <object class="GtkScrolledWindow">
-                <property name="hexpand">true</property>
-                <property name="vexpand">true</property>
-                <child>
-                    <object class="NGTStageWidget" id="stage">
-                        <property name="zadjustment">zoom_adjust</property>
+            <object class="GtkPaned">
+                <child type="start">
+                    <object class="NGTPanelDock">
+                        <child>
+                            <object class="NGTPanelFrame">
+                            </object>
+                        </child>
+                        <child>
+                            <object class="NGTPanelFrame">
+                            </object>
+                        </child>
+                        <child>
+                            <object class="NGTPanelFrame">
+                            </object>
+                        </child>
+                        <child>
+                            <object class="NGTPanelFrame">
+                            </object>
+                        </child>
+                        <child>
+                            <object class="NGTPanelFrame">
+                            </object>
+                        </child>
+                    </object>
+                </child>
+                <child type="end">
+                    <object class="GtkPaned">
+                        <child type="start">
+                            <object class="GtkScrolledWindow">
+                                <property name="hexpand">true</property>
+                                <property name="vexpand">true</property>
+                                <child>
+                                    <object class="NGTStageWidget" id="stage">
+                                        <property name="zadjustment">zoom_adjust</property>
+                                    </object>
+                                </child>
+                            </object>
+                        </child>
+                        <child type="end">
+                            <object class="NGTPanelDock">
+                            </object>
+                        </child>
                     </object>
                 </child>
             </object>

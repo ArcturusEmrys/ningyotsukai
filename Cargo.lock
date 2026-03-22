@@ -904,8 +904,6 @@ dependencies = [
  "glib-build-tools",
  "graphene-rs",
  "gtk4",
- "inox2d",
- "inox2d-opengl",
  "json",
  "ningyo-look-and-feel",
  "smol",

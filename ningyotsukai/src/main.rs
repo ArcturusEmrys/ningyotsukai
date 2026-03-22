@@ -5,6 +5,7 @@ use ningyo_look_and_feel;
 
 mod document;
 mod io;
+mod panels;
 mod stage;
 mod window;
 
@@ -48,6 +49,9 @@ fn main() -> glib::ExitCode {
         .build();
 
     app.connect_activate(|app| {
+        panels::PanelDock::ensure_type();
+        panels::PanelFrame::ensure_type();
+
         let window = window::WindowController::new(app);
 
         window.present();

@@ -5,5 +5,7 @@
         <file compressed="true" preprocess="xml-stripblanks">document/controller.ui</file>
         <file compressed="true">style.css</file>
         <file compressed="true">stage/stage.css</file>
+        <file compressed="true" preprocess="xml-stripblanks">panels/dock.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">panels/frame.ui</file>
     </gresource>
 </gresources>
