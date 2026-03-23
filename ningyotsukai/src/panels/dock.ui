@@ -2,6 +2,6 @@
 <interface>
     <template class="NGTPanelDock" parent="GtkBox">
         <property name="orientation">vertical</property>
-        <property name="width-request">50</property>
+        <property name="width-request">0</property>
     </template>
 </interface>

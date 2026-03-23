@@ -8,7 +8,10 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
 
+use crate::document::DocumentController;
 use crate::panels::page_ref::PageRef;
+
+use ningyo_extensions::prelude::*;
 
 #[derive(CompositeTemplate, Default, glib::Properties)]
 #[template(resource = "/live/arcturus/ningyotsukai/panels/frame.ui")]
@@ -151,11 +154,19 @@ impl PanelFrameImp {
             drag_source.connect_drag_begin(move |source, _| {
                 let preview = gtk4::WidgetPaintable::new(Some(&drag_source_begin_self));
                 source.set_icon(Some(&preview.current_image()), 0, 0);
+
+                if let Some(dc) = drag_source_begin_self.closest::<DocumentController>() {
+                    dc.panel_drag_began();
+                }
             });
 
             let drag_source_end_self = self.obj().clone();
             drag_source.connect_drag_end(move |_, _, _| {
                 drag_source_end_self.imp().populate_handles();
+
+                if let Some(dc) = drag_source_end_self.closest::<DocumentController>() {
+                    dc.panel_drag_ended();
+                }
             });
 
             label.add_controller(drag_source);

@@ -11,6 +11,7 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use crate::document::model::Document;
+use crate::panels::PanelDock;
 use crate::stage::{Puppet, StageWidget};
 
 use ningyo_extensions::{FileIn, WidgetExt2};
@@ -164,5 +165,17 @@ impl DocumentController {
         self.imp().stage.queue_draw();
 
         Ok(())
+    }
+
+    pub fn panel_drag_began(&self) {
+        for dock in self.find_all::<PanelDock>() {
+            dock.panel_drag_began();
+        }
+    }
+
+    pub fn panel_drag_ended(&self) {
+        for dock in self.find_all::<PanelDock>() {
+            dock.panel_drag_ended();
+        }
     }
 }

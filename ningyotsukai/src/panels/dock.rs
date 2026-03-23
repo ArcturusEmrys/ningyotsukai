@@ -1,6 +1,5 @@
 use gdk4;
 use glib;
-use graphene;
 use gtk4;
 
 use glib::subclass::InitializingObject;
@@ -40,26 +39,19 @@ impl ObjectImpl for PanelDockImp {
         drop_target.connect_drop(move |_, value, _x, y| {
             if let Ok(PageRef { frame, page }) = value.get::<PageRef>() {
                 let mut my_child = drop_target_drop_self.first_child();
-                let mut index = 0;
                 let mut drop_target_widget = None;
-                let mut frame_child_index = None;
                 while let Some(child) = my_child {
                     let bounds = child.compute_bounds(&drop_target_drop_self);
                     if let Some(bounds) = bounds {
                         if bounds.y() <= y as f32 && (y as f32) < bounds.y() + bounds.height() {
-                            drop_target_widget = Some((child.clone(), index));
+                            drop_target_widget = Some(child.clone());
                         }
                     }
 
-                    if child == frame.clone().upcast::<gtk4::Widget>() {
-                        frame_child_index = Some(index);
-                    }
-
                     my_child = child.next_sibling();
-                    index += 1;
                 }
 
-                if let Some((pre, pre_index)) = drop_target_widget {
+                if let Some(pre) = drop_target_widget {
                     if pre != frame.clone().upcast::<gtk4::Widget>() {
                         if frame.n_pages() <= 1 {
                             frame.unparent();
@@ -102,5 +94,22 @@ glib::wrapper! {
 impl PanelDock {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    /// Informs the dock that a panel is being dragged.
+    ///
+    /// The dock will do something to make itself more prominent as a drop
+    /// target.
+    pub fn panel_drag_began(&self) {
+        self.set_width_request(50);
+    }
+
+    /// Informs the dock that a panel is no longer being dragged.
+    ///
+    /// The dock will reverse whatever it did in `panel_drag_began` to make it
+    /// normally visible. Notably, if the panel is now empty, it shouldn't
+    /// actually appear anymore.
+    pub fn panel_drag_ended(&self) {
+        self.set_width_request(0);
     }
 }
