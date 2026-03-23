@@ -9,6 +9,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use crate::panels::PanelFrame;
+use crate::panels::page_ref::PageRef;
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/ningyotsukai/panels/dock.ui")]
@@ -34,10 +35,10 @@ impl ObjectImpl for PanelDockImp {
     fn constructed(&self) {
         self.parent_constructed();
 
-        let drop_target = gtk4::DropTarget::new(PanelFrame::static_type(), gdk4::DragAction::COPY);
+        let drop_target = gtk4::DropTarget::new(PageRef::static_type(), gdk4::DragAction::MOVE);
         let drop_target_drop_self = self.obj().clone();
         drop_target.connect_drop(move |_, value, _x, y| {
-            if let Ok(frame) = value.get::<PanelFrame>() {
+            if let Ok(PageRef { frame, page }) = value.get::<PageRef>() {
                 let mut my_child = drop_target_drop_self.first_child();
                 let mut index = 0;
                 let mut drop_target_widget = None;
@@ -60,19 +61,23 @@ impl ObjectImpl for PanelDockImp {
 
                 if let Some((pre, pre_index)) = drop_target_widget {
                     if pre != frame.clone().upcast::<gtk4::Widget>() {
-                        frame.unparent();
-
-                        if let Some(frame_index) = frame_child_index
-                            && frame_index < pre_index
-                        {
-                            frame.insert_after(&drop_target_drop_self, Some(&pre));
-                        } else {
-                            frame.insert_before(&drop_target_drop_self, Some(&pre));
+                        if frame.n_pages() <= 1 {
+                            frame.unparent();
                         }
+
+                        pre.downcast_ref::<PanelFrame>()
+                            .unwrap()
+                            .adopt_page(frame, page);
                     }
                 } else {
-                    frame.unparent();
-                    drop_target_drop_self.append(&frame);
+                    if frame.n_pages() <= 1 {
+                        frame.unparent();
+                        drop_target_drop_self.append(&frame);
+                    } else {
+                        let new_frame = PanelFrame::new();
+                        new_frame.adopt_page(frame, page);
+                        drop_target_drop_self.append(&new_frame);
+                    }
                 }
                 return true;
             }

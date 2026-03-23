@@ -18,6 +18,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="name">Child 2</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 2</property>
@@ -27,6 +28,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="name">Child 3</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 3</property>
@@ -36,6 +38,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="name">Child 4</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 4</property>
@@ -45,6 +48,7 @@
                         </child>
                         <child>
                             <object class="NGTPanelFrame">
+                                <property name="name">Child 5</property>
                                 <child>
                                     <object class="GtkLabel">
                                         <property name="label">Test Child 5</property>

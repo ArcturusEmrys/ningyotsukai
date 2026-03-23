@@ -3,13 +3,17 @@
     <template class="NGTPanelFrame" parent="GtkBox">
         <property name="orientation">vertical</property>
         <child type="NGTPanelFrame-internal">
-            <object class="GtkLabel" id="handle">
-                <property name="label">My frame</property>
-                <property name="halign">start</property>
+            <object class="GtkBox" id="handles">
+                <property name="orientation">horizontal</property>
+                <property name="css-classes">linked</property>
             </object>
         </child>
         <child type="NGTPanelFrame-internal">
-            <object class="GtkFrame" id="contents">
+            <object class="GtkFrame">
+                <child>
+                    <object class="GtkStack" id="contents">
+                    </object>
+                </child>
             </object>
         </child>
     </template>
