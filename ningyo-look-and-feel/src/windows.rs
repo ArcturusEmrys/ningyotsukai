@@ -198,7 +198,12 @@ impl LAFProvider {
 
         //I'm surprised GTK doesn't have a convenience method to define CSS variables.
         let css = format!(
-            ":root {{
+            "@define-color theme_selected_bg_color {accent_color};
+        @define-color theme_selected_fg_color {contrast_color};
+        @define-color theme_bg_color {bg_color_hex};
+        @define-color theme_fg_color {fg_color};
+
+        :root {{
             --Windows-background: {bg_color_hex};
             --Windows-foreground: {fg_color};
             --Windows-accent: {accent_color};
