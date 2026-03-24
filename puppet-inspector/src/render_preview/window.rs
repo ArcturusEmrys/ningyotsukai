@@ -223,6 +223,18 @@ impl InoxRenderPreview {
             let mut buffer_id = 0;
             unsafe {
                 native_gl.GetIntegerv(gl46::GL_DRAW_FRAMEBUFFER_BINDING, &mut buffer_id);
+            }
+
+            // Work around GLArea forgetting to attach the target FB
+            if buffer_id == 0 {
+                gl_area.attach_buffers();
+
+                unsafe {
+                    native_gl.GetIntegerv(gl46::GL_DRAW_FRAMEBUFFER_BINDING, &mut buffer_id);
+                }
+            }
+
+            unsafe {
                 native_gl.ClearColor(0.0, 0.0, 0.0, 1.0);
                 native_gl.Clear(gl46::GL_COLOR_BUFFER_BIT);
             }
