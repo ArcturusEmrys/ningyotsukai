@@ -23,6 +23,7 @@ struct State {
     document: Arc<Mutex<Document>>,
     renderer: Option<OpenglRenderer>,
     glfns: Option<gl46::GlFns>,
+    last_mus: Option<i64>,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -108,6 +109,7 @@ impl InoxRenderPreview {
             document,
             renderer: None,
             glfns: None,
+            last_mus: None,
         });
         selfish.bind();
 
@@ -204,6 +206,28 @@ impl InoxRenderPreview {
                 }
             });
 
+        let tick_self = self.clone();
+        self.imp().gl_view.add_tick_callback(move |_, clock| {
+            let mut state_outer = tick_self.imp().state.borrow_mut();
+            let state = state_outer.as_mut().unwrap();
+            let mut document = state.document.lock().unwrap();
+
+            let mus = clock.frame_time();
+            if let Some(last_mus) = state.last_mus {
+                let del_mus = mus - last_mus;
+                let dt = del_mus as f32 / 1_000_000.0;
+
+                document.model.puppet.begin_frame();
+                document.model.puppet.end_frame(dt);
+
+                tick_self.imp().gl_view.queue_render();
+            }
+
+            state.last_mus = Some(mus);
+
+            glib::ControlFlow::Continue
+        });
+
         let render_self = self.clone();
         self.imp().gl_view.connect_render(move |gl_area, _context| {
             if let Some(e) = gl_area.error() {
@@ -212,10 +236,7 @@ impl InoxRenderPreview {
 
             let mut state_outer = render_self.imp().state.borrow_mut();
             let state = state_outer.as_mut().unwrap();
-            let mut document = state.document.lock().unwrap();
-
-            document.model.puppet.begin_frame();
-            document.model.puppet.end_frame(1.0);
+            let document = state.document.lock().unwrap();
 
             let renderer = state.renderer.as_mut().unwrap();
             let native_gl = state.glfns.as_ref().unwrap();
