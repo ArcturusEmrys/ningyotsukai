@@ -46,6 +46,10 @@ impl Puppet {
             self.model.puppet.init_physics();
         }
 
+        // One frame is required to prevent Inox from choking.
+        self.model.puppet.begin_frame();
+        self.model.puppet.end_frame(0.01);
+
         self.is_render_initialized = true;
     }
 }
