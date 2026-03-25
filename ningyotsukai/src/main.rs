@@ -28,15 +28,15 @@ fn main() -> glib::ExitCode {
         gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 
-    let tracker_manager = tracker::TrackerManager::new();
-
     let app = gtk4::Application::builder()
         .application_id("live.arcturus.ningyotsukai")
         .build();
 
     app.connect_activate({
-        let tracker_manager = tracker_manager.clone();
         move |app| {
+            let tracker_manager: std::rc::Rc<tracker::TrackerManager> =
+                tracker::TrackerManager::new();
+
             panels::PanelDock::ensure_type();
             panels::PanelFrame::ensure_type();
 
@@ -46,9 +46,5 @@ fn main() -> glib::ExitCode {
         }
     });
 
-    let ret = app.run();
-
-    tracker_manager.shutdown();
-
-    ret
+    app.run()
 }
