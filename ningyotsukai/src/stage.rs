@@ -1,5 +1,6 @@
 mod border;
 mod model;
+mod renderer;
 mod widget;
 
 pub use model::Coord;

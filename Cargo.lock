@@ -466,6 +466,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generational-arena"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "877e94aff08e743b651baaea359664321055749b398adff8740a7399af7796e7"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "gio"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -875,11 +884,15 @@ dependencies = [
 name = "ningyo-extensions"
 version = "0.1.0"
 dependencies = [
+ "egl",
  "gdk4",
  "gio",
+ "gl46",
  "glib",
+ "glow",
  "gtk4",
  "json",
+ "windows",
 ]
 
 [[package]]
@@ -899,9 +912,12 @@ name = "ningyotsukai"
 version = "0.1.0"
 dependencies = [
  "gdk4",
+ "generational-arena",
  "gio",
+ "gl46",
  "glib",
  "glib-build-tools",
+ "glow",
  "graphene-rs",
  "gtk4",
  "inox2d",
@@ -1030,20 +1046,17 @@ dependencies = [
 name = "puppet-inspector"
 version = "0.1.0"
 dependencies = [
- "egl",
  "gdk4",
  "gio",
  "gl46",
  "glib",
  "glib-build-tools",
- "glow",
  "gtk4",
  "inox2d",
  "inox2d-opengl",
  "json",
  "ningyo-extensions",
  "ningyo-look-and-feel",
- "windows",
 ]
 
 [[package]]

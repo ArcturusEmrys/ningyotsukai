@@ -11,7 +11,7 @@ use crate::stage::model::coord::Coord;
 
 pub struct Puppet {
     position: Coord,
-    scale: f64,
+    scale: f32,
     puppet_json: JsonValue,
     model: Model,
     is_render_initialized: bool,
@@ -51,5 +51,21 @@ impl Puppet {
         self.model.puppet.end_frame(0.01);
 
         self.is_render_initialized = true;
+    }
+
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    pub fn model_mut(&mut self) -> &mut Model {
+        &mut self.model
+    }
+
+    pub fn position(&self) -> &Coord {
+        &self.position
+    }
+
+    pub fn scale(&self) -> f32 {
+        self.scale
     }
 }

@@ -19,6 +19,9 @@ pub struct StageWidgetState {
     /// Internal accounting widget for the border around the stage.
     border_gizmo: Option<StageBorderGizmo>,
 
+    /// Rendering area for Inox2D.
+    render_area: Option<StageRenderer>,
+
     /// The scroll position at the time our middle-click drag recognizer
     /// started.
     starting_drag_position: Option<[i32; 2]>,
@@ -91,6 +94,197 @@ impl ObjectImpl for StageWidgetImp {
         border_gizmo.set_parent(&*self.obj());
         self.state.borrow_mut().border_gizmo = Some(border_gizmo);
 
+        let gl_area = StageRenderer::new();
+
+        self.obj()
+            .bind_property("hadjustment", &gl_area, "hadjustment")
+            .flags(glib::BindingFlags::SYNC_CREATE)
+            .build();
+        self.obj()
+            .bind_property("vadjustment", &gl_area, "vadjustment")
+            .flags(glib::BindingFlags::SYNC_CREATE)
+            .build();
+        self.obj()
+            .bind_property("zadjustment", &gl_area, "zadjustment")
+            .flags(glib::BindingFlags::SYNC_CREATE)
+            .build();
+
+        gl_area.set_parent(&*self.obj());
+        self.state.borrow_mut().render_area = Some(gl_area);
+
+        self.bind_pan_gesture();
+        self.bind_zoom_gesture();
+    }
+
+    fn dispose(&self) {
+        if let Some(gizmo) = self.state.borrow_mut().border_gizmo.take() {
+            gizmo.unparent();
+        }
+    }
+}
+
+impl WidgetImpl for StageWidgetImp {
+    fn snapshot(&self, snapshot: &gtk4::Snapshot) {
+        let state = self.state.borrow();
+        let document = state.document.lock().unwrap();
+
+        snapshot.push_clip(&graphene::Rect::new(
+            0.0,
+            0.0,
+            self.obj().width() as f32,
+            self.obj().height() as f32,
+        ));
+
+        snapshot.save();
+
+        let size = document.stage().size();
+
+        // This is a log scale, but we need linear zoom.
+        // See document/controller.ui for more info
+        let zoom = 10.0_f32.powf(
+            self.zadjustment
+                .borrow()
+                .as_ref()
+                .map(|z| z.value())
+                .unwrap_or(1.0) as f32,
+        );
+
+        snapshot.scale(zoom, zoom);
+
+        let hscroll_offset = self
+            .hadjustment
+            .borrow()
+            .as_ref()
+            .map(|v| v.value())
+            .unwrap_or(0.0) as f32;
+        let vscroll_offset = self
+            .vadjustment
+            .borrow()
+            .as_ref()
+            .map(|v| v.value())
+            .unwrap_or(0.0) as f32;
+
+        snapshot.translate(&graphene::Point::new(-hscroll_offset, -vscroll_offset));
+
+        snapshot.append_color(
+            &gdk4::RGBA::new(1.0, 1.0, 1.0, 1.0),
+            &graphene::Rect::new(0.0, 0.0, size.x(), size.y()),
+        );
+
+        drop(document);
+
+        if let Some(ref border) = self.state.borrow().border_gizmo {
+            self.obj().snapshot_child(border, snapshot);
+        }
+
+        snapshot.restore();
+
+        if let Some(ref render) = self.state.borrow().render_area {
+            self.obj().snapshot_child(render, snapshot);
+        }
+
+        snapshot.pop();
+    }
+
+    fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+        self.parent_size_allocate(width, height, baseline);
+
+        self.configure_adjustments();
+    }
+}
+
+impl ScrollableImpl for StageWidgetImp {}
+
+impl StageWidgetImp {
+    /// Configure all the GTK properties to match the current state of the
+    /// stage. Must be called whenever:
+    ///
+    /// 1. The contents of the stage change
+    /// 2. Adjustments are set
+    /// 3. The window is resized
+    fn configure_adjustments(&self) {
+        let state = self.state.borrow();
+        let document = state.document.lock().unwrap();
+
+        let width = self.obj().width();
+        let height = self.obj().height();
+
+        let stage_width = document.stage().size().x();
+        let stage_height = document.stage().size().y();
+
+        //TODO: Off-stage scrolling should be limited to:
+        // 1. Minimum: 3/4ths the window size (so you can't normally scroll the stage off)
+        // 2. The furthest stage object in that direction (so you can get at things you accidentally put there)
+        if let Some(ref adjust) = *self.hadjustment.borrow() {
+            adjust.set_lower((stage_width * -1.0) as f64);
+            adjust.set_upper((stage_width * 2.0) as f64);
+            adjust.set_page_increment(width as f64);
+            adjust.set_page_size(width as f64);
+        }
+
+        if let Some(ref adjust) = *self.vadjustment.borrow() {
+            adjust.set_lower((stage_height * -1.0) as f64);
+            adjust.set_upper((stage_height * 2.0) as f64);
+            adjust.set_page_increment(height as f64);
+            adjust.set_page_size(height as f64);
+        }
+
+        if let Some(ref border) = self.state.borrow().border_gizmo {
+            // If we don't measure our children, GTK complains
+            border.measure(gtk4::Orientation::Horizontal, stage_width as i32);
+            border.allocate(stage_width as i32, stage_height as i32, -1, None);
+        }
+
+        drop(document);
+
+        if let Some(ref render) = self.state.borrow().render_area {
+            render.measure(gtk4::Orientation::Horizontal, stage_width as i32);
+            render.allocate(width as i32, height as i32, -1, None);
+        }
+    }
+
+    fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
+        let self_obj = self.obj().clone();
+        if let Some(ref adjust) = adjust {
+            adjust.connect_value_changed(move |_| {
+                self_obj.queue_draw();
+            });
+        }
+
+        *self.hadjustment.borrow_mut() = adjust;
+
+        self.configure_adjustments();
+    }
+
+    fn set_vadjustment(&self, adjust: Option<gtk4::Adjustment>) {
+        let self_obj = self.obj().clone();
+        if let Some(ref adjust) = adjust {
+            adjust.connect_value_changed(move |_| {
+                self_obj.queue_draw();
+            });
+        }
+
+        *self.vadjustment.borrow_mut() = adjust;
+
+        self.configure_adjustments();
+    }
+
+    fn set_zadjustment(&self, adjust: Option<gtk4::Adjustment>) {
+        let self_obj = self.obj().clone();
+        if let Some(ref adjust) = adjust {
+            adjust.connect_value_changed(move |_| {
+                self_obj.queue_draw();
+            });
+        }
+
+        *self.zadjustment.borrow_mut() = adjust;
+
+        self.configure_adjustments();
+    }
+
+    /// Create a drag controller gesture that allows panning across the stage
+    /// by dragging with the middle mouse button.
+    fn bind_pan_gesture(&self) {
         let drag = gtk4::GestureDrag::builder()
             .button(gdk4::BUTTON_MIDDLE)
             .build();
@@ -129,7 +323,12 @@ impl ObjectImpl for StageWidgetImp {
         });
 
         self.obj().add_controller(drag);
+    }
 
+    /// Create a gesture that allows zooming into or out of the stage by
+    /// either scrolling with the mouse wheel while the middle button is held,
+    /// or by zooming with a touch surface.
+    fn bind_zoom_gesture(&self) {
         let middle_click = gtk4::GestureClick::builder()
             .button(gdk4::BUTTON_MIDDLE)
             .build();
@@ -204,157 +403,6 @@ impl ObjectImpl for StageWidgetImp {
 
         self.obj().add_controller(zoom);
     }
-
-    fn dispose(&self) {
-        if let Some(gizmo) = self.state.borrow_mut().border_gizmo.take() {
-            gizmo.unparent();
-        }
-    }
-}
-
-impl WidgetImpl for StageWidgetImp {
-    fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let state = self.state.borrow();
-        let document = state.document.lock().unwrap();
-
-        snapshot.push_clip(&graphene::Rect::new(
-            0.0,
-            0.0,
-            self.obj().width() as f32,
-            self.obj().height() as f32,
-        ));
-
-        let size = document.stage().size();
-
-        // This is a log scale, but we need linear zoom.
-        // See document/controller.ui for more info
-        let zoom = 10.0_f32.powf(
-            self.zadjustment
-                .borrow()
-                .as_ref()
-                .map(|z| z.value())
-                .unwrap_or(1.0) as f32,
-        );
-
-        snapshot.scale(zoom, zoom);
-
-        let hscroll_offset = self
-            .hadjustment
-            .borrow()
-            .as_ref()
-            .map(|v| v.value())
-            .unwrap_or(0.0) as f32;
-        let vscroll_offset = self
-            .vadjustment
-            .borrow()
-            .as_ref()
-            .map(|v| v.value())
-            .unwrap_or(0.0) as f32;
-
-        snapshot.translate(&graphene::Point::new(-hscroll_offset, -vscroll_offset));
-
-        snapshot.append_color(
-            &gdk4::RGBA::new(1.0, 1.0, 1.0, 1.0),
-            &graphene::Rect::new(0.0, 0.0, size.x(), size.y()),
-        );
-
-        if let Some(ref border) = self.state.borrow().border_gizmo {
-            self.obj().snapshot_child(border, snapshot);
-        }
-
-        for puppet in document.stage().iter() {}
-
-        snapshot.pop();
-    }
-
-    fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
-        self.parent_size_allocate(width, height, baseline);
-
-        self.configure_adjustments();
-    }
-}
-
-impl ScrollableImpl for StageWidgetImp {}
-
-impl StageWidgetImp {
-    /// Configure all the GTK properties to match the current state of the
-    /// stage. Must be called whenever:
-    ///
-    /// 1. The contents of the stage change
-    /// 2. Adjustments are set
-    /// 3. The window is resized
-    fn configure_adjustments(&self) {
-        let state = self.state.borrow();
-        let document = state.document.lock().unwrap();
-
-        let width = self.obj().width();
-        let height = self.obj().height();
-
-        let stage_width = document.stage().size().x();
-        let stage_height = document.stage().size().y();
-
-        //TODO: Off-stage scrolling should be limited to:
-        // 1. Minimum: 3/4ths the window size (so you can't normally scroll the stage off)
-        // 2. The furthest stage object in that direction (so you can get at things you accidentally put there)
-        if let Some(ref adjust) = *self.hadjustment.borrow() {
-            adjust.set_lower((stage_width * -1.0) as f64);
-            adjust.set_upper((stage_width * 2.0) as f64);
-            adjust.set_page_increment(width as f64);
-            adjust.set_page_size(width as f64);
-        }
-
-        if let Some(ref adjust) = *self.vadjustment.borrow() {
-            adjust.set_lower((stage_height * -1.0) as f64);
-            adjust.set_upper((stage_height * 2.0) as f64);
-            adjust.set_page_increment(height as f64);
-            adjust.set_page_size(height as f64);
-        }
-
-        if let Some(ref border) = self.state.borrow().border_gizmo {
-            // If we don't measure our children, GTK complains
-            border.measure(gtk4::Orientation::Horizontal, stage_width as i32);
-            border.allocate(stage_width as i32, stage_height as i32, -1, None);
-        }
-    }
-
-    fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
-        let self_obj = self.obj().clone();
-        if let Some(ref adjust) = adjust {
-            adjust.connect_value_changed(move |_| {
-                self_obj.queue_draw();
-            });
-        }
-
-        *self.hadjustment.borrow_mut() = adjust;
-
-        self.configure_adjustments();
-    }
-
-    fn set_vadjustment(&self, adjust: Option<gtk4::Adjustment>) {
-        let self_obj = self.obj().clone();
-        if let Some(ref adjust) = adjust {
-            adjust.connect_value_changed(move |_| {
-                self_obj.queue_draw();
-            });
-        }
-
-        *self.vadjustment.borrow_mut() = adjust;
-
-        self.configure_adjustments();
-    }
-
-    fn set_zadjustment(&self, adjust: Option<gtk4::Adjustment>) {
-        let self_obj = self.obj().clone();
-        if let Some(ref adjust) = adjust {
-            adjust.connect_value_changed(move |_| {
-                self_obj.queue_draw();
-            });
-        }
-
-        *self.zadjustment.borrow_mut() = adjust;
-
-        self.configure_adjustments();
-    }
 }
 
 glib::wrapper! {
@@ -373,7 +421,14 @@ impl StageWidget {
     }
 
     pub fn set_document(&self, document: Arc<Mutex<Document>>) {
-        self.imp().state.borrow_mut().document = document;
+        self.imp().state.borrow_mut().document = document.clone();
+        self.imp()
+            .state
+            .borrow_mut()
+            .render_area
+            .as_ref()
+            .unwrap()
+            .with_document(document);
         self.imp().configure_adjustments();
     }
 
