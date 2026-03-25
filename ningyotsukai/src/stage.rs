@@ -1,4 +1,5 @@
-mod border;
+mod gestures;
+mod gizmos;
 mod model;
 mod renderer;
 mod widget;

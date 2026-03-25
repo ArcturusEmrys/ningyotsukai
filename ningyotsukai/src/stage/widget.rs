@@ -10,7 +10,9 @@ use std::cell::{Cell, RefCell};
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
-use crate::stage::border::StageBorderGizmo;
+use crate::stage::gestures::{DragGesture, ZoomGesture};
+use crate::stage::gizmos::StageBorderGizmo;
+use crate::stage::renderer::StageRenderer;
 
 #[derive(Default)]
 pub struct StageWidgetState {
@@ -22,15 +24,11 @@ pub struct StageWidgetState {
     /// Rendering area for Inox2D.
     render_area: Option<StageRenderer>,
 
-    /// The scroll position at the time our middle-click drag recognizer
-    /// started.
-    starting_drag_position: Option<[i32; 2]>,
+    /// Our drag gesture.
+    drag_gesture: Option<DragGesture>,
 
-    /// Whether or not the middle mouse button is down.
-    middle_mouse_button_down: bool,
-
-    /// The starting zoom factor at the start of GestureZoom's begin signal
-    starting_zoom_amount: f64,
+    /// Our drag gesture.
+    zoom_gesture: Option<ZoomGesture>,
 }
 
 #[derive(glib::Properties)]
@@ -111,9 +109,10 @@ impl ObjectImpl for StageWidgetImp {
 
         gl_area.set_parent(&*self.obj());
         self.state.borrow_mut().render_area = Some(gl_area);
-
-        self.bind_pan_gesture();
-        self.bind_zoom_gesture();
+        self.state.borrow_mut().drag_gesture =
+            Some(DragGesture::for_widget(&self.obj().clone().upcast()));
+        self.state.borrow_mut().zoom_gesture =
+            Some(ZoomGesture::for_widget(&self.obj().clone().upcast()));
     }
 
     fn dispose(&self) {
@@ -251,7 +250,11 @@ impl StageWidgetImp {
             });
         }
 
-        *self.hadjustment.borrow_mut() = adjust;
+        *self.hadjustment.borrow_mut() = adjust.clone();
+
+        if let Some(drag_gesture) = &self.state.borrow().drag_gesture {
+            drag_gesture.set_hadjustment(adjust);
+        }
 
         self.configure_adjustments();
     }
@@ -264,7 +267,11 @@ impl StageWidgetImp {
             });
         }
 
-        *self.vadjustment.borrow_mut() = adjust;
+        *self.vadjustment.borrow_mut() = adjust.clone();
+
+        if let Some(drag_gesture) = &self.state.borrow().drag_gesture {
+            drag_gesture.set_vadjustment(adjust);
+        }
 
         self.configure_adjustments();
     }
@@ -277,131 +284,17 @@ impl StageWidgetImp {
             });
         }
 
-        *self.zadjustment.borrow_mut() = adjust;
+        *self.zadjustment.borrow_mut() = adjust.clone();
+
+        if let Some(drag_gesture) = &self.state.borrow().drag_gesture {
+            drag_gesture.set_zadjustment(adjust.clone());
+        }
+
+        if let Some(zoom_gesture) = &self.state.borrow().zoom_gesture {
+            zoom_gesture.set_zadjustment(adjust);
+        }
 
         self.configure_adjustments();
-    }
-
-    /// Create a drag controller gesture that allows panning across the stage
-    /// by dragging with the middle mouse button.
-    fn bind_pan_gesture(&self) {
-        let drag = gtk4::GestureDrag::builder()
-            .button(gdk4::BUTTON_MIDDLE)
-            .build();
-
-        let drag_begin_self = self.obj().clone();
-        drag.connect_drag_begin(move |_, _, _| {
-            let mut state = drag_begin_self.imp().state.borrow_mut();
-
-            if let (Some(h_adjust), Some(v_adjust)) = (
-                &*drag_begin_self.imp().hadjustment.borrow(),
-                &*drag_begin_self.imp().vadjustment.borrow(),
-            ) {
-                state.starting_drag_position =
-                    Some([h_adjust.value() as i32, v_adjust.value() as i32]);
-            }
-        });
-
-        let drag_drag_self = self.obj().clone();
-        drag.connect_drag_update(move |_, mut offset_x, mut offset_y| {
-            let state = drag_drag_self.imp().state.borrow();
-
-            if let (Some(starting_drag_position), Some(h_adjust), Some(v_adjust), Some(z_adjust)) = (
-                state.starting_drag_position,
-                &*drag_drag_self.imp().hadjustment.borrow(),
-                &*drag_drag_self.imp().vadjustment.borrow(),
-                &*drag_drag_self.imp().zadjustment.borrow(),
-            ) {
-                // When we zoom out, or in, our drag speed changes, so adjust for that.
-                let zoom = 10.0_f64.powf(z_adjust.value());
-                offset_x /= zoom;
-                offset_y /= zoom;
-
-                h_adjust.set_value(starting_drag_position[0] as f64 - offset_x);
-                v_adjust.set_value(starting_drag_position[1] as f64 - offset_y);
-            }
-        });
-
-        self.obj().add_controller(drag);
-    }
-
-    /// Create a gesture that allows zooming into or out of the stage by
-    /// either scrolling with the mouse wheel while the middle button is held,
-    /// or by zooming with a touch surface.
-    fn bind_zoom_gesture(&self) {
-        let middle_click = gtk4::GestureClick::builder()
-            .button(gdk4::BUTTON_MIDDLE)
-            .build();
-        let middle_click_pressed_self = self.obj().clone();
-        middle_click.connect_pressed(move |_, _, _, _| {
-            middle_click_pressed_self
-                .imp()
-                .state
-                .borrow_mut()
-                .middle_mouse_button_down = true;
-        });
-
-        let middle_click_released_self = self.obj().clone();
-        middle_click.connect_released(move |_, _, _, _| {
-            middle_click_released_self
-                .imp()
-                .state
-                .borrow_mut()
-                .middle_mouse_button_down = false;
-        });
-
-        self.obj().add_controller(middle_click);
-
-        let scroll_wheel = gtk4::EventControllerScroll::builder()
-            .flags(gtk4::EventControllerScrollFlags::VERTICAL)
-            .build();
-
-        let scroll_wheel_self = self.obj().clone();
-        scroll_wheel.connect_scroll(move |_, _, dy| {
-            let mmb_down = scroll_wheel_self
-                .imp()
-                .state
-                .borrow()
-                .middle_mouse_button_down;
-            if mmb_down {
-                // With a normal mouse, dy yields either 1 or -1.
-                if let Some(ref z_adjust) = *scroll_wheel_self.imp().zadjustment.borrow() {
-                    z_adjust.set_value(z_adjust.value() + z_adjust.step_increment() * dy * -1.0);
-                }
-
-                return glib::Propagation::Stop;
-            }
-
-            glib::Propagation::Proceed
-        });
-
-        self.obj().add_controller(scroll_wheel);
-
-        let zoom = gtk4::GestureZoom::new();
-
-        let zoom_begin_self = self.obj().clone();
-        zoom.connect_begin(move |_, _| {
-            if let Some(ref zadjust) = *zoom_begin_self.imp().zadjustment.borrow() {
-                zoom_begin_self
-                    .imp()
-                    .state
-                    .borrow_mut()
-                    .starting_zoom_amount = zadjust.value();
-            }
-        });
-
-        let zoom_scale_changed_self = self.obj().clone();
-        zoom.connect_scale_changed(move |_, delta| {
-            //TODO: I have yet to actually test this code on a real trackpad or touchscreen yet
-            if let Some(ref zadjust) = *zoom_scale_changed_self.imp().zadjustment.borrow() {
-                let state = zoom_scale_changed_self.imp().state.borrow_mut();
-
-                //I'm assuming GTK provides linear zoom values as multiples (not percentages)
-                zadjust.set_value(state.starting_zoom_amount + delta.log(10.0));
-            }
-        });
-
-        self.obj().add_controller(zoom);
     }
 }
 
