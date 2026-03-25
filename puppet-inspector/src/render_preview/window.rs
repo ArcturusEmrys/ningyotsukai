@@ -7,17 +7,13 @@ use gtk4::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 
 use std::cell::RefCell;
-use std::ffi::{CStr, c_void};
-use std::num::NonZero;
-use std::ptr::null;
 use std::sync::{Arc, Mutex};
 
-use gl46;
-use glow;
 use inox2d::render::InoxRendererExt;
 use inox2d_opengl::OpenglRenderer;
 
 use crate::document::Document;
+use ningyo_extensions::GLAreaExt2;
 
 struct State {
     document: Arc<Mutex<Document>>,
@@ -73,34 +69,6 @@ glib::wrapper! {
             gtk4::Native, gtk4::Root, gtk4::ShortcutManager;
 }
 
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn lookup_gl_symbol(symbol: &CStr) -> *const c_void {
-    #[cfg(windows)]
-    {
-        match windows::Win32::Graphics::OpenGL::wglGetProcAddress(windows::core::PCSTR::from_raw(
-            symbol.as_ptr() as *const u8,
-        )) {
-            Some(fun) => fun as *const c_void,
-            None => null::<c_void>(),
-        }
-    }
-    #[cfg(target_os = "linux")]
-    {
-        egl::get_proc_address(symbol.to_str().unwrap()) as *const c_void
-    }
-    #[cfg(all(not(windows), not(target_os = "linux")))]
-    {
-        eprintln!("GL not implemented on this platform");
-        null::<c_void>()
-    }
-}
-
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn lookup_gl_symbol_from_ptr(p: *const u8) -> *const c_void {
-    let c_str = std::ffi::CStr::from_ptr(p as *const i8);
-    lookup_gl_symbol(c_str) as *mut c_void
-}
-
 impl InoxRenderPreview {
     pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
@@ -146,24 +114,8 @@ impl InoxRenderPreview {
 
             document.ensure_render_initialized();
 
-            // We need to make a glow::context, but we need to give it access
-            // to wgl/glx/egl/etcGetProcAddress. GDK does not allow you to ask
-            // for extension addresses directly and the developers would much
-            // rather boil the ocean getting all their downstreams to use
-            // libepoxy, so we have to do this.
-            //
-            // Also we have to do this AFTER context creation or WGL gets
-            // grumpy.
-            //
-            // SAFETY: I have no idea what happens if you give this a bad name
-            let (gl, native_gl) = unsafe {
-                let gl = glow::Context::from_loader_function_cstr(|p| lookup_gl_symbol(p));
-                let stupid_box = Box::new(|p| lookup_gl_symbol_from_ptr(p));
-                let native_lookup: &dyn Fn(*const u8) -> *const c_void = &stupid_box;
-
-                let native_gl = gl46::GlFns::load_from(native_lookup).expect("native GL");
-                (gl, native_gl)
-            };
+            let gl = gl_area.as_glow_context();
+            let native_gl = gl_area.as_native_gl();
 
             // TODO: GLDebug logging
             let renderer = OpenglRenderer::new(gl, &document.model);
@@ -240,36 +192,21 @@ impl InoxRenderPreview {
 
             let renderer = state.renderer.as_mut().unwrap();
             let native_gl = state.glfns.as_ref().unwrap();
-
-            let mut buffer_id = 0;
-            unsafe {
-                native_gl.GetIntegerv(gl46::GL_DRAW_FRAMEBUFFER_BINDING, &mut buffer_id);
-            }
-
-            // Work around GLArea forgetting to attach the target FB
-            if buffer_id == 0 {
-                gl_area.attach_buffers();
-
-                unsafe {
-                    native_gl.GetIntegerv(gl46::GL_DRAW_FRAMEBUFFER_BINDING, &mut buffer_id);
-                }
-            }
+            let fb = gl_area.framebuffer(native_gl);
 
             unsafe {
                 native_gl.ClearColor(0.0, 0.0, 0.0, 1.0);
                 native_gl.Clear(gl46::GL_COLOR_BUFFER_BIT);
             }
 
-            renderer.set_surface_framebuffer(
-                NonZero::new(buffer_id as u32).map(|b| glow::NativeFramebuffer(b)),
-            );
+            renderer.set_surface_framebuffer(Some(fb));
 
             renderer
                 .draw(&document.model.puppet)
                 .expect("successful draw");
 
             unsafe {
-                native_gl.BindFramebuffer(gl46::GL_FRAMEBUFFER, buffer_id as u32);
+                native_gl.BindFramebuffer(gl46::GL_FRAMEBUFFER, fb.0.into());
                 native_gl.Flush();
             }
 

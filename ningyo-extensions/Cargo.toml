@@ -10,3 +10,11 @@ gio = { version = "0.22.1" }
 json = "0.12.4"
 gtk4 = "0.11.0"
 gdk4 = "0.11.0"
+glow = "0.14.1"
+gl46 = "0.2.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Graphics_OpenGL"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+egl = "0.2.7"
