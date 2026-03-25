@@ -7,6 +7,10 @@ use gtk4::CompositeTemplate;
 use gtk4::subclass::prelude::*;
 
 use crate::document::DocumentController;
+use crate::tracker::TrackerManager;
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/ningyotsukai/window/controller.ui")]
@@ -17,6 +21,9 @@ pub struct WindowControllerImp {
     main_menu_button: TemplateChild<gtk4::MenuButton>,
     #[template_child]
     document_controller: TemplateChild<DocumentController>,
+
+    // external / non-GTK goes here
+    tracker_manager: RefCell<Option<Rc<TrackerManager>>>,
 }
 
 #[glib::object_subclass]
@@ -40,7 +47,13 @@ impl ObjectImpl for WindowControllerImp {
     }
 }
 
-impl WidgetImpl for WindowControllerImp {}
+impl WidgetImpl for WindowControllerImp {
+    fn unrealize(&self) {
+        //We need to drop our tracker manager, otherwise we keep the application open
+        self.tracker_manager.borrow_mut().take();
+        self.parent_unrealize();
+    }
+}
 
 impl WindowImpl for WindowControllerImp {}
 
@@ -54,9 +67,11 @@ glib::wrapper! {
 }
 
 impl WindowController {
-    pub fn new(app: &gtk4::Application) -> Self {
+    pub fn new(app: &gtk4::Application, tracker_manager: Rc<TrackerManager>) -> Self {
         let selfish: WindowController =
             glib::Object::builder().property("application", app).build();
+
+        *selfish.imp().tracker_manager.borrow_mut() = Some(tracker_manager);
 
         selfish.bind();
 

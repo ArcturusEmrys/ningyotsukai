@@ -7,26 +7,10 @@ mod document;
 mod io;
 mod panels;
 mod stage;
+mod tracker;
 mod window;
 
-#[derive(Default)]
-pub struct CookieManager {
-    next: u32,
-}
-
-impl CookieManager {
-    fn next(&mut self) -> u32 {
-        let out = self.next;
-        self.next += 1;
-
-        out
-    }
-}
-
 fn main() -> glib::ExitCode {
-    let (io_send, io_recv) = io::start();
-    let mut cookie_manager = CookieManager::default();
-
     //io_send.send_blocking(io::IoMessage::ConnectVTSTracker())
 
     gio::resources_register_include!("resources.gresource").expect("valid resource file");
@@ -44,24 +28,27 @@ fn main() -> glib::ExitCode {
         gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 
+    let tracker_manager = tracker::TrackerManager::new();
+
     let app = gtk4::Application::builder()
         .application_id("live.arcturus.ningyotsukai")
         .build();
 
-    app.connect_activate(|app| {
-        panels::PanelDock::ensure_type();
-        panels::PanelFrame::ensure_type();
+    app.connect_activate({
+        let tracker_manager = tracker_manager.clone();
+        move |app| {
+            panels::PanelDock::ensure_type();
+            panels::PanelFrame::ensure_type();
 
-        let window = window::WindowController::new(app);
+            let window = window::WindowController::new(app, tracker_manager.clone());
 
-        window.present();
+            window.present();
+        }
     });
 
     let ret = app.run();
 
-    io_send
-        .send_blocking(io::IoMessage::Exit(cookie_manager.next()))
-        .unwrap();
+    tracker_manager.shutdown();
 
     ret
 }
