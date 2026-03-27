@@ -16,7 +16,7 @@ impl ObjectSubclass for PuppetBoundsGizmoImp {
     type ParentType = gtk4::Widget;
 
     fn class_init(class: &mut Self::Class) {
-        class.set_css_name("ningyo-puppetbounds");
+        class.set_css_name("ningyo-puppet");
     }
 
     fn instance_init(_obj: &InitializingObject<Self>) {}
@@ -42,6 +42,10 @@ glib::wrapper! {
 
 impl PuppetBoundsGizmo {
     pub fn new() -> Self {
-        glib::Object::builder().build()
+        let gizmo: Self = glib::Object::builder().build();
+
+        gizmo.set_cursor(gdk4::Cursor::from_name("grab", None).as_ref());
+
+        gizmo
     }
 }

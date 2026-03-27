@@ -80,7 +80,7 @@ impl SelectGesture {
 
         let begin_self = selfish.clone();
         select.connect_drag_end(move |_, x, y| {
-            let mut state = begin_self.0.borrow_mut();
+            let state = begin_self.0.borrow_mut();
 
             state.gizmo.set_visible(false);
         });
@@ -91,7 +91,7 @@ impl SelectGesture {
     }
 
     pub fn as_rect(&self) -> Option<gdk4::Rectangle> {
-        let mut state = self.0.borrow_mut();
+        let state = self.0.borrow_mut();
         if let (Some(start), Some(end)) = (state.starting_position, state.ending_position) {
             Some(rect_from_points(start, end))
         } else {

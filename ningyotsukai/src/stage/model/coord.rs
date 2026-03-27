@@ -1,4 +1,5 @@
 /// A 2D position or size.
+#[derive(Clone, Copy)]
 pub struct Coord(f32, f32);
 
 impl Coord {

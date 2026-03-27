@@ -29,10 +29,6 @@ pub struct StageRendererState {
     /// Native GL for our own use.
     native_gl: Option<gl46::GlFns>,
 
-    /// The last tick this widget processed, used to calculate timestamps to
-    /// feed to Inox2D.
-    last_mus: Option<i64>,
-
     /// Renderdoc API
     #[cfg(feature = "renderdoc")]
     doc: Option<renderdoc::RenderDoc<renderdoc::V100>>,
@@ -82,43 +78,6 @@ impl ObjectImpl for StageRendererImp {
         self.obj().connect_resize(move |gl_area, _width, _height| {
             gl_area.make_current();
             gl_area.imp().viewport_changed();
-        });
-
-        let tick = RefCell::new(Some(self.obj().add_tick_callback(move |me, clock| {
-            let mut state = me.imp().state.borrow_mut();
-            let document = state.document.clone().unwrap();
-            let mut document = document.lock().unwrap();
-
-            let mus = clock.frame_time();
-            if let Some(last_mus) = state.last_mus {
-                let del_mus = mus - last_mus;
-                let dt = del_mus as f32 / 1_000_000.0;
-
-                for (_, puppet) in document.stage_mut().iter_mut() {
-                    puppet.ensure_render_initialized();
-                    puppet.model_mut().puppet.begin_frame();
-                    puppet.model_mut().puppet.end_frame(dt);
-                }
-
-                me.queue_render();
-            }
-
-            state.last_mus = Some(mus);
-
-            //TODO: This tick callback keeps Ningyotsukai running
-            glib::ControlFlow::Continue
-        })));
-
-        self.obj().connect_unrealize(move |_| {
-            // Rust's type system doesn't support destructors, because it's
-            // missing some kind of "owned reference" type, so Drop and
-            // destroy require you to pretend the object needs to still be
-            // logically valid just in case someone... grabs it out of the
-            // trash, somehow?
-            //
-            // Hence we have to store an option, just so we can .take() the
-            // callback and remove it.
-            tick.borrow_mut().take().map(|tick| tick.remove());
         });
     }
 }
@@ -250,16 +209,7 @@ impl StageRendererImp {
         let document = state.document.clone().unwrap();
         let document = document.lock().unwrap();
 
-        let mut garbage = vec![];
-        for index in state.renderers.keys() {
-            if !document.stage().contains_puppet(*index) {
-                garbage.push(*index);
-            }
-        }
-
-        for index in garbage {
-            state.renderers.remove(&index);
-        }
+        document.collect_garbage(&mut state.renderers);
     }
 
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {

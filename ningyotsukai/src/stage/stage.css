@@ -7,3 +7,7 @@ ningyo-selection {
     border: 1px solid @theme_selected_bg_color;
     background-color: alpha(@theme_selected_bg_color, 0.05);
 }
+
+ningyo-puppet {
+    border: 1px solid @theme_fg_color;
+}

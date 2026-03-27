@@ -1,5 +1,6 @@
 use glib;
 use graphene;
+use gsk4::Transform;
 use gtk4;
 
 use glib::subclass::InitializingObject;
@@ -7,11 +8,16 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+
+use generational_arena::Index;
+
+use inox2d::math::rect::Rect as InoxRect;
 
 use crate::document::Document;
 use crate::stage::gestures::{DragGesture, SelectGesture, ZoomGesture};
-use crate::stage::gizmos::{StageBorderGizmo, StageSelectionGizmo};
+use crate::stage::gizmos::{PuppetBoundsGizmo, StageBorderGizmo, StageSelectionGizmo};
 use crate::stage::renderer::StageRenderer;
 
 #[derive(Default)]
@@ -24,6 +30,9 @@ pub struct StageWidgetState {
     /// A gizmo to represent the selection box.
     selection_gizmo: Option<StageSelectionGizmo>,
 
+    /// A gizmo for each puppet on the stage.
+    puppet_gizmos: HashMap<Index, PuppetBoundsGizmo>,
+
     /// Rendering area for Inox2D.
     render_area: Option<StageRenderer>,
 
@@ -35,6 +44,10 @@ pub struct StageWidgetState {
 
     /// And our select gesture.
     select_gesture: Option<SelectGesture>,
+
+    /// The last tick this widget processed, used to calculate timestamps to
+    /// feed to Inox2D.
+    last_mus: Option<i64>,
 }
 
 #[derive(glib::Properties)]
@@ -126,6 +139,38 @@ impl ObjectImpl for StageWidgetImp {
             Some(ZoomGesture::for_widget(&self.obj().clone().upcast()));
         self.state.borrow_mut().select_gesture =
             Some(SelectGesture::for_widget(&*self.obj(), &selection_gizmo));
+
+        let tick = RefCell::new(Some(self.obj().add_tick_callback(move |me, clock| {
+            let mut state = me.imp().state.borrow_mut();
+
+            let mus = clock.frame_time();
+            let Some(last_mus) = state.last_mus else {
+                state.last_mus = Some(mus);
+                return glib::ControlFlow::Continue;
+            };
+
+            state.last_mus = Some(mus);
+            drop(state);
+
+            let del_mus = mus - last_mus;
+            let dt = del_mus as f32 / 1_000_000.0;
+
+            me.imp().update_puppets(dt);
+
+            glib::ControlFlow::Continue
+        })));
+
+        self.obj().connect_unrealize(move |_| {
+            // Rust's type system doesn't support destructors, because it's
+            // missing some kind of "owned reference" type, so Drop and
+            // destroy require you to pretend the object needs to still be
+            // logically valid just in case someone... grabs it out of the
+            // trash, somehow?
+            //
+            // Hence we have to store an option, just so we can .take() the
+            // callback and remove it.
+            tick.borrow_mut().take().map(|tick| tick.remove());
+        });
     }
 
     fn dispose(&self) {
@@ -199,6 +244,10 @@ impl WidgetImpl for StageWidgetImp {
             if select.width() > 1 && select.height() > 1 {
                 self.obj().snapshot_child(select, snapshot);
             }
+        }
+
+        for (_, gizmo) in self.state.borrow().puppet_gizmos.iter() {
+            self.obj().snapshot_child(gizmo, snapshot);
         }
 
         snapshot.pop();
@@ -315,6 +364,56 @@ impl StageWidgetImp {
 
         self.configure_adjustments();
     }
+
+    fn update_puppets(&self, dt: f32) {
+        let mut state = self.state.borrow_mut();
+        let document = state.document.clone();
+        let mut document = document.lock().unwrap();
+
+        //First, collect the garbage.
+        document.collect_garbage(&mut state.puppet_gizmos);
+
+        for (index, puppet) in document.stage_mut().iter_mut() {
+            puppet.ensure_render_initialized();
+
+            if dt > 0.0 {
+                puppet.model_mut().puppet.begin_frame();
+                puppet.model_mut().puppet.end_frame(dt);
+            }
+
+            let gizmo = state.puppet_gizmos.entry(index).or_insert_with(|| {
+                let gizmo = PuppetBoundsGizmo::new();
+                gizmo.set_parent(&*self.obj());
+
+                gizmo
+            });
+
+            if let Some(bounds) = puppet.model().puppet.bounds() {
+                let viewport_x = self.hadjustment.borrow().as_ref().unwrap().value() as f32;
+                let viewport_y = self.vadjustment.borrow().as_ref().unwrap().value() as f32;
+                let scale =
+                    10.0_f64.powf(self.zadjustment.borrow().as_ref().unwrap().value()) as f32;
+
+                gizmo.set_visible(true);
+                gizmo.measure(gtk4::Orientation::Horizontal, bounds.width() as i32);
+                gizmo.allocate(
+                    (bounds.width() * scale) as i32,
+                    (bounds.height() * scale) as i32,
+                    -1,
+                    Some(Transform::new().translate(&graphene::Point::new(
+                        bounds.top_left_point().x + bounds.width() / 2.0 - (viewport_x * scale),
+                        bounds.top_left_point().y + bounds.height() / 2.0 - (viewport_y * scale),
+                    ))),
+                );
+            } else {
+                //TODO: Strictly speaking, this is an error state.
+                //Nobody is going to make an emtpy puppet, so we should do... something?! reasonable?!?!
+                gizmo.set_visible(false);
+            }
+        }
+
+        state.render_area.as_ref().unwrap().queue_render();
+    }
 }
 
 glib::wrapper! {
@@ -333,15 +432,21 @@ impl StageWidget {
     }
 
     pub fn set_document(&self, document: Arc<Mutex<Document>>) {
-        self.imp().state.borrow_mut().document = document.clone();
-        self.imp()
-            .state
-            .borrow_mut()
-            .render_area
-            .as_ref()
-            .unwrap()
-            .with_document(document);
+        {
+            let mut state = self.imp().state.borrow_mut();
+
+            state.document = document.clone();
+            state.render_area.as_ref().unwrap().with_document(document);
+
+            for (_, gizmo) in &state.puppet_gizmos {
+                gizmo.unparent();
+            }
+
+            state.puppet_gizmos = HashMap::new();
+        }
+
         self.imp().configure_adjustments();
+        self.imp().update_puppets(0.0);
     }
 
     fn bind(&self) {
