@@ -67,6 +67,7 @@ impl ObjectImpl for StageRendererImp {
 
         // All masks in Inochi use the stencil buffer.
         self.obj().set_has_stencil_buffer(true);
+        self.obj().set_required_version(3, 3);
 
         self.obj().connect_realize(move |gl_area| {
             let me = gl_area.downcast_ref::<StageRenderer>().unwrap();

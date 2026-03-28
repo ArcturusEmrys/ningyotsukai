@@ -97,6 +97,7 @@ impl InoxRenderPreview {
         let realize_self = self.clone();
 
         self.imp().gl_view.set_has_stencil_buffer(true);
+        self.imp().gl_view.set_required_version(3, 3);
 
         self.imp().gl_view.connect_realize(move |gl_area| {
             let annoying_self_borrow = realize_self.imp().state.borrow();
