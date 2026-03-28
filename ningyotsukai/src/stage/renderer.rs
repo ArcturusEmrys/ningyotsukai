@@ -182,8 +182,8 @@ impl StageRendererImp {
         x -= width as f32 / 2.0 / scale;
         y -= height as f32 / 2.0 / scale;
 
-        renderer.camera.position.x = x * dpi as f32;
-        renderer.camera.position.y = y * dpi as f32;
+        renderer.camera.position.x = x;
+        renderer.camera.position.y = y;
         renderer.camera.scale.x = scale * dpi as f32;
         renderer.camera.scale.y = scale * dpi as f32;
 
