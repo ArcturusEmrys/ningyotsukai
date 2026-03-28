@@ -517,4 +517,20 @@ impl StageWidget {
             state.selected.insert(puppet);
         }
     }
+
+    pub fn set_selected_to_area(&self, rect: graphene::Rect) {
+        let mut state = self.imp().state.borrow_mut();
+
+        let mut selected = HashSet::new();
+        for (index, gizmo) in state.puppet_gizmos.iter() {
+            let bounds = gizmo.compute_bounds(self);
+            if let Some(bounds) = bounds {
+                if rect.intersection(&bounds).is_some() {
+                    selected.insert(*index);
+                }
+            }
+        }
+
+        state.selected = selected;
+    }
 }

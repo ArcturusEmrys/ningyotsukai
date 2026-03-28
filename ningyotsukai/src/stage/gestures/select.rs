@@ -3,6 +3,8 @@ use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::stage::StageWidget;
+
 fn rect_from_points(start: [f64; 2], end: [f64; 2]) -> gdk4::Rectangle {
     let mut x = start[0] as i32;
     let mut y = start[1] as i32;
@@ -33,7 +35,7 @@ pub struct SelectGestureImp {
 }
 
 impl SelectGesture {
-    pub fn for_widget(widget: &impl IsA<gtk4::Widget>, gizmo: &impl IsA<gtk4::Widget>) -> Self {
+    pub fn for_widget(widget: &StageWidget, gizmo: &impl IsA<gtk4::Widget>) -> Self {
         let selfish = SelectGesture(Rc::new(RefCell::new(SelectGestureImp {
             starting_position: None,
             ending_position: None,
@@ -79,23 +81,23 @@ impl SelectGesture {
         });
 
         let begin_self = selfish.clone();
-        select.connect_drag_end(move |_, x, y| {
-            let state = begin_self.0.borrow_mut();
+        select.connect_drag_end({
+            let weak_widget = widget.downgrade();
+            move |_, _x, _y| {
+                let state = begin_self.0.borrow_mut();
 
-            state.gizmo.set_visible(false);
+                if let Some(widget) = weak_widget.upgrade() {
+                    if let Some(bounds) = state.gizmo.compute_bounds(&widget) {
+                        widget.set_selected_to_area(bounds);
+                    }
+                }
+
+                state.gizmo.set_visible(false);
+            }
         });
 
         widget.add_controller(select);
 
         selfish
-    }
-
-    pub fn as_rect(&self) -> Option<gdk4::Rectangle> {
-        let state = self.0.borrow_mut();
-        if let (Some(start), Some(end)) = (state.starting_position, state.ending_position) {
-            Some(rect_from_points(start, end))
-        } else {
-            None
-        }
     }
 }
