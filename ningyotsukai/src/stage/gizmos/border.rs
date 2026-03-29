@@ -1,4 +1,3 @@
-//! Stupid-ass GTK class that exists solely to create a CSS node
 use glib;
 use gtk4;
 

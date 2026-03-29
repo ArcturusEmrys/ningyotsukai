@@ -2,44 +2,41 @@ use glib;
 use gtk4;
 
 use glib::subclass::InitializingObject;
-use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 #[derive(Default)]
-pub struct DragSelectGizmoImp {}
+pub struct PuppetOriginGizmoImp {}
 
 #[glib::object_subclass]
-impl ObjectSubclass for DragSelectGizmoImp {
-    const NAME: &'static str = "NGTDragSelectGizmo";
-    type Type = DragSelectGizmo;
+impl ObjectSubclass for PuppetOriginGizmoImp {
+    const NAME: &'static str = "NGTPuppetOriginGizmo";
+    type Type = PuppetOriginGizmo;
     type ParentType = gtk4::Widget;
 
     fn class_init(class: &mut Self::Class) {
-        class.set_css_name("ningyo-dragselect");
+        class.set_css_name("ningyo-origin");
     }
 
     fn instance_init(_obj: &InitializingObject<Self>) {}
 }
 
-impl ObjectImpl for DragSelectGizmoImp {
+impl ObjectImpl for PuppetOriginGizmoImp {
     fn constructed(&self) {
         self.parent_constructed();
-
-        self.obj().set_size_request(0, 0);
     }
 }
 
-impl WidgetImpl for DragSelectGizmoImp {}
+impl WidgetImpl for PuppetOriginGizmoImp {}
 
-impl ScrollableImpl for DragSelectGizmoImp {}
+impl ScrollableImpl for PuppetOriginGizmoImp {}
 
 glib::wrapper! {
-    pub struct DragSelectGizmo(ObjectSubclass<DragSelectGizmoImp>)
+    pub struct PuppetOriginGizmo(ObjectSubclass<PuppetOriginGizmoImp>)
         @extends gtk4::Widget,
         @implements gtk4::Accessible, gtk4::Buildable, gtk4::ConstraintTarget, gtk4::Scrollable;
 }
 
-impl DragSelectGizmo {
+impl PuppetOriginGizmo {
     pub fn new() -> Self {
         glib::Object::builder().build()
     }

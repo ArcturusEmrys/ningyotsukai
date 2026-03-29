@@ -19,3 +19,7 @@ ningyo-puppet:selected {
 ningyo-selection {
     border: 1px solid black;
 }
+
+ningyo-puppet:selected ningyo-origin {
+    border: 1px solid red;
+}

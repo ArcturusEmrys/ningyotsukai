@@ -1,6 +1,5 @@
 use glib;
 use graphene;
-use gsk4::Transform;
 use gtk4;
 
 use glib::subclass::InitializingObject;
@@ -322,19 +321,6 @@ impl StageWidgetImp {
         }
     }
 
-    /// Given a point on the stage (or off of it), calculate where it should
-    /// be relative to this widget's viewport.
-    fn project_stage_to_viewport(&self, point: Vec2) -> Vec2 {
-        let viewport_x = self.hadjustment.borrow().as_ref().unwrap().value() as f32;
-        let viewport_y = self.vadjustment.borrow().as_ref().unwrap().value() as f32;
-        let scale = 10.0_f64.powf(self.zadjustment.borrow().as_ref().unwrap().value()) as f32;
-
-        Vec2::new(
-            (point.x - viewport_x) * scale,
-            (point.y - viewport_y) * scale,
-        )
-    }
-
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
@@ -391,18 +377,15 @@ impl StageWidgetImp {
     }
 
     fn update_puppets(&self, dt: f32) {
+        //TODO: This should be moved into a separate DocumentManager so that
+        //having two windows displaying the same Document doesn't double time
         {
             let state = self.state.borrow_mut();
             let document_arc = state.document.clone();
             let mut document = document_arc.lock().unwrap();
 
             for (_, puppet) in document.stage_mut().iter_mut() {
-                puppet.ensure_render_initialized();
-
-                if dt > 0.0 {
-                    puppet.model_mut().puppet.begin_frame();
-                    puppet.model_mut().puppet.end_frame(dt);
-                }
+                puppet.update(dt);
             }
         }
 
@@ -466,15 +449,13 @@ impl StageWidget {
     pub fn puppet_updated(&self) {
         let mut state = self.imp().state.borrow_mut();
         let document_arc = state.document.clone();
-        let mut document = document_arc.lock().unwrap();
+        let document = document_arc.lock().unwrap();
 
         //First, collect the garbage.
         document.collect_garbage(&mut state.puppet_gizmos);
         document.collect_garbage_set(&mut state.selected);
 
-        for (index, puppet) in document.stage_mut().iter_mut() {
-            puppet.ensure_render_initialized();
-
+        for (index, _puppet) in document.stage().iter() {
             let is_selected = state.selected.contains(&index);
 
             let gizmo = state.puppet_gizmos.entry(index).or_insert_with(|| {
@@ -484,48 +465,17 @@ impl StageWidget {
                 gizmo
             });
 
-            if let Some(bounds) = puppet.model().puppet.bounds() {
-                let bounds_tl = bounds.top_left_point();
-                let bounds_br = bounds.bottom_right_point();
-
-                let bounds_width = bounds_br.x - bounds_tl.x;
-                let bounds_height = bounds_br.y - bounds_tl.y;
-
-                let adjust = Vec2::new(bounds_width / 2.0, bounds_height / 2.0);
-                let offset = puppet.position();
-
-                let viewport_tl = self
-                    .imp()
-                    .project_stage_to_viewport(bounds_tl + adjust + offset);
-                let viewport_br = self
-                    .imp()
-                    .project_stage_to_viewport(bounds_br + adjust + offset);
-
-                let width = viewport_br.x - viewport_tl.x;
-                let height = viewport_br.y - viewport_tl.y;
-
-                gizmo.set_visible(true);
-                gizmo.measure(gtk4::Orientation::Horizontal, bounds.width() as i32);
-                gizmo.allocate(
-                    width as i32,
-                    height as i32,
-                    -1,
-                    Some(
-                        Transform::new()
-                            .translate(&graphene::Point::new(viewport_tl.x, viewport_tl.y)),
-                    ),
-                );
-            } else {
-                //TODO: Strictly speaking, this is an error state.
-                //Nobody is going to make an emtpy puppet, so we should do... something?! reasonable?!?!
-                gizmo.set_visible(false);
-            }
-
             if is_selected {
                 gizmo.set_state_flags(gtk4::StateFlags::SELECTED, false);
             } else {
                 gizmo.unset_state_flags(gtk4::StateFlags::SELECTED);
             }
+        }
+
+        drop(document);
+
+        for (_, gizmo) in state.puppet_gizmos.iter() {
+            gizmo.puppet_updated(self);
         }
 
         state.render_area.as_ref().unwrap().queue_render();
@@ -576,5 +526,18 @@ impl StageWidget {
         if let Some(resize) = state.selection_gizmo.as_ref() {
             resize.selection_changed(&self, state.selected.iter(), &state.puppet_gizmos);
         }
+    }
+
+    /// Given a point on the stage (or off of it), calculate where it should
+    /// be relative to this widget's viewport.
+    pub fn project_stage_to_viewport(&self, point: Vec2) -> Vec2 {
+        let viewport_x = self.imp().hadjustment.borrow().as_ref().unwrap().value() as f32;
+        let viewport_y = self.imp().vadjustment.borrow().as_ref().unwrap().value() as f32;
+        let scale = 10.0_f64.powf(self.imp().zadjustment.borrow().as_ref().unwrap().value()) as f32;
+
+        Vec2::new(
+            (point.x - viewport_x) * scale,
+            (point.y - viewport_y) * scale,
+        )
     }
 }
