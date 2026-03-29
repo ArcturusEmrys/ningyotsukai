@@ -3,15 +3,19 @@ ningyo-stageborder {
     box-shadow: 2px 2px black;
 }
 
-ningyo-selection {
+ningyo-dragselect {
     border: 1px solid @theme_selected_bg_color;
     background-color: alpha(@theme_selected_bg_color, 0.05);
 }
 
 ningyo-puppet {
-    border: 1px solid transparent;
+    border: 1px dotted transparent;
 }
 
 ningyo-puppet:selected {
     border-color: black;
+}
+
+ningyo-selection {
+    border: 1px solid black;
 }

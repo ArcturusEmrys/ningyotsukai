@@ -16,8 +16,10 @@ use generational_arena::Index;
 use glam::Vec2;
 
 use crate::document::Document;
-use crate::stage::gestures::{DragGesture, ResizeGestures, SelectGesture, ZoomGesture};
-use crate::stage::gizmos::{PuppetBoundsGizmo, StageBorderGizmo, StageSelectionGizmo};
+use crate::stage::gestures::{DragGesture, SelectGesture, ZoomGesture};
+use crate::stage::gizmos::{
+    DragSelectGizmo, PuppetBoundsGizmo, PuppetSelectionGizmo, StageBorderGizmo,
+};
 use crate::stage::renderer::StageRenderer;
 
 #[derive(Default)]
@@ -31,7 +33,7 @@ pub struct StageWidgetState {
     border_gizmo: Option<StageBorderGizmo>,
 
     /// A gizmo to represent the selection box.
-    selection_gizmo: Option<StageSelectionGizmo>,
+    drag_sel_gizmo: Option<DragSelectGizmo>,
 
     /// A gizmo for each puppet on the stage.
     puppet_gizmos: HashMap<Index, PuppetBoundsGizmo>,
@@ -48,8 +50,8 @@ pub struct StageWidgetState {
     /// And our select gesture.
     select_gesture: Option<SelectGesture>,
 
-    /// This gesture puts resize handles on the current selection.
-    resize_gestures: Option<ResizeGestures>,
+    /// Gizmo for the current selection.
+    selection_gizmo: Option<PuppetSelectionGizmo>,
 
     /// The last tick this widget processed, used to calculate timestamps to
     /// feed to Inox2D.
@@ -117,10 +119,10 @@ impl ObjectImpl for StageWidgetImp {
         border_gizmo.set_parent(&*self.obj());
         self.state.borrow_mut().border_gizmo = Some(border_gizmo);
 
-        let selection_gizmo = StageSelectionGizmo::new();
+        let drag_sel_gizmo = DragSelectGizmo::new();
 
-        selection_gizmo.set_parent(&*self.obj());
-        self.state.borrow_mut().selection_gizmo = Some(selection_gizmo.clone());
+        drag_sel_gizmo.set_parent(&*self.obj());
+        self.state.borrow_mut().drag_sel_gizmo = Some(drag_sel_gizmo.clone());
 
         let gl_area = StageRenderer::new();
 
@@ -144,7 +146,7 @@ impl ObjectImpl for StageWidgetImp {
         self.state.borrow_mut().zoom_gesture =
             Some(ZoomGesture::for_widget(&self.obj().clone().upcast()));
         self.state.borrow_mut().select_gesture =
-            Some(SelectGesture::for_widget(&*self.obj(), &selection_gizmo));
+            Some(SelectGesture::for_widget(&*self.obj(), &drag_sel_gizmo));
 
         let tick = RefCell::new(Some(self.obj().add_tick_callback(move |me, clock| {
             let mut state = me.imp().state.borrow_mut();
@@ -246,7 +248,7 @@ impl WidgetImpl for StageWidgetImp {
             self.obj().snapshot_child(render, snapshot);
         }
 
-        if let Some(ref select) = self.state.borrow().selection_gizmo {
+        if let Some(ref select) = self.state.borrow().drag_sel_gizmo {
             if select.width() > 1 && select.height() > 1 {
                 self.obj().snapshot_child(select, snapshot);
             }
@@ -256,8 +258,8 @@ impl WidgetImpl for StageWidgetImp {
             self.obj().snapshot_child(gizmo, snapshot);
         }
 
-        if let Some(ref resize) = self.state.borrow().resize_gestures {
-            resize.snapshot(&*self.obj(), snapshot);
+        if let Some(ref resize) = self.state.borrow().selection_gizmo {
+            self.obj().snapshot_child(resize, snapshot);
         }
 
         snapshot.pop();
@@ -440,10 +442,14 @@ impl StageWidget {
 
             state.puppet_gizmos = HashMap::new();
 
-            if let Some(resize_gestures) = state.resize_gestures.as_ref() {
-                resize_gestures.set_document(document);
+            if let Some(selection_gizmo) = state.selection_gizmo.as_ref() {
+                selection_gizmo.set_document(document);
             } else {
-                state.resize_gestures = Some(ResizeGestures::new(document));
+                let gizmo = PuppetSelectionGizmo::new();
+                gizmo.set_document(document);
+                gizmo.set_parent(self);
+
+                state.selection_gizmo = Some(gizmo);
             }
         }
 
@@ -538,7 +544,7 @@ impl StageWidget {
             state.selected.insert(puppet);
         }
 
-        if let Some(resize) = state.resize_gestures.as_ref() {
+        if let Some(resize) = state.selection_gizmo.as_ref() {
             resize.selection_changed(&self, state.selected.iter(), &state.puppet_gizmos);
         }
     }
@@ -558,7 +564,7 @@ impl StageWidget {
 
         state.selected = selected;
 
-        if let Some(resize) = state.resize_gestures.as_ref() {
+        if let Some(resize) = state.selection_gizmo.as_ref() {
             resize.selection_changed(&self, state.selected.iter(), &state.puppet_gizmos);
         }
     }
@@ -567,7 +573,7 @@ impl StageWidget {
     pub fn refresh_selection(&self) {
         let state = self.imp().state.borrow_mut();
 
-        if let Some(resize) = state.resize_gestures.as_ref() {
+        if let Some(resize) = state.selection_gizmo.as_ref() {
             resize.selection_changed(&self, state.selected.iter(), &state.puppet_gizmos);
         }
     }

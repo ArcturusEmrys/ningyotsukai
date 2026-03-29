@@ -8,9 +8,9 @@
         <file compressed="true" preprocess="xml-stripblanks">panels/dock.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">panels/frame.ui</file>
         <file compressed="true">panels/frame.css</file>
-        <file compressed="true" preprocess="xml-stripblanks">stage/gestures/resize/ne-sw-resize.svg</file>
-        <file compressed="true" preprocess="xml-stripblanks">stage/gestures/resize/ns-resize.svg</file>
-        <file compressed="true" preprocess="xml-stripblanks">stage/gestures/resize/nw-se-resize.svg</file>
-        <file compressed="true" preprocess="xml-stripblanks">stage/gestures/resize/ew-resize.svg</file>
+        <file compressed="true" preprocess="xml-stripblanks">stage/gizmos/selection/ne-sw-resize.svg</file>
+        <file compressed="true" preprocess="xml-stripblanks">stage/gizmos/selection/ns-resize.svg</file>
+        <file compressed="true" preprocess="xml-stripblanks">stage/gizmos/selection/nw-se-resize.svg</file>
+        <file compressed="true" preprocess="xml-stripblanks">stage/gizmos/selection/ew-resize.svg</file>
     </gresource>
 </gresources>
