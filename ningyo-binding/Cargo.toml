@@ -1,0 +1,11 @@
+[package]
+name = "ningyo-binding"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+json = "0.12.4"
+inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "8f97e9af23dab15c4aef92d376deded01b7479fb" }
+glam = "0.29.0"
+ningyo-extensions = { path = "../ningyo-extensions" }

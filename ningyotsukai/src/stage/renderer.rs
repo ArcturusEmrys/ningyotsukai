@@ -158,8 +158,6 @@ impl GLAreaImpl for StageRendererImp {
 
 impl StageRendererImp {
     fn apply_viewport_to_renderer(&self, renderer: &mut OpenglRenderer, puppet: &StagePuppet) {
-        let stage = self.obj().closest::<StageWidget>().unwrap();
-
         let width = self.obj().width().abs() as u32;
         let height = self.obj().height().abs() as u32;
         let dpi = self.obj().scale_factor().abs() as u32;

@@ -900,6 +900,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ningyo-binding"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "inox2d",
+ "json",
+ "ningyo-extensions",
+]
+
+[[package]]
 name = "ningyo-extensions"
 version = "0.1.0"
 dependencies = [
