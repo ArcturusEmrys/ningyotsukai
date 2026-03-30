@@ -9,9 +9,44 @@ pub struct RatioBinding {
     out_range: Vec2,
 }
 
+impl RatioBinding {
+    /// Evaluate a ratio binding parameter.
+    fn eval(&self, t: f32) -> f32 {
+        let in_range_width = self.in_range.y - self.in_range.x;
+        let mut inner_t = (t - self.in_range.x) / in_range_width;
+        if inner_t < 0.0 {
+            inner_t = 0.0;
+        } else if inner_t > 1.0 {
+            inner_t = 1.0;
+        }
+        if self.inverse {
+            inner_t = 1.0 - inner_t;
+        }
+
+        let out_range_width = self.out_range.y - self.out_range.x;
+        let mut outer_t = (inner_t - self.out_range.x) / out_range_width;
+        if outer_t < self.out_range.x {
+            outer_t = self.out_range.x;
+        } else if outer_t > self.out_range.y {
+            outer_t = self.out_range.y;
+        }
+
+        outer_t
+    }
+}
+
 pub enum BindingType {
     Ratio(RatioBinding),
     Expression(String),
+}
+
+impl BindingType {
+    fn eval(&self, t: f32) -> f32 {
+        match self {
+            Self::Ratio(binding) => binding.eval(t),
+            Self::Expression(_) => unimplemented!(),
+        }
+    }
 }
 
 pub struct Binding {
