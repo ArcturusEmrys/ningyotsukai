@@ -33,6 +33,10 @@ impl Document {
         &self.trackers
     }
 
+    pub fn trackers_mut(&mut self) -> &mut Trackers {
+        &mut self.trackers
+    }
+
     /// Given a map of puppet-associated items, clear out any entries whose
     /// keys do not correspond to a puppet on the current stage.
     pub fn collect_garbage<T>(&self, map: &mut HashMap<Index, T>) {

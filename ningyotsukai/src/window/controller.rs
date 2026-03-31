@@ -82,5 +82,15 @@ impl WindowController {
         let main_menu = self.imp().main_menu.clone();
         let main_menu_button = self.imp().main_menu_button.clone();
         main_menu_button.set_menu_model(Some(&main_menu));
+
+        self.imp().document_controller.bind(
+            self.imp()
+                .tracker_manager
+                .borrow_mut()
+                .as_ref()
+                .unwrap()
+                .clone(),
+            Default::default(),
+        )
     }
 }

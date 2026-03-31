@@ -1,9 +1,11 @@
 use crate::io::{IoMessage, IoResponse, start};
 use crate::tracker::cookie::TrackerCookie;
+use crate::tracker::reference::TrackerRef;
 
 use smol::channel::{Receiver, Sender};
 
 use std::cell::RefCell;
+use std::net::ToSocketAddrs;
 use std::rc::Rc;
 
 /// Manager type for all tracker communication.
@@ -56,6 +58,25 @@ impl TrackerManager {
         me
     }
 
+    pub fn register_tracker(&self, tracker_ref: TrackerRef) {
+        let me = self.0.borrow();
+
+        //TODO: If the user input an invalid address, we need some way to
+        //report the failure back to the user and NOT register the tracker
+        tracker_ref.with_tracker(|tracker| {
+            for addr in tracker.as_ip_addr().to_socket_addrs()? {
+                me.io_send
+                    .send_blocking(IoMessage::ConnectVTSTracker(
+                        addr,
+                        TrackerCookie::TrackerRef(tracker_ref.clone()),
+                    ))
+                    .unwrap();
+            }
+
+            Ok::<(), std::io::Error>(())
+        });
+    }
+
     /// Run any background processing on messages sent from the IO thread.
     ///
     /// This is scheduled to be periodically called in a glib idle function
@@ -92,7 +113,7 @@ impl Drop for TrackerManagerImp {
         // If we were dropped without shutting down, shut down anyway.
         if let Some(recv_fiber) = self.recv_fiber.take() {
             self.io_send
-                .send_blocking(IoMessage::Exit(TrackerCookie::sequential(0)))
+                .send_blocking(IoMessage::Exit(TrackerCookie::Sequential(0)))
                 .unwrap();
             recv_fiber.remove();
         }

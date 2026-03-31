@@ -8,17 +8,19 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
 use std::error::Error;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::document::model::Document;
 use crate::panels::PanelDock;
 use crate::panels::PanelFrame;
 use crate::stage::{Puppet, StageWidget};
+use crate::tracker::{TrackerManager, TrackerPanel};
 
 use ningyo_extensions::{FileIn, WidgetExt2};
 
-#[derive(Default)]
 pub struct DocumentControllerState {
+    tracker_manager: Rc<TrackerManager>,
     document: Arc<Mutex<Document>>,
 }
 
@@ -36,7 +38,7 @@ pub struct DocumentControllerImp {
     #[template_child]
     new_panel_dock: TemplateChild<PanelDock>,
 
-    state: RefCell<DocumentControllerState>,
+    state: RefCell<Option<DocumentControllerState>>,
 }
 
 #[glib::object_subclass]
@@ -58,9 +60,6 @@ impl ObjectImpl for DocumentControllerImp {
     fn constructed(&self) {
         self.parent_constructed();
 
-        self.stage
-            .set_document(self.state.borrow().document.clone());
-
         // Wire up document specific actions
         let doc = gio::SimpleActionGroup::new();
 
@@ -75,7 +74,7 @@ impl ObjectImpl for DocumentControllerImp {
                         Some(&gio::Cancellable::new()),
                         move |file_or_error| {
                             let maybe_error: Result<(), Box<dyn Error>> = (|| {
-                                callback_self.open_document(file_or_error?)?;
+                                callback_self.import_puppet(file_or_error?)?;
                                 Ok(())
                             })(
                             );
@@ -93,10 +92,16 @@ impl ObjectImpl for DocumentControllerImp {
                     let panel_open: bool = action.state().unwrap().get().unwrap();
 
                     if !panel_open {
+                        let state = doc_controller_panels_tracker.imp().state.borrow();
+                        let tracker_manager = state.as_ref().unwrap().tracker_manager.clone();
+                        let document = state.as_ref().unwrap().document.clone();
                         let builder = gtk4::Builder::from_resource(
                             "/live/arcturus/ningyotsukai/tracker/panel_frame.ui",
                         );
                         let panel: PanelFrame = builder.object("panel").unwrap();
+                        let contents: TrackerPanel = builder.object("contents").unwrap();
+
+                        contents.bind(tracker_manager, document);
 
                         doc_controller_panels_tracker
                             .imp()
@@ -162,7 +167,13 @@ impl ObjectImpl for DocumentControllerImp {
     }
 }
 
-impl WidgetImpl for DocumentControllerImp {}
+impl WidgetImpl for DocumentControllerImp {
+    fn unrealize(&self) {
+        //We need to drop our tracker manager, otherwise we keep the application open
+        self.state.borrow_mut().take();
+        self.parent_unrealize();
+    }
+}
 
 impl BoxImpl for DocumentControllerImp {}
 
@@ -173,20 +184,22 @@ glib::wrapper! {
 }
 
 impl DocumentController {
-    pub fn new(app: &gtk4::Application) -> Self {
-        let selfish: DocumentController =
-            glib::Object::builder().property("application", app).build();
+    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Arc<Mutex<Document>>) {
+        *self.imp().state.borrow_mut() = Some(DocumentControllerState {
+            tracker_manager,
+            document: document.clone(),
+        });
 
-        selfish
+        self.imp().stage.set_document(document);
     }
 
-    pub fn open_document(&self, file: gio::File) -> Result<(), Box<dyn Error>> {
+    pub fn import_puppet(&self, file: gio::File) -> Result<(), Box<dyn Error>> {
         let stream = file.read(Some(&gio::Cancellable::new()))?;
         let stream_adapter = FileIn::from(stream);
 
         let puppet = Puppet::open(stream_adapter)?;
         let state = self.imp().state.borrow_mut();
-        let mut document = state.document.lock().unwrap();
+        let mut document = state.as_ref().unwrap().document.lock().unwrap();
 
         document.stage_mut().add_puppet(puppet);
 

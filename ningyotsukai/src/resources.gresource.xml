@@ -14,5 +14,6 @@
         <file compressed="true" preprocess="xml-stripblanks">stage/gizmos/selection/ew-resize.svg</file>
         <file compressed="true" preprocess="xml-stripblanks">tracker/panel.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">tracker/panel_frame.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">tracker/form.ui</file>
     </gresource>
 </gresources>

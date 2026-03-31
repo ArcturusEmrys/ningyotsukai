@@ -22,5 +22,19 @@
                 </child>
             </object>
         </child>
+        <child>
+            <object class="GtkActionBar">
+                <child type="start">
+                    <object class="GtkButton" id="new_button">
+                        <property name="icon_name">list-add</property>
+                    </object>
+                </child>
+                <child type="end">
+                    <object class="GtkButton" id="edit_button">
+                        <property name="label">Edit...</property>
+                    </object>
+                </child>
+            </object>
+        </child>
     </template>
 </interface>
