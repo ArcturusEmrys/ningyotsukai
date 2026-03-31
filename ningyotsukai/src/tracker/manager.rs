@@ -1,4 +1,5 @@
 use crate::io::{IoMessage, IoResponse, start};
+use crate::tracker::cookie::TrackerCookie;
 
 use smol::channel::{Receiver, Sender};
 
@@ -13,19 +14,19 @@ use std::rc::Rc;
 /// covers the non-main-thread portion of the tracker code.
 pub struct TrackerManager(RefCell<TrackerManagerImp>);
 pub struct TrackerManagerImp {
-    io_send: Sender<IoMessage<u32>>,
-    io_recv: Receiver<IoResponse<u32>>,
+    io_send: Sender<IoMessage<TrackerCookie>>,
+    io_recv: Receiver<IoResponse<TrackerCookie>>,
     next_cookie: u32,
     recv_fiber: Option<glib::SourceId>,
 }
 
 impl TrackerManager {
-    fn next_cookie(&self) -> u32 {
+    fn next_cookie(&self) -> TrackerCookie {
         let mut me = self.0.borrow_mut();
         let out = me.next_cookie;
         me.next_cookie += 1;
 
-        out
+        TrackerCookie::Sequential(out)
     }
 
     pub fn new() -> Rc<Self> {
@@ -90,7 +91,9 @@ impl Drop for TrackerManagerImp {
     fn drop(&mut self) {
         // If we were dropped without shutting down, shut down anyway.
         if let Some(recv_fiber) = self.recv_fiber.take() {
-            self.io_send.send_blocking(IoMessage::Exit(0)).unwrap();
+            self.io_send
+                .send_blocking(IoMessage::Exit(TrackerCookie::sequential(0)))
+                .unwrap();
             recv_fiber.remove();
         }
     }
