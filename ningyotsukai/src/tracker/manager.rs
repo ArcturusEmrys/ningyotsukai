@@ -2,7 +2,7 @@ use crate::io::{IoMessage, IoResponse, start};
 use crate::tracker::cookie::TrackerCookie;
 use crate::tracker::reference::TrackerRef;
 
-use smol::channel::{Receiver, Sender};
+use smol::channel::{Receiver, Sender, TryRecvError};
 
 use std::cell::RefCell;
 use std::net::ToSocketAddrs;
@@ -92,15 +92,27 @@ impl TrackerManager {
     /// This is scheduled to be periodically called in a glib idle function
     pub fn tick(&self) {
         let me = self.0.borrow();
-        if let Ok(msg) = me.io_recv.try_recv() {
-            match msg {
-                IoResponse::Error(e, c) => {
-                    //TODO: Display the error somewhere.
-                }
-                IoResponse::VtsTrackerPacket(data, c) => {
-                    //TODO: Send the data to the appropriate document controller.
+        match me.io_recv.try_recv() {
+            Ok(IoResponse::Error(e, c)) => {
+                //TODO: Display the error somewhere more user friendly.
+                eprintln!("ERROR: {}", e);
+            }
+            Ok(IoResponse::VtsTrackerPacket(data, c)) => {
+                match c {
+                    TrackerCookie::TrackerRef(tracker_ref) => {
+                        if let Some(document) = tracker_ref.document() {
+                            for (_, puppet) in document.lock().unwrap().stage_mut().iter_mut() {
+                                puppet.apply_bindings(&data);
+                            }
+                        }
+                    }
+                    TrackerCookie::Sequential(_) => {
+                        eprintln!("ERROR: Received VTS tracker packet on a sequential cookie");
+                    } //can't do nothing about this
                 }
             }
+            Err(TryRecvError::Closed) => eprintln!("ERROR: CLOSED"),
+            Err(TryRecvError::Empty) => {} //ok, so...?
         }
     }
 

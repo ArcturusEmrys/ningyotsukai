@@ -22,6 +22,7 @@ inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "8f97e9af23dab
 inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "8f97e9af23dab15c4aef92d376deded01b7479fb" }
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
 ningyo-extensions = { path = "../ningyo-extensions" }
+ningyo-binding = { path = "../ningyo-binding" }
 renderdoc = { version = "0.12.1", optional = true }
 
 [target.'cfg(not(windows))'.dependencies]

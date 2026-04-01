@@ -1,14 +1,19 @@
-use inox2d::formats::inp::parse_inp_parts;
 use inox2d::math::rect::Rect;
 use inox2d::model::Model;
+use inox2d::params::Param;
 use inox2d::puppet::Puppet as InoxPuppet;
 use inox2d::texture::ShallowTexture;
+use inox2d::{formats::inp::parse_inp_parts, params::ParamUuid};
 
 use json::JsonValue;
+use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
 
 use glam::Vec2;
+
+use crate::io::VtsPacket;
+use ningyo_binding::{Binding, parse_bindings};
 
 pub struct Puppet {
     /// The position of the puppet's origin point, (0,0), relative to the stage.
@@ -34,17 +39,31 @@ pub struct Puppet {
     /// Will change as the puppet is deformed by parameters.
     /// Is not affected by position or scale.
     bounds: Option<Rect>,
+
+    /// Binding data configuration for this puppet.
+    ///
+    /// Defines the rules by which incoming tracker data drives the puppet.
+    bindings: Vec<Binding>,
+
+    /// Index of param UUIDs to strings.
+    param_uuid_index: HashMap<ParamUuid, String>,
 }
 
 impl Puppet {
     pub fn open(file: impl Read) -> Result<Self, Box<dyn Error>> {
         let (puppet_json, textures, vendors) = parse_inp_parts(file)?;
+        let bindings = parse_bindings(&vendors).unwrap_or_else(|| vec![]);
         let puppet_data = InoxPuppet::new_from_json(&puppet_json)?;
         let model = Model {
             puppet: puppet_data,
             textures,
             vendors,
         };
+
+        let mut param_uuid_index = HashMap::new();
+        for (name, param) in model.puppet.params().iter() {
+            param_uuid_index.insert(param.uuid, name.clone());
+        }
 
         Ok(Self {
             position: Vec2::new(0.0, 0.0),
@@ -54,6 +73,8 @@ impl Puppet {
             is_render_initialized: false,
             textures: vec![],
             bounds: None,
+            bindings,
+            param_uuid_index,
         })
     }
 
@@ -111,5 +132,63 @@ impl Puppet {
     /// Get the current puppet bounds.
     pub fn bounds(&self) -> Option<&Rect> {
         self.bounds.as_ref()
+    }
+
+    pub fn param_by_uuid(&self, uuid: ParamUuid) -> Option<&Param> {
+        let name = self.param_uuid_index.get(&uuid)?;
+        self.model.puppet.params().get(name)
+    }
+
+    /// Apply tracker data to this puppet.
+    pub fn apply_bindings(&mut self, data: &VtsPacket) {
+        dbg!(data.facefound);
+        if data.facefound {
+            for binding in self.bindings.iter() {
+                let in_value = match (binding.source_name.as_str(), binding.source_type.as_str()) {
+                    ("Head", "BoneRotRoll") => data.rotation[0],
+                    ("Head", "BoneRotPitch") => data.rotation[1],
+                    ("Head", "BoneRotYaw") => data.rotation[2],
+                    ("Head", "BonePosX") => data.position[0],
+                    ("Head", "BonePosY") => data.position[1],
+                    ("Head", "BonePosZ") => data.position[2],
+                    ("ftEyeXLeft", "Blendshape") => data.eyeleft[0],
+                    ("ftEyeYLeft", "Blendshape") => data.eyeleft[1],
+                    ("ftEyeZLeft", "Blendshape") => data.eyeleft[2],
+                    ("ftEyeXRight", "Blendshape") => data.eyeright[0],
+                    ("ftEyeYRight", "Blendshape") => data.eyeright[1],
+                    ("ftEyeZRight", "Blendshape") => data.eyeright[2],
+                    (name, "Blendshape") => {
+                        let Some((_, value)) = data.blendshapes.iter().find(|(s, _)| s == name)
+                        else {
+                            continue;
+                        };
+                        *value
+                    }
+                    _ => continue,
+                };
+
+                let out_value = binding.eval(in_value as f32);
+                if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
+                    let mut orig = self
+                        .model
+                        .puppet
+                        .param_ctx
+                        .as_ref()
+                        .unwrap()
+                        .get(param_name)
+                        .unwrap();
+
+                    orig[binding.axis as usize] = out_value;
+
+                    self.model
+                        .puppet
+                        .param_ctx
+                        .as_mut()
+                        .unwrap()
+                        .set(param_name, orig)
+                        .unwrap();
+                }
+            }
+        }
     }
 }

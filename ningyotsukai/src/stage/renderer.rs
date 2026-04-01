@@ -12,13 +12,12 @@ use std::sync::{Arc, Mutex};
 
 use inox2d::render::InoxRendererExt;
 use inox2d_opengl::OpenglRenderer;
-use ningyo_extensions::{GLAreaExt2, WidgetExt2};
+use ningyo_extensions::GLAreaExt2;
 
 use generational_arena::Index;
 
 use crate::document::Document;
 use crate::stage::Puppet as StagePuppet;
-use crate::stage::StageWidget;
 
 #[derive(Default)]
 pub struct StageRendererState {

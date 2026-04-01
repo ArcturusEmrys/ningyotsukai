@@ -50,14 +50,14 @@ impl BindingType {
 }
 
 pub struct Binding {
-    name: String,
-    param: ParamUuid,
-    axis: u8,
-    dampen_level: f32,
-    source_name: String,
-    source_display_name: String,
-    source_type: String,
-    binding_type: BindingType,
+    pub name: String,
+    pub param: ParamUuid,
+    pub axis: u8,
+    pub dampen_level: f32,
+    pub source_name: String,
+    pub source_display_name: String,
+    pub source_type: String,
+    pub binding_type: BindingType,
 }
 
 impl Binding {
@@ -109,5 +109,12 @@ impl Binding {
         }
 
         Some(bindings)
+    }
+
+    pub fn eval(&self, in_value: f32) -> f32 {
+        match &self.binding_type {
+            BindingType::Ratio(ratio) => ratio.eval(in_value),
+            BindingType::Expression(_) => 0.0, //TODO: unimplemented
+        }
     }
 }

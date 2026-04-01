@@ -36,14 +36,14 @@ fn parse_blendshapes(val: &[JsonValue]) -> Vec<(String, f64)> {
 
 #[derive(Debug)]
 pub struct VtsPacket {
-    timestamp: u64,
-    hotkey: i32,
-    facefound: bool,
-    rotation: [f64; 3],
-    position: [f64; 3],
-    eyeleft: [f64; 3],
-    eyeright: [f64; 3],
-    blendshapes: Vec<(String, f64)>,
+    pub timestamp: u64,
+    pub hotkey: i32,
+    pub facefound: bool,
+    pub rotation: [f64; 3],
+    pub position: [f64; 3],
+    pub eyeleft: [f64; 3],
+    pub eyeright: [f64; 3],
+    pub blendshapes: Vec<(String, f64)>,
 }
 
 impl VtsPacket {
@@ -64,7 +64,7 @@ impl VtsPacket {
                 .get("EyeRight")
                 .and_then(|v| parse_xyz(as_object(v)?))?,
             blendshapes: data
-                .get("Blendshapes")
+                .get("BlendShapes")
                 .and_then(|v| as_array(v))
                 .map(|v| parse_blendshapes(v))?,
         })

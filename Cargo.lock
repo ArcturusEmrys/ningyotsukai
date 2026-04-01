@@ -954,6 +954,7 @@ dependencies = [
  "inox2d",
  "inox2d-opengl",
  "json",
+ "ningyo-binding",
  "ningyo-extensions",
  "ningyo-look-and-feel",
  "renderdoc",

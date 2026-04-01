@@ -1,4 +1,4 @@
-use crate::binding::Binding;
+pub use crate::binding::Binding;
 use inox2d::model::VendorData;
 
 const VENDOR_KEY: &str = "com.inochi2d.inochi-session.bindings";
