@@ -29,6 +29,11 @@
                         <property name="icon_name">list-add</property>
                     </object>
                 </child>
+                <child type="start">
+                    <object class="GtkButton" id="delete_button">
+                        <property name="icon_name">list-remove</property>
+                    </object>
+                </child>
                 <child type="end">
                     <object class="GtkButton" id="edit_button">
                         <property name="label">Edit...</property>

@@ -37,6 +37,8 @@ pub struct TrackerPanelImp {
     #[template_child]
     new_button: gtk4::TemplateChild<gtk4::Button>,
     #[template_child]
+    delete_button: gtk4::TemplateChild<gtk4::Button>,
+    #[template_child]
     edit_button: gtk4::TemplateChild<gtk4::Button>,
 }
 
@@ -159,6 +161,31 @@ impl ObjectImpl for TrackerPanelImp {
                 });
 
                 form_window.present();
+            }
+        });
+
+        let delete_button_self = self.obj().clone();
+        self.delete_button.connect_clicked(move |_| {
+            if let Some(tracker_ref) = delete_button_self.imp().tracker_select.selected_item() {
+                let tracker_ref = tracker_ref.downcast_ref::<TrackerRefItem>().unwrap();
+                let tracker_ref = tracker_ref.contents();
+                let state = delete_button_self.imp().state.borrow();
+                let state = state.as_ref().unwrap();
+
+                state.tracker_manager.unregister_tracker(TrackerRef::new(
+                    &state.document,
+                    tracker_ref.tracker_index(),
+                ));
+
+                let mut document = state.document.lock().unwrap();
+
+                document
+                    .trackers_mut()
+                    .unregister(tracker_ref.tracker_index());
+
+                drop(document);
+
+                delete_button_self.imp().populate_list();
             }
         });
     }
