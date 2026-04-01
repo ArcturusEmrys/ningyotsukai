@@ -109,6 +109,58 @@ impl ObjectImpl for TrackerPanelImp {
 
             form_window.present();
         });
+
+        let edit_button_self = self.obj().clone();
+        self.edit_button.connect_clicked(move |_| {
+            if let Some(tracker_ref) = edit_button_self.imp().tracker_select.selected_item() {
+                let tracker_ref = tracker_ref.downcast_ref::<TrackerRefItem>().unwrap();
+                let tracker_ref = tracker_ref.contents();
+
+                let form_window = TrackerForm::new();
+
+                form_window.set_modal(true);
+                form_window.set_title(Some("Edit tracker"));
+                tracker_ref.with_tracker(|tracker| {
+                    form_window.populate_with_tracker(tracker);
+                });
+
+                let form_connect_self = edit_button_self.clone();
+                form_window.connect_save(move |form, tracker| {
+                    // For various reasons, we treat trackers as immutable
+                    // once registered, so this is delete-and-create
+                    let state = form_connect_self.imp().state.borrow();
+                    let state = state.as_ref().unwrap();
+
+                    state.tracker_manager.unregister_tracker(TrackerRef::new(
+                        &state.document,
+                        tracker_ref.tracker_index(),
+                    ));
+
+                    let mut document = state.document.lock().unwrap();
+
+                    document
+                        .trackers_mut()
+                        .unregister(tracker_ref.tracker_index());
+                    let new_tracker_id = document.trackers_mut().register(tracker);
+
+                    drop(document);
+
+                    state
+                        .tracker_manager
+                        .register_tracker(TrackerRef::new(&state.document, new_tracker_id));
+
+                    form.destroy();
+
+                    form_connect_self.imp().populate_list();
+                });
+
+                form_window.connect_cancel(|w| {
+                    w.destroy();
+                });
+
+                form_window.present();
+            }
+        });
     }
 }
 

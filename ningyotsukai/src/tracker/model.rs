@@ -66,7 +66,7 @@ impl Trackers {
         self.0.insert(tracker)
     }
 
-    pub fn remove(&mut self, index: Index) -> Option<Tracker> {
+    pub fn unregister(&mut self, index: Index) -> Option<Tracker> {
         self.0.remove(index)
     }
 }

@@ -14,6 +14,9 @@ pub enum IoMessage<C> {
     /// Connect a tracker using the VTube Studio third-party protocol.
     ConnectVTSTracker(SocketAddr, C),
 
+    /// Disconnect a previously connected VTube Studio tracker.
+    DisconnectVTSTracker(C),
+
     /// Terminate the IO thread, cancelling all active IO tasks.
     Exit(C),
 }
@@ -39,6 +42,7 @@ impl<C> IoMessage<C> {
     pub fn cookie(&self) -> &C {
         match self {
             Self::ConnectVTSTracker(_, c) => c,
+            Self::DisconnectVTSTracker(c) => c,
             Self::Exit(c) => c,
         }
     }

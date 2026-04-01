@@ -1,5 +1,6 @@
 use generational_arena::Index;
 use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, Weak};
 
 use gtk4::subclass::prelude::*;
@@ -11,11 +12,15 @@ use crate::tracker::model::Tracker;
 ///
 /// This is also available in a GObject wrapped form, see `TrackerRefItem`.
 #[derive(Clone)]
-pub struct TrackerRef(Weak<Mutex<Document>>, Index);
+pub struct TrackerRef(Weak<Mutex<Document>>, usize, Index);
 
 impl TrackerRef {
     pub fn new(document: &Arc<Mutex<Document>>, tracker: Index) -> Self {
-        Self(Arc::downgrade(document), tracker)
+        Self(
+            Arc::downgrade(document),
+            document.as_ptr() as usize,
+            tracker,
+        )
     }
 
     pub fn document(&self) -> Option<Arc<Mutex<Document>>> {
@@ -23,7 +28,7 @@ impl TrackerRef {
     }
 
     pub fn tracker_index(&self) -> Index {
-        self.1
+        self.2
     }
 
     /// Retrieve the tracker and call a function with it.
@@ -35,6 +40,22 @@ impl TrackerRef {
         let track = doc.trackers().tracker(self.tracker_index()).unwrap();
 
         f(track)
+    }
+}
+
+impl PartialEq for TrackerRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.2 == other.2
+            && ((self.0.upgrade().is_some() && self.0.ptr_eq(&other.0)) || self.1 == other.1)
+    }
+}
+
+impl Eq for TrackerRef {}
+
+impl Hash for TrackerRef {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        self.1.hash(h);
+        self.2.hash(h);
     }
 }
 

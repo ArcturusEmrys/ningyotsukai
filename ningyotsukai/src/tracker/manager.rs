@@ -77,6 +77,16 @@ impl TrackerManager {
         });
     }
 
+    pub fn unregister_tracker(&self, tracker_ref: TrackerRef) {
+        let me = self.0.borrow();
+
+        me.io_send
+            .send_blocking(IoMessage::DisconnectVTSTracker(TrackerCookie::TrackerRef(
+                tracker_ref,
+            )))
+            .unwrap();
+    }
+
     /// Run any background processing on messages sent from the IO thread.
     ///
     /// This is scheduled to be periodically called in a glib idle function

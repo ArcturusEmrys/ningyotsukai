@@ -4,6 +4,8 @@ use gtk4::CompositeTemplate;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
+use ningyo_extensions::prelude::*;
+
 use crate::tracker::model::{Tracker, TrackerType};
 
 use std::sync::OnceLock;
@@ -88,6 +90,22 @@ glib::wrapper! {
 impl TrackerForm {
     pub fn new() -> Self {
         glib::Object::builder().build()
+    }
+
+    pub fn populate_with_tracker(&self, tracker: &Tracker) {
+        self.imp()
+            .name_field
+            .buffer()
+            .set_text(&*tracker.name.escape_nulls());
+
+        match &tracker.tracker_type {
+            TrackerType::VTS(ip_addr) => {
+                self.imp()
+                    .ip_addr_field
+                    .buffer()
+                    .set_text(&*ip_addr.escape_nulls());
+            }
+        }
     }
 }
 
