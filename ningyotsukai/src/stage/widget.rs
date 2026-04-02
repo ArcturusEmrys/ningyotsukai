@@ -55,6 +55,17 @@ pub struct StageWidgetState {
     /// The last tick this widget processed, used to calculate timestamps to
     /// feed to Inox2D.
     last_mus: Option<i64>,
+
+    /// The next queued tick.
+    ///
+    /// We use this as a mechanism to control priority: we have a high
+    /// priority `add_tick_callback` to add time on last_mus, and then queue a
+    /// lower priority tick here. This is specifically to prevent puppet
+    /// updates from starving the tracker manager of main thread time.
+    queued_tick: Option<glib::SourceId>,
+
+    /// How much time has passed since the last queued tick processed.
+    queued_time: f32,
 }
 
 #[derive(glib::Properties)]
@@ -157,12 +168,27 @@ impl ObjectImpl for StageWidgetImp {
             };
 
             state.last_mus = Some(mus);
-            drop(state);
+            if state.queued_tick.is_none() {
+                let idle_self = me.clone();
+                state.queued_tick = Some(glib::idle_add_local_once(move || {
+                    // multiple tick callbacks may have happened since, so get
+                    // our time again
+                    let mut state = idle_self.imp().state.borrow_mut();
+                    let queued_time = state.queued_time;
+                    state.queued_time = 0.0;
+                    state.queued_tick = None;
+                    drop(state);
+
+                    idle_self.imp().update_puppets(queued_time);
+                }));
+            }
 
             let del_mus = mus - last_mus;
             let dt = del_mus as f32 / 1_000_000.0;
 
-            me.imp().update_puppets(dt);
+            state.queued_time += dt;
+
+            drop(state);
 
             glib::ControlFlow::Continue
         })));

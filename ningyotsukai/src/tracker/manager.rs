@@ -40,7 +40,10 @@ impl TrackerManager {
         })));
 
         let tracker_manager = Rc::<TrackerManager>::downgrade(&me);
-        glib::MainContext::default().spawn_local(Self::main_thread_proc(tracker_manager));
+        glib::MainContext::default().spawn_local_with_priority(
+            glib::Priority::HIGH,
+            Self::main_thread_proc(tracker_manager),
+        );
 
         me
     }
