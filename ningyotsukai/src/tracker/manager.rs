@@ -93,7 +93,7 @@ impl TrackerManager {
                                     for (_, puppet) in
                                         document.lock().unwrap().stage_mut().iter_mut()
                                     {
-                                        puppet.apply_bindings(&data);
+                                        puppet.apply_bindings(data.clone());
                                     }
                                 }
                             }

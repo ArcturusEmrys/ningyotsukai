@@ -34,7 +34,7 @@ fn parse_blendshapes(val: &[JsonValue]) -> Vec<(String, f64)> {
         .collect()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VtsPacket {
     pub timestamp: u64,
     pub hotkey: i32,
