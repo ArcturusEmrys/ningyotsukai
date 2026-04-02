@@ -4,7 +4,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 
 use crate::io::error::IoThreadError;
-use crate::io::vts::VtsPacket;
+use ningyo_binding::vts::VtsPacket;
 
 /// Represents a message sent to the IO thread.
 ///

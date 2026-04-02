@@ -2,9 +2,11 @@ use crate::io::{IoMessage, IoResponse, start};
 use crate::tracker::cookie::TrackerCookie;
 use crate::tracker::reference::TrackerRef;
 
+use ningyo_binding::tracker::AsTrackerPacket;
 use smol::channel::{Receiver, RecvError, Sender};
 
 use std::cell::RefCell;
+use std::mem::swap;
 use std::net::ToSocketAddrs;
 use std::rc::{Rc, Weak};
 
@@ -17,8 +19,9 @@ use std::rc::{Rc, Weak};
 pub struct TrackerManager(RefCell<TrackerManagerImp>);
 pub struct TrackerManagerImp {
     io_send: Sender<IoMessage<TrackerCookie>>,
-    io_recv: Receiver<IoResponse<TrackerCookie>>,
     next_cookie: u32,
+
+    param_notify: Vec<Box<dyn FnMut() -> glib::ControlFlow>>,
 }
 
 impl TrackerManager {
@@ -35,14 +38,14 @@ impl TrackerManager {
 
         let me = Rc::new(TrackerManager(RefCell::new(TrackerManagerImp {
             io_send,
-            io_recv,
             next_cookie: 0,
+            param_notify: vec![],
         })));
 
         let tracker_manager = Rc::<TrackerManager>::downgrade(&me);
         glib::MainContext::default().spawn_local_with_priority(
             glib::Priority::HIGH,
-            Self::main_thread_proc(tracker_manager),
+            Self::main_thread_proc(tracker_manager, io_recv),
         );
 
         me
@@ -80,11 +83,13 @@ impl TrackerManager {
     /// Run any background processing on messages sent from the IO thread.
     ///
     /// This should be invoked from a glib MainContext
-    pub async fn main_thread_proc(tracker_manager: Weak<TrackerManager>) {
+    pub async fn main_thread_proc(
+        tracker_manager: Weak<TrackerManager>,
+        io_recv: Receiver<IoResponse<TrackerCookie>>,
+    ) {
         loop {
             if let Some(tracker_manager) = tracker_manager.upgrade() {
-                let me = tracker_manager.0.borrow();
-                match me.io_recv.recv().await {
+                match io_recv.recv().await {
                     Ok(IoResponse::Error(e, c)) => {
                         //TODO: Display the error somewhere more user friendly.
                         eprintln!("ERROR: {}", e);
@@ -93,11 +98,19 @@ impl TrackerManager {
                         match c {
                             TrackerCookie::TrackerRef(tracker_ref) => {
                                 if let Some(document) = tracker_ref.document() {
-                                    for (_, puppet) in
-                                        document.lock().unwrap().stage_mut().iter_mut()
-                                    {
+                                    let mut document = document.lock().unwrap();
+                                    let data = data.as_tracker_packet();
+                                    document
+                                        .trackers_mut()
+                                        .report_data(tracker_ref.tracker_index(), data.clone());
+
+                                    for (_, puppet) in document.stage_mut().iter_mut() {
                                         puppet.apply_bindings(data.clone());
                                     }
+
+                                    drop(document);
+
+                                    tracker_manager.notify_params_changed();
                                 }
                             }
                             TrackerCookie::Sequential(_) => {
@@ -112,6 +125,8 @@ impl TrackerManager {
                         return;
                     }
                 }
+            } else {
+                break;
             }
         }
     }
@@ -125,6 +140,23 @@ impl TrackerManager {
         let cookie = self.next_cookie();
         let me = self.0.borrow();
         me.io_send.send_blocking(IoMessage::Exit(cookie)).unwrap();
+    }
+
+    pub fn notify_params_changed(&self) {
+        let mut me = self.0.borrow_mut();
+        let mut data = vec![];
+        swap(&mut me.param_notify, &mut data);
+
+        for mut callback in data {
+            if callback() == glib::ControlFlow::Continue {
+                me.param_notify.push(callback);
+            }
+        }
+    }
+
+    pub fn connect_params_changed<F: FnMut() -> glib::ControlFlow + 'static>(&self, f: F) {
+        let mut me = self.0.borrow_mut();
+        me.param_notify.push(Box::new(f));
     }
 }
 

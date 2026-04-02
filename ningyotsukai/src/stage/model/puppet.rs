@@ -12,7 +12,7 @@ use std::io::Read;
 
 use glam::Vec2;
 
-use crate::io::VtsPacket;
+use ningyo_binding::tracker::TrackerPacket;
 use ningyo_binding::{Binding, parse_bindings};
 
 pub struct Puppet {
@@ -49,7 +49,7 @@ pub struct Puppet {
     param_uuid_index: HashMap<ParamUuid, String>,
 
     /// The last tracker packet received.
-    last_vts_data: Option<VtsPacket>,
+    last_tracker_data: Option<TrackerPacket>,
 }
 
 impl Puppet {
@@ -78,7 +78,7 @@ impl Puppet {
             bounds: None,
             bindings,
             param_uuid_index,
-            last_vts_data: None,
+            last_tracker_data: None,
         })
     }
 
@@ -121,8 +121,8 @@ impl Puppet {
         self.scale = new_scale
     }
 
-    pub fn apply_bindings(&mut self, vts_packet: VtsPacket) {
-        self.last_vts_data = Some(vts_packet);
+    pub fn apply_bindings(&mut self, packet: TrackerPacket) {
+        self.last_tracker_data = Some(packet);
     }
 
     /// Get the current puppet bounds.
@@ -143,54 +143,33 @@ impl Puppet {
             self.model.puppet.begin_frame();
         }
 
-        if let Some(data) = &self.last_vts_data {
-            if data.facefound {
+        if let Some(data) = &self.last_tracker_data {
+            if data.facefound() {
                 for binding in self.bindings.iter() {
-                    let in_value =
-                        match (binding.source_name.as_str(), binding.source_type.as_str()) {
-                            ("Head", "BoneRotRoll") => data.rotation[0],
-                            ("Head", "BoneRotPitch") => data.rotation[1],
-                            ("Head", "BoneRotYaw") => data.rotation[2],
-                            ("Head", "BonePosX") => data.position[0],
-                            ("Head", "BonePosY") => data.position[1],
-                            ("Head", "BonePosZ") => data.position[2],
-                            ("ftEyeXLeft", "Blendshape") => data.eyeleft[0],
-                            ("ftEyeYLeft", "Blendshape") => data.eyeleft[1],
-                            ("ftEyeZLeft", "Blendshape") => data.eyeleft[2],
-                            ("ftEyeXRight", "Blendshape") => data.eyeright[0],
-                            ("ftEyeYRight", "Blendshape") => data.eyeright[1],
-                            ("ftEyeZRight", "Blendshape") => data.eyeright[2],
-                            (name, "Blendshape") => {
-                                let Some((_, value)) =
-                                    data.blendshapes.iter().find(|(s, _)| s == name)
-                                else {
-                                    continue;
-                                };
-                                *value
-                            }
-                            _ => continue,
-                        };
+                    let in_value = data.value(&binding.source_name, &binding.source_type);
 
-                    let out_value = binding.eval(in_value as f32);
-                    if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
-                        let mut orig = self
-                            .model
-                            .puppet
-                            .param_ctx
-                            .as_ref()
-                            .unwrap()
-                            .get(param_name)
-                            .unwrap();
+                    if let Some(in_value) = in_value {
+                        let out_value = binding.eval(in_value as f32);
+                        if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
+                            let mut orig = self
+                                .model
+                                .puppet
+                                .param_ctx
+                                .as_ref()
+                                .unwrap()
+                                .get(param_name)
+                                .unwrap();
 
-                        orig[binding.axis as usize] = out_value;
+                            orig[binding.axis as usize] = out_value;
 
-                        self.model
-                            .puppet
-                            .param_ctx
-                            .as_mut()
-                            .unwrap()
-                            .set(param_name, orig)
-                            .unwrap();
+                            self.model
+                                .puppet
+                                .param_ctx
+                                .as_mut()
+                                .unwrap()
+                                .set(param_name, orig)
+                                .unwrap();
+                        }
                     }
                 }
             }

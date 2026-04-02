@@ -1,4 +1,7 @@
 use generational_arena::{Arena, Index};
+use std::collections::HashMap;
+
+use ningyo_binding::tracker::TrackerPacket;
 
 #[derive(Clone, glib::Variant)]
 pub enum TrackerType {
@@ -47,26 +50,44 @@ impl Tracker {
     }
 }
 
-pub struct Trackers(Arena<Tracker>);
+pub struct Trackers {
+    trackers: Arena<Tracker>,
+    last_tracker_data: HashMap<Index, TrackerPacket>,
+}
 
 impl Trackers {
     pub fn new() -> Self {
-        Self(Arena::new())
+        Self {
+            trackers: Arena::new(),
+            last_tracker_data: HashMap::new(),
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Index, &Tracker)> {
-        self.0.iter()
+        self.trackers.iter()
     }
 
     pub fn tracker(&self, index: Index) -> Option<&Tracker> {
-        self.0.get(index)
+        self.trackers.get(index)
     }
 
     pub fn register(&mut self, tracker: Tracker) -> Index {
-        self.0.insert(tracker)
+        self.trackers.insert(tracker)
     }
 
     pub fn unregister(&mut self, index: Index) -> Option<Tracker> {
-        self.0.remove(index)
+        let out = self.trackers.remove(index);
+
+        self.last_tracker_data.remove(&index);
+
+        out
+    }
+
+    pub fn report_data(&mut self, index: Index, packet: TrackerPacket) {
+        self.last_tracker_data.insert(index, packet);
+    }
+
+    pub fn data(&self, index: Index) -> Option<&TrackerPacket> {
+        self.last_tracker_data.get(&index)
     }
 }
