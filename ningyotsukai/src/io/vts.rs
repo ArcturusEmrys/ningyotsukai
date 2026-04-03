@@ -1,11 +1,12 @@
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::rc::Rc;
+use std::time::Duration;
 
 use json::object;
-use smol::LocalExecutor;
 use smol::channel::Sender;
 use smol::future::FutureExt;
 use smol::net::UdpSocket;
+use smol::{LocalExecutor, Timer};
 
 use crate::io::comm::IoResponse;
 use crate::io::error::IoThreadError;
@@ -26,6 +27,7 @@ async fn send_heartbeat_packet(socket: UdpSocket, addr: SocketAddr) -> Result<()
                 addr,
             )
             .await?;
+        Timer::after(Duration::from_secs(1)).await;
     }
 }
 
