@@ -62,7 +62,7 @@ pub struct BindingFormImp {
 impl ObjectSubclass for BindingFormImp {
     const NAME: &'static str = "NGTBindingForm";
     type Type = BindingForm;
-    type ParentType = gtk4::Grid;
+    type ParentType = gtk4::Box;
 
     fn class_init(class: &mut Self::Class) {
         class.bind_template();
@@ -173,7 +173,7 @@ impl ObjectImpl for BindingFormImp {
 
 impl WidgetImpl for BindingFormImp {}
 
-impl GridImpl for BindingFormImp {}
+impl BoxImpl for BindingFormImp {}
 
 macro_rules! float_property_impl {
     ($field_name:ident, $set_field_name:ident, $widget_name:ident) => {
@@ -263,7 +263,7 @@ impl BindingFormImp {
 
 glib::wrapper! {
     pub struct BindingForm(ObjectSubclass<BindingFormImp>)
-        @extends gtk4::Grid, gtk4::Widget,
+        @extends gtk4::Box, gtk4::Widget,
         @implements gtk4::Buildable, gtk4::ConstraintTarget, gtk4::Accessible, gtk4::Orientable;
 }
 
