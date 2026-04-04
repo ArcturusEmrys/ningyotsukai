@@ -10,6 +10,21 @@ use crate::io::comm::{IoMessage, IoResponse};
 use crate::io::error::Reportable;
 use crate::io::vts::connect_vts_tracker;
 
+/// Beg for a firewall exception.
+///
+/// On Windows, we only get the prompt to allow an app if we attempt to
+/// listen for TCP traffic. Incoming UDP traffic is blocked but will NOT pop a
+/// Windows Firewall warning, leading to the app not being able to connect.
+#[cfg(windows)]
+async fn beg_for_firewall_exception() {
+    use smol::net::TcpListener;
+    use smol::prelude::*;
+
+    let socket = TcpListener::bind("0.0.0.0:0").await.unwrap();
+
+    socket.incoming().next().await;
+}
+
 /// Thread process for non-window-system I/O.
 fn io_main<C>(recv: Receiver<IoMessage<C>>, send: Sender<IoResponse<C>>)
 where
@@ -25,6 +40,13 @@ where
             match recv.recv().await {
                 Ok(IoMessage::Exit(_)) => break,
                 Ok(IoMessage::ConnectVTSTracker(addr, c)) => {
+                    #[cfg(windows)]
+                    {
+                        if tasks.len() == 0 {
+                            inner_ex.spawn(beg_for_firewall_exception()).detach();
+                        }
+                    }
+
                     let vts_ex = inner_ex.clone();
                     let cookie = c.clone();
                     let task = inner_ex.spawn((async move || {
