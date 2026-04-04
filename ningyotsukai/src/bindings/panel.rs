@@ -105,12 +105,17 @@ impl BindingPanelImp {
                     form.set_binding_name(binding.name.escape_nulls());
                     form.set_dampen_level(binding.dampen_level);
 
-                    if let BindingType::Ratio(ratio) = &binding.binding_type {
-                        form.set_value_in_from(ratio.in_range.x);
-                        form.set_value_in_to(ratio.in_range.y);
-                        form.set_value_out_from(ratio.out_range.x);
-                        form.set_value_out_to(ratio.out_range.y);
-                        form.set_inverse(ratio.inverse);
+                    match &binding.binding_type {
+                        BindingType::Ratio(ratio) => {
+                            form.set_value_in_from(ratio.in_range.x);
+                            form.set_value_in_to(ratio.in_range.y);
+                            form.set_value_out_from(ratio.out_range.x);
+                            form.set_value_out_to(ratio.out_range.y);
+                            form.set_inverse(ratio.inverse);
+                        }
+                        BindingType::Expression(expr) => {
+                            form.set_expression(expr.as_str());
+                        }
                     }
 
                     form.set_value_in(in_value);
@@ -119,15 +124,17 @@ impl BindingPanelImp {
                     macro_rules! bind_float_property {
                         ($notify_signal:ident, $form_prop:ident, $binding_index:ident, |$value:ident, $binding:ident| $code:block) => {
                             form.$notify_signal({
-                                let callback_self = self.obj().clone();
+                                let callback_self = self.obj().clone().downgrade();
                                 move |form| {
-                                    let $value = form.$form_prop();
+                                    if let Some(callback_self) = callback_self.upgrade() {
+                                        let $value = form.$form_prop();
 
-                                    // NAN indicates a non-float value (user is still typing)
-                                    if !$value.is_nan() {
-                                        callback_self
-                                            .imp()
-                                            .with_binding_mut($binding_index, |$binding| $code);
+                                        // NAN indicates a non-float value (user is still typing)
+                                        if !$value.is_nan() {
+                                            callback_self
+                                                .imp()
+                                                .with_binding_mut($binding_index, |$binding| $code);
+                                        }
                                     }
                                 }
                             });
@@ -190,16 +197,37 @@ impl BindingPanelImp {
                     );
 
                     form.connect_inverse_notify({
-                        let callback_self = self.obj().clone();
+                        let callback_self = self.obj().clone().downgrade();
                         move |form| {
-                            let value = form.inverse();
-                            callback_self
-                                .imp()
-                                .with_binding_mut(binding_index, |binding| {
-                                    if let BindingType::Ratio(ratio) = &mut binding.binding_type {
-                                        ratio.inverse = value;
-                                    }
-                                });
+                            if let Some(callback_self) = callback_self.upgrade() {
+                                let value = form.inverse();
+                                callback_self
+                                    .imp()
+                                    .with_binding_mut(binding_index, |binding| {
+                                        if let BindingType::Ratio(ratio) = &mut binding.binding_type
+                                        {
+                                            ratio.inverse = value;
+                                        }
+                                    });
+                            }
+                        }
+                    });
+
+                    form.connect_expression_notify({
+                        let callback_self = self.obj().clone().downgrade();
+                        move |form| {
+                            if let Some(callback_self) = callback_self.upgrade() {
+                                let value = form.expression();
+                                callback_self
+                                    .imp()
+                                    .with_binding_mut(binding_index, |binding| {
+                                        if let BindingType::Expression(expr) =
+                                            &mut binding.binding_type
+                                        {
+                                            *expr = value;
+                                        }
+                                    });
+                            }
                         }
                     });
 

@@ -35,6 +35,8 @@ pub struct BindingFormImp {
     value_out_display: gtk4::TemplateChild<gtk4::LevelBar>,
     #[template_child]
     value_invert_check: gtk4::TemplateChild<gtk4::CheckButton>,
+    #[template_child]
+    expression_entry: gtk4::TemplateChild<gtk4::Entry>,
 
     /// Un-normalized range (min, value, max) of in value
     value_in: RefCell<(f32, f32, f32)>,
@@ -43,6 +45,7 @@ pub struct BindingFormImp {
     value_out: RefCell<(f32, f32, f32)>,
 
     #[property(name="binding-name", get=Self::binding_name, set=Self::set_binding_name)]
+    #[property(name="expression", get=Self::expression, set=Self::set_expression)]
     _synths_string: RefCell<String>,
 
     #[property(name="dampen-level", get=Self::dampen_level, set=Self::set_dampen_level)]
@@ -168,6 +171,12 @@ impl ObjectImpl for BindingFormImp {
             connect_value_notify,
             notify_value_out
         );
+        export_notify!(
+            self,
+            expression_entry,
+            connect_buffer_notify,
+            notify_expression
+        );
     }
 }
 
@@ -228,6 +237,18 @@ impl BindingFormImp {
         self.update_level_bar(*self.value_out.borrow(), &self.value_out_display);
     }
 
+    fn expression(&self) -> String {
+        self.expression_entry.buffer().text().into()
+    }
+
+    fn set_expression(&self, value: String) {
+        self.expression_entry.buffer().set_text(value);
+    }
+
+    /// Set the target level bar to display the range (min, value, max).
+    ///
+    /// This specifically normalizes the range to be 0 to (max - min), rejects
+    /// NaNs, and flips the range around if it's inverted for whatever reason.
     fn update_level_bar(&self, range: (f32, f32, f32), target: &gtk4::LevelBar) {
         let (in_min, in_value, in_max) = range;
 

@@ -158,6 +158,27 @@
                                 </layout>
                             </object>
                         </child>
+                        <child>
+                            <object class="GtkLabel">
+                                <property name="xalign">0.0</property>
+                                <property name="label">Expression</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="row">8</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkEntry" id="expression_entry">
+                                <property name="hexpand">true</property>
+                                <property name="editable">false</property>
+                                <layout>
+                                    <property name="column">1</property>
+                                    <property name="column-span">2</property>
+                                    <property name="row">8</property>
+                                </layout>
+                            </object>
+                        </child>
                     </object>
                 </property>
             </object>
