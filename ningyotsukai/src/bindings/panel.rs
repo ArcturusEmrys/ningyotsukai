@@ -120,6 +120,9 @@ impl BindingPanelImp {
 
                             if let Some(last_error) = last_error {
                                 form.set_expression_error(last_error.to_string());
+                                form.set_has_error(true);
+                            } else {
+                                form.set_has_error(false);
                             }
                         }
                     }
@@ -261,6 +264,9 @@ impl BindingPanelImp {
 
                     if let Some(last_error) = &puppet.bindings()[binding_index].3 {
                         form.set_expression_error(last_error.to_string());
+                        form.set_has_error(true);
+                    } else {
+                        form.set_has_error(false);
                     }
 
                     binding_index += 1;

@@ -4,13 +4,24 @@
         <child>
             <object class="GtkExpander">
                 <property name="label-widget">
-                    <object class="GtkLabel" id="name">
-                        <property name="xalign">0.0</property>
-                        <layout>
-                            <property name="column">0</property>
-                            <property name="column-span">3</property>
-                            <property name="row">0</property>
-                        </layout>
+                    <object class="GtkBox">
+                        <property name="orientation">horizontal</property>
+                        <child>
+                            <object class="GtkLabel" id="name">
+                                <property name="xalign">0.0</property>
+                                <property name="hexpand">true</property>
+                                <layout>
+                                    <property name="column">0</property>
+                                    <property name="column-span">3</property>
+                                    <property name="row">0</property>
+                                </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkImage" id="error_indicator">
+                                <property name="icon-name">dialog-warning</property>
+                            </object>
+                        </child>
                     </object>
                 </property>
                 <property name="child">

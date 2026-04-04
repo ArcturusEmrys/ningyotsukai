@@ -39,6 +39,8 @@ pub struct BindingFormImp {
     expression_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
     expression_error_label: gtk4::TemplateChild<gtk4::Label>,
+    #[template_child]
+    error_indicator: gtk4::TemplateChild<gtk4::Image>,
 
     /// Un-normalized range (min, value, max) of in value
     value_in: RefCell<(f32, f32, f32)>,
@@ -61,6 +63,7 @@ pub struct BindingFormImp {
     _synths_float: RefCell<f32>,
 
     #[property(name="inverse", get=Self::inverse, set=Self::set_inverse)]
+    #[property(name="has-error", get=Self::has_error, set=Self::set_has_error)]
     _synths_bool: RefCell<bool>,
 }
 
@@ -180,6 +183,12 @@ impl ObjectImpl for BindingFormImp {
             connect_buffer_notify,
             notify_expression
         );
+        export_notify!(
+            self,
+            error_indicator,
+            connect_visible_notify,
+            notify_has_error
+        );
     }
 }
 
@@ -220,6 +229,14 @@ impl BindingFormImp {
 
     fn set_inverse(&self, value: bool) {
         self.value_invert_check.set_active(value);
+    }
+
+    fn has_error(&self) -> bool {
+        self.error_indicator.is_visible()
+    }
+
+    fn set_has_error(&self, value: bool) {
+        self.error_indicator.set_visible(value);
     }
 
     fn value_in(&self) -> f32 {
