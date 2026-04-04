@@ -251,9 +251,24 @@ impl DocumentController {
         let stream = file.read(Some(&gio::Cancellable::new()))?;
         let stream_adapter = FileIn::from(stream);
 
-        let puppet = Puppet::open(stream_adapter)?;
+        let mut puppet = Puppet::open(stream_adapter)?;
+
+        puppet.ensure_render_initialized();
+
         let state = self.imp().state.borrow_mut();
         let mut document = state.as_ref().unwrap().document.lock().unwrap();
+
+        // This heuristic is here to ensure very large puppets get scaled down
+        // to something reasonable.
+        let bounds = puppet.model().puppet.bounds();
+        if let Some(bounds) = bounds {
+            let longer_bounds_length = bounds.width().max(bounds.height());
+            let shorter_stage_length = document.stage().size().x.min(document.stage().size().y);
+
+            let recommended_zoom = shorter_stage_length / longer_bounds_length;
+
+            puppet.set_scale(recommended_zoom);
+        }
 
         document.stage_mut().add_puppet(puppet);
 
