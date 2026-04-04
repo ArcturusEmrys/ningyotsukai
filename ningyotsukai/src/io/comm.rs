@@ -21,33 +21,6 @@ pub enum IoMessage<C> {
     Exit(C),
 }
 
-impl<C> IoMessage<C> {
-    pub fn connect_vts_tracker(addr: impl ToSocketAddrs, cookie: C) -> Result<Self, io::Error> {
-        Ok(Self::ConnectVTSTracker(
-            addr.to_socket_addrs()?.next().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "No address provided to connect to",
-                )
-            })?,
-            cookie,
-        ))
-    }
-
-    /// Retrieve the cookie value for this request.
-    ///
-    /// A cookie is a value used to identify requests and responses. The
-    /// sender of a request sets the cookie, and any response messages
-    /// associated with the same request get the same cookie value.
-    pub fn cookie(&self) -> &C {
-        match self {
-            Self::ConnectVTSTracker(_, c) => c,
-            Self::DisconnectVTSTracker(c) => c,
-            Self::Exit(c) => c,
-        }
-    }
-}
-
 /// Represents a response from the IO thread back to the sender.
 ///
 /// Since responses are asynchronous to their requests, we use cookie values

@@ -35,6 +35,13 @@ impl TrackerPacket {
         self.data.insert(param, value);
     }
 
+    /// Set a value if it is defined.
+    pub fn insert_if(&mut self, name: &str, datatype: &str, value: Option<f32>) {
+        if let Some(value) = value {
+            self.insert(name, datatype, value);
+        }
+    }
+
     /// Retrieve the timestamp this data was receieved or computed at.
     pub fn timestamp(&self) -> u64 {
         self.timestamp
@@ -53,6 +60,14 @@ impl TrackerPacket {
                 datatype: datatype.to_string(),
             })
             .copied()
+    }
+
+    // Check if the tracker packet contains data for a given name/type combo.
+    pub fn contains(&self, name: &str, datatype: &str) -> bool {
+        self.data.contains_key(&TrackerParam {
+            name: name.to_string(),
+            datatype: datatype.to_string(),
+        })
     }
 
     pub fn iter_params(&self) -> impl Iterator<Item = (&str, &str)> {
