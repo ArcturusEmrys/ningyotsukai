@@ -5,8 +5,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
-
-use ningyo_extensions::prelude::*;
+use std::str::FromStr;
 
 #[derive(CompositeTemplate, Default, Properties)]
 #[template(resource = "/live/arcturus/ningyotsukai/bindings/form.ui")]
@@ -27,16 +26,28 @@ pub struct BindingFormImp {
     #[template_child]
     value_in_to_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
-    value_in_display: gtk4::TemplateChild<gtk4::Range>,
+    value_in_display: gtk4::TemplateChild<gtk4::LevelBar>,
     #[template_child]
     value_out_from_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
     value_out_to_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
-    value_out_display: gtk4::TemplateChild<gtk4::Range>,
+    value_out_display: gtk4::TemplateChild<gtk4::LevelBar>,
+    #[template_child]
+    value_invert_check: gtk4::TemplateChild<gtk4::CheckButton>,
 
-    #[property(name="binding-name", get=|me: &&BindingFormImp| { me.name.label().into() }, set=|me: &&BindingFormImp, label: &str| { me.name.set_label(&label.escape_nulls()); })]
-    _synths: RefCell<String>,
+    #[property(name="binding-name", get=Self::binding_name, set=Self::set_binding_name)]
+    _synths_string: RefCell<String>,
+
+    #[property(name="dampen-level", get=Self::dampen_level, set=Self::set_dampen_level)]
+    #[property(name="value-in-from", get=Self::value_in_from, set=Self::set_value_in_from)]
+    #[property(name="value-in-to", get=Self::value_in_to, set=Self::set_value_in_to)]
+    #[property(name="value-out-from", get=Self::value_out_from, set=Self::set_value_out_from)]
+    #[property(name="value-out-to", get=Self::value_out_to, set=Self::set_value_out_to)]
+    _synths_float: RefCell<f32>,
+
+    #[property(name="inverse", get=Self::inverse, set=Self::set_inverse)]
+    _synths_bool: RefCell<bool>,
 }
 
 #[glib::object_subclass]
@@ -54,10 +65,54 @@ impl ObjectSubclass for BindingFormImp {
     }
 }
 
+macro_rules! export_notify {
+    ($self:ident, $inner_widget:ident, $inner_signal:ident, $outer_notify:ident) => {
+        $self.$inner_widget.$inner_signal({
+            let callback_self = $self.obj().clone();
+            move |_| {
+                callback_self.$outer_notify();
+            }
+        });
+    };
+}
+
 #[glib::derived_properties]
 impl ObjectImpl for BindingFormImp {
     fn constructed(&self) {
         self.parent_constructed();
+
+        export_notify!(self, name, connect_label_notify, notify_binding_name);
+        export_notify!(
+            self,
+            dampening_entry,
+            connect_buffer_notify,
+            notify_dampen_level
+        );
+        export_notify!(
+            self,
+            value_in_from_entry,
+            connect_buffer_notify,
+            notify_value_in_from
+        );
+        export_notify!(
+            self,
+            value_in_to_entry,
+            connect_buffer_notify,
+            notify_value_in_to
+        );
+        export_notify!(
+            self,
+            value_out_from_entry,
+            connect_buffer_notify,
+            notify_value_out_from
+        );
+        export_notify!(
+            self,
+            value_out_to_entry,
+            connect_buffer_notify,
+            notify_value_out_to
+        );
+        export_notify!(self, value_invert_check, connect_activate, notify_inverse);
     }
 }
 
@@ -65,7 +120,41 @@ impl WidgetImpl for BindingFormImp {}
 
 impl GridImpl for BindingFormImp {}
 
-impl BindingFormImp {}
+macro_rules! float_property_impl {
+    ($field_name:ident, $set_field_name:ident, $widget_name:ident) => {
+        fn $field_name(&self) -> f32 {
+            f32::from_str(self.$widget_name.buffer().text().as_str()).unwrap_or(f32::NAN)
+        }
+
+        fn $set_field_name(&self, value: f32) {
+            self.$widget_name.buffer().set_text(format!("{}", value));
+        }
+    };
+}
+
+impl BindingFormImp {
+    fn binding_name(&self) -> String {
+        self.name.label().into()
+    }
+
+    fn set_binding_name(&self, value: String) {
+        self.name.set_label(&value)
+    }
+
+    float_property_impl!(dampen_level, set_dampen_level, dampening_entry);
+    float_property_impl!(value_in_from, set_value_in_from, value_in_from_entry);
+    float_property_impl!(value_in_to, set_value_in_to, value_in_to_entry);
+    float_property_impl!(value_out_from, set_value_out_from, value_out_from_entry);
+    float_property_impl!(value_out_to, set_value_out_to, value_out_to_entry);
+
+    fn inverse(&self) -> bool {
+        self.value_invert_check.is_active()
+    }
+
+    fn set_inverse(&self, value: bool) {
+        self.value_invert_check.set_active(value);
+    }
+}
 
 glib::wrapper! {
     pub struct BindingForm(ObjectSubclass<BindingFormImp>)

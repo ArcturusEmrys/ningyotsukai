@@ -4,9 +4,9 @@ use inox2d::params::ParamUuid;
 use ningyo_extensions::prelude::*;
 
 pub struct RatioBinding {
-    inverse: bool,
-    in_range: Vec2,
-    out_range: Vec2,
+    pub inverse: bool,
+    pub in_range: Vec2,
+    pub out_range: Vec2,
 }
 
 impl RatioBinding {

@@ -4,6 +4,9 @@ use gtk4::CompositeTemplate;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
+use ningyo_binding::{Binding, BindingType};
+use ningyo_extensions::prelude::*;
+
 use crate::bindings::form::BindingForm;
 use crate::document::Document;
 use crate::stage::{StageWidget, StageWidgetExt};
@@ -55,6 +58,20 @@ impl WidgetImpl for BindingPanelImp {}
 impl BoxImpl for BindingPanelImp {}
 
 impl BindingPanelImp {
+    fn with_binding_mut<F: FnOnce(&mut Binding)>(&self, binding_index: usize, f: F) {
+        let mut state = self.state.borrow_mut();
+        let state = state.as_mut().unwrap();
+        let mut document = state.document.lock().unwrap();
+
+        if let Some(select) = state.current_selection {
+            if let Some(puppet) = document.stage_mut().puppet_mut(select) {
+                if let Some(binding) = puppet.bindings_mut().get_mut(binding_index) {
+                    f(binding)
+                }
+            }
+        }
+    }
+
     fn populate_list(&self) {
         let mut state = self.state.borrow_mut();
         let state = state.as_mut().unwrap();
@@ -77,17 +94,111 @@ impl BindingPanelImp {
         }
 
         let document = state.document.lock().unwrap();
-        let mut widgets = vec![];
 
         if let Some(index) = new_selection {
             if let Some(puppet) = document.stage().puppet(index) {
                 for (binding_index, binding) in puppet.bindings().iter().enumerate() {
                     let form = BindingForm::new();
 
-                    form.set_binding_name(binding.name.as_str());
+                    form.set_binding_name(binding.name.escape_nulls());
+                    form.set_dampen_level(binding.dampen_level);
+
+                    if let BindingType::Ratio(ratio) = &binding.binding_type {
+                        form.set_value_in_from(ratio.in_range.x);
+                        form.set_value_in_to(ratio.in_range.y);
+                        form.set_value_out_from(ratio.out_range.x);
+                        form.set_value_out_to(ratio.out_range.y);
+                        form.set_inverse(ratio.inverse);
+                    }
+
+                    macro_rules! bind_float_property {
+                        ($notify_signal:ident, $form_prop:ident, $binding_index:ident, |$value:ident, $binding:ident| $code:block) => {
+                            form.$notify_signal({
+                                let callback_self = self.obj().clone();
+                                move |form| {
+                                    let $value = form.$form_prop();
+
+                                    // NAN indicates a non-float value (user is still typing)
+                                    if !$value.is_nan() {
+                                        callback_self
+                                            .imp()
+                                            .with_binding_mut($binding_index, |$binding| $code);
+                                    }
+                                }
+                            });
+                        };
+                    }
+
+                    bind_float_property!(
+                        connect_dampen_level_notify,
+                        dampen_level,
+                        binding_index,
+                        |value, binding| {
+                            binding.dampen_level = value;
+                        }
+                    );
+
+                    //NOTE: We deliberately bind both range and expression
+                    //params in case the user changes modes.
+                    bind_float_property!(
+                        connect_value_in_from_notify,
+                        value_in_from,
+                        binding_index,
+                        |value, binding| {
+                            if let BindingType::Ratio(ratio) = &mut binding.binding_type {
+                                ratio.in_range.x = value;
+                            }
+                        }
+                    );
+
+                    bind_float_property!(
+                        connect_value_in_to_notify,
+                        value_in_to,
+                        binding_index,
+                        |value, binding| {
+                            if let BindingType::Ratio(ratio) = &mut binding.binding_type {
+                                ratio.in_range.y = value;
+                            }
+                        }
+                    );
+
+                    bind_float_property!(
+                        connect_value_out_from_notify,
+                        value_out_from,
+                        binding_index,
+                        |value, binding| {
+                            if let BindingType::Ratio(ratio) = &mut binding.binding_type {
+                                ratio.out_range.x = value;
+                            }
+                        }
+                    );
+
+                    bind_float_property!(
+                        connect_value_out_to_notify,
+                        value_out_to,
+                        binding_index,
+                        |value, binding| {
+                            if let BindingType::Ratio(ratio) = &mut binding.binding_type {
+                                ratio.out_range.y = value;
+                            }
+                        }
+                    );
+
+                    form.connect_inverse_notify({
+                        let callback_self = self.obj().clone();
+                        move |form| {
+                            let value = form.inverse();
+                            callback_self
+                                .imp()
+                                .with_binding_mut(binding_index, |binding| {
+                                    if let BindingType::Ratio(ratio) = &mut binding.binding_type {
+                                        ratio.inverse = value;
+                                    }
+                                });
+                        }
+                    });
 
                     self.bindings_contents.append(&form);
-                    widgets.push((form, index, binding_index));
                 }
             }
         }

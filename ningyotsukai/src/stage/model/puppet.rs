@@ -139,6 +139,10 @@ impl Puppet {
         &self.bindings.as_slice()
     }
 
+    pub fn bindings_mut(&mut self) -> &mut [Binding] {
+        self.bindings.as_mut_slice()
+    }
+
     /// Update the puppet's physics and apply tracker data to this puppet.
     pub fn update(&mut self, dt: f32) {
         self.ensure_render_initialized();
