@@ -11,11 +11,11 @@ fn as_object(val: &JsonValue) -> Option<&Object> {
     }
 }
 
-fn parse_xyz(val: &Object) -> Option<[f64; 3]> {
+fn parse_xyz(val: &Object) -> Option<[f32; 3]> {
     Some([
-        val.get("x").and_then(|v| v.as_f64())?,
-        val.get("y").and_then(|v| v.as_f64())?,
-        val.get("z").and_then(|v| v.as_f64())?,
+        val.get("x").and_then(|v| v.as_f32())?,
+        val.get("y").and_then(|v| v.as_f32())?,
+        val.get("z").and_then(|v| v.as_f32())?,
     ])
 }
 
@@ -27,11 +27,11 @@ fn as_array(val: &JsonValue) -> Option<&[JsonValue]> {
     }
 }
 
-fn parse_blendshapes(val: &[JsonValue]) -> Vec<(String, f64)> {
+fn parse_blendshapes(val: &[JsonValue]) -> Vec<(String, f32)> {
     val.iter()
         .filter_map(|v| {
             let v = as_object(v)?;
-            Some((v.get("k")?.as_str()?.to_string(), v.get("v")?.as_f64()?))
+            Some((v.get("k")?.as_str()?.to_string(), v.get("v")?.as_f32()?))
         })
         .collect()
 }
@@ -41,11 +41,11 @@ pub struct VtsPacket {
     pub timestamp: u64,
     pub hotkey: i32,
     pub facefound: bool,
-    pub rotation: [f64; 3],
-    pub position: [f64; 3],
-    pub eyeleft: [f64; 3],
-    pub eyeright: [f64; 3],
-    pub blendshapes: Vec<(String, f64)>,
+    pub rotation: [f32; 3],
+    pub position: [f32; 3],
+    pub eyeleft: [f32; 3],
+    pub eyeright: [f32; 3],
+    pub blendshapes: Vec<(String, f32)>,
 }
 
 impl VtsPacket {

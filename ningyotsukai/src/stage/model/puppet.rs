@@ -13,7 +13,7 @@ use std::io::Read;
 use glam::Vec2;
 
 use ningyo_binding::tracker::TrackerPacket;
-use ningyo_binding::{Binding, parse_bindings};
+use ningyo_binding::{Binding, ExpressionEval, parse_bindings};
 
 pub struct Puppet {
     /// The position of the puppet's origin point, (0,0), relative to the stage.
@@ -51,8 +51,8 @@ pub struct Puppet {
     /// Index of param UUIDs to strings.
     param_uuid_index: HashMap<ParamUuid, String>,
 
-    /// The last tracker packet received.
-    last_tracker_data: Option<TrackerPacket>,
+    /// The Lua expression evaluation environment.
+    expression_eval: ExpressionEval,
 }
 
 impl Puppet {
@@ -85,7 +85,7 @@ impl Puppet {
             bounds: None,
             bindings,
             param_uuid_index,
-            last_tracker_data: None,
+            expression_eval: ExpressionEval::new()?,
         })
     }
 
@@ -129,7 +129,7 @@ impl Puppet {
     }
 
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
-        self.last_tracker_data = Some(packet);
+        self.expression_eval.set_tracker_packet(packet);
     }
 
     /// Get the current puppet bounds.
@@ -158,39 +158,38 @@ impl Puppet {
             self.model.puppet.begin_frame();
         }
 
-        if let Some(data) = &self.last_tracker_data {
-            if data.facefound() {
-                for (binding, bind_in_value, bind_out_value) in self.bindings.iter_mut() {
-                    let in_value = data.value(&binding.source_name, &binding.source_type);
+        for (binding, bind_in_value, bind_out_value) in self.bindings.iter_mut() {
+            match binding.eval(&self.expression_eval) {
+                Ok((in_value, Some(out_value))) => {
+                    *bind_in_value = in_value.unwrap_or(*bind_in_value);
+                    *bind_out_value = out_value;
 
-                    if let Some(in_value) = in_value {
-                        let out_value = binding.eval(in_value as f32);
+                    if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
+                        let mut orig = self
+                            .model
+                            .puppet
+                            .param_ctx
+                            .as_ref()
+                            .unwrap()
+                            .get(param_name)
+                            .unwrap();
 
-                        *bind_in_value = in_value as f32;
-                        *bind_out_value = out_value;
+                        orig[binding.axis as usize] = out_value;
 
-                        if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
-                            let mut orig = self
-                                .model
-                                .puppet
-                                .param_ctx
-                                .as_ref()
-                                .unwrap()
-                                .get(param_name)
-                                .unwrap();
-
-                            orig[binding.axis as usize] = out_value;
-
-                            self.model
-                                .puppet
-                                .param_ctx
-                                .as_mut()
-                                .unwrap()
-                                .set(param_name, orig)
-                                .unwrap();
-                        }
+                        self.model
+                            .puppet
+                            .param_ctx
+                            .as_mut()
+                            .unwrap()
+                            .set(param_name, orig)
+                            .unwrap();
                     }
                 }
+                //Parameter missing
+                Ok((_, None)) => {}
+
+                //Lua error during evaluation
+                Err(e) => {}
             }
         }
 

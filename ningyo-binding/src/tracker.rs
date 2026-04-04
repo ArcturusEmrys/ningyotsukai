@@ -11,7 +11,7 @@ pub struct TrackerPacket {
     timestamp: u64,
     facefound: bool,
     params: Vec<TrackerParam>,
-    data: HashMap<TrackerParam, f64>,
+    data: HashMap<TrackerParam, f32>,
 }
 
 impl TrackerPacket {
@@ -25,7 +25,7 @@ impl TrackerPacket {
     }
 
     /// Set a value by name/datatype pair.
-    pub fn insert(&mut self, name: &str, datatype: &str, value: f64) {
+    pub fn insert(&mut self, name: &str, datatype: &str, value: f32) {
         let param = TrackerParam {
             name: name.to_string(),
             datatype: datatype.to_string(),
@@ -46,7 +46,7 @@ impl TrackerPacket {
     }
 
     /// Get a particular value.
-    pub fn value(&self, name: &str, datatype: &str) -> Option<f64> {
+    pub fn value(&self, name: &str, datatype: &str) -> Option<f32> {
         self.data
             .get(&TrackerParam {
                 name: name.to_string(),

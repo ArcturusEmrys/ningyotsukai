@@ -1,7 +1,10 @@
 use glam::Vec2;
 use inox2d::params::ParamUuid;
+use mlua::Error as LuaError;
 
 use ningyo_extensions::prelude::*;
+
+use crate::ExpressionEval;
 
 pub struct RatioBinding {
     pub inverse: bool,
@@ -38,15 +41,6 @@ impl RatioBinding {
 pub enum BindingType {
     Ratio(RatioBinding),
     Expression(String),
-}
-
-impl BindingType {
-    fn eval(&self, t: f32) -> f32 {
-        match self {
-            Self::Ratio(binding) => binding.eval(t),
-            Self::Expression(_) => unimplemented!(),
-        }
-    }
 }
 
 pub struct Binding {
@@ -111,10 +105,24 @@ impl Binding {
         Some(bindings)
     }
 
-    pub fn eval(&self, in_value: f32) -> f32 {
+    pub fn eval(&self, eval: &ExpressionEval) -> Result<(Option<f32>, Option<f32>), LuaError> {
         match &self.binding_type {
-            BindingType::Ratio(ratio) => ratio.eval(in_value),
-            BindingType::Expression(_) => 0.0, //TODO: unimplemented
+            BindingType::Ratio(ratio) => {
+                let in_value = eval.with_tracker_packet(|packet| {
+                    if !packet.facefound() {
+                        return None;
+                    }
+
+                    packet.value(&self.source_name, &self.source_type)
+                });
+
+                if let Some(in_value) = in_value {
+                    Ok((Some(in_value), Some(ratio.eval(in_value))))
+                } else {
+                    Ok((None, None))
+                }
+            }
+            BindingType::Expression(expr) => Ok((None, Some(eval.eval(expr.clone())? as f32))),
         }
     }
 }

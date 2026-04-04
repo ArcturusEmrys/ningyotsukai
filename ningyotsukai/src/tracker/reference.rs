@@ -42,7 +42,7 @@ impl TrackerRef {
         f(track)
     }
 
-    pub fn with_param(&self, name: &str, datatype: &str, value: f64) -> TrackerParamRef {
+    pub fn with_param(&self, name: &str, datatype: &str, value: f32) -> TrackerParamRef {
         TrackerParamRef(
             self.0.clone(),
             (),
@@ -107,7 +107,7 @@ impl TrackerRefItem {
 ///
 /// This is also available in a GObject wrapped form, see `TrackerParamRefItem`.
 #[derive(Clone)]
-pub struct TrackerParamRef(Weak<Mutex<Document>>, (), Index, String, String, f64);
+pub struct TrackerParamRef(Weak<Mutex<Document>>, (), Index, String, String, f32);
 
 impl TrackerParamRef {
     pub fn new(
@@ -115,7 +115,7 @@ impl TrackerParamRef {
         tracker: Index,
         name: String,
         datatype: String,
-        value: f64,
+        value: f32,
     ) -> Self {
         Self(Arc::downgrade(document), (), tracker, name, datatype, value)
     }
@@ -139,7 +139,7 @@ impl TrackerParamRef {
     /// Retrieve the tracker and call a function with it.
     ///
     /// Panics if the tracker is no longer available.
-    pub fn value(&self) -> f64 {
+    pub fn value(&self) -> f32 {
         self.5
     }
 }

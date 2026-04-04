@@ -1,9 +1,11 @@
 pub use crate::binding::{Binding, BindingType};
+pub use crate::exec::ExpressionEval;
 use inox2d::model::VendorData;
 
 const VENDOR_KEY: &str = "com.inochi2d.inochi-session.bindings";
 
 mod binding;
+mod exec;
 pub mod tracker;
 pub mod vts;
 
