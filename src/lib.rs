@@ -666,13 +666,13 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 
 			let color_attachments = [
 				Some(wgpu::RenderPassColorAttachment {
-				view: &surface_color_view,
-				depth_slice: None,
-				resolve_target: None,
-				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Load,
-					store: wgpu::StoreOp::Store,
-				},
+					view: &surface_color_view,
+					depth_slice: None,
+					resolve_target: None,
+					ops: wgpu::Operations {
+						load: wgpu::LoadOp::Load,
+						store: wgpu::StoreOp::Store,
+					},
 				}),
 				None,
 				None,
@@ -688,6 +688,11 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				timestamp_writes: None,
 				multiview_mask: None,
 			});
+
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_DEFORM, self.render.deforms.slice(..));
+			render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
 
 			if render_mask {
 				// LOL, the OpenGL renderer didn't handle the "mask by composite" case.
