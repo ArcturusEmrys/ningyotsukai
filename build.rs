@@ -233,7 +233,34 @@ fn gen_shader_new(
 						out,
 						"                            view_dimension: wgpu::TextureViewDimension::D2,"
 					)?; //TODO: Support 1D/3D textures
+
+					writeln!(
+						out,
+						"                            // Image format: {:?}",
+						binding.image.image_format
+					)?;
 					match binding.image.image_format {
+						ReflectImageFormat::Undefined => {
+							let typedesc = binding.type_description.as_ref().unwrap();
+							if typedesc.type_flags.contains(ReflectTypeFlags::FLOAT) {
+								writeln!(
+									out,
+									"                            sample_type: wgpu::TextureSampleType::Float {{ filterable: true }},"
+								)?;
+							} else { //int textures
+								match typedesc.traits.numeric.scalar.signedness {
+									0 => writeln!(
+										out,
+										"                            sample_type: wgpu::TextureSampleType::Uint,"
+									)?,
+									1 => writeln!(
+										out,
+										"                            sample_type: wgpu::TextureSampleType::Sint,"
+									)?,
+									_ => panic!("Invalid signedness flag")
+								}
+							}
+						},
 						ReflectImageFormat::RGBA32_FLOAT |
 						ReflectImageFormat::RGBA16_FLOAT |
 						ReflectImageFormat::R32_FLOAT |
@@ -270,7 +297,6 @@ fn gen_shader_new(
 								"                            sample_type: wgpu::TextureSampleType::Uint,"
 							)?;
 						}
-						ReflectImageFormat::Undefined |    //NOTE: To be clear, "Undefined" makes no sense.
 						ReflectImageFormat::RGBA8_SNORM |
 						ReflectImageFormat::RGBA16_SNORM |
 						ReflectImageFormat::RG16_SNORM |
