@@ -1,10 +1,10 @@
 use glam::Mat4;
+use glam::Vec2;
+use inox2d::math::camera::Camera;
 use inox2d::model::Model;
 use inox2d::node::{InoxNodeUuid, components, drawables}; //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession, InoxRenderer};
 use inox2d::texture::decode_model_textures;
-use inox2d::math::camera::Camera;
-use glam::Vec2;
 use std::error::Error;
 use wgpu;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -308,7 +308,7 @@ impl<'window> WgpuRenderer<'window> {
 					&mut encoder,
 					width,
 					height,
-					wgpu::TextureFormat::Rgba32Float,
+					wgpu::TextureFormat::Rgba16Float,
 					wgpu::TextureFormat::Depth24PlusStencil8,
 				),
 				DepthStencilTexture::empty_render_target(

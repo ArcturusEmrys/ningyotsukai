@@ -1,7 +1,8 @@
 use shaderc;
 use spirv_reflect;
 use spirv_reflect::types::{
-	ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectEntryPoint, ReflectFormat, ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags
+	ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectEntryPoint, ReflectFormat,
+	ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags,
 };
 
 use std::borrow::Cow;
@@ -124,7 +125,8 @@ fn describe_block_struct(
 					blockmember.offset + blockmember.size,
 					blockmember.name
 				)?;
-			} else { //Row major? You must be a DirectX programmer!
+			} else {
+				//Row major? You must be a DirectX programmer!
 				let row_count = blockmember.numeric.matrix.row_count;
 				let col_count = blockmember.numeric.matrix.column_count;
 				writeln!(
