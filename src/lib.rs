@@ -509,6 +509,15 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				multiview_mask: None,
 			});
 
+			render_pass.set_viewport(
+				0.0,
+				0.0,
+				self.render.config.width as f32,
+				self.render.config.height as f32,
+				0.0,
+				1.0,
+			);
+
 			let (albedo, bumpmap, emissive) = self.render.textures_for_part(components.texture);
 			let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
 
@@ -519,6 +528,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				// pub parameter for it which is dumb.
 				mvp: Mat4::IDENTITY.to_cols_array_2d(),
 				offset: [0.0; 2],
+				viewport: [self.render.config.width as f32, self.render.config.height as f32],
 			}
 			.into_buffer(&self.render.device);
 
@@ -698,6 +708,12 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 					depth_stencil,
 				);
 
+				let uni_in_vert = composite_vert::Input {
+					mvp: Mat4::IDENTITY.to_cols_array_2d(),
+					viewport: [self.render.config.width as f32, self.render.config.height as f32],
+				}
+				.into_buffer(&self.render.device);
+
 				let uni_in_frag = composite_frag::Input {
 					opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
 					multColor: components
@@ -729,7 +745,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				);
 				pipeline.bind_vertex(
 					&mut render_pass,
-					Some(&self.render.composite_shader_vert.bind(&self.render.device)),
+					Some(&self.render.composite_shader_vert.bind(&self.render.device, &uni_in_vert)),
 				);
 				render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
 			}

@@ -9,6 +9,7 @@
 layout(set = 0, binding = 0) uniform Input {
   mat4 mvp;
   vec2 offset;
+  vec2 viewport;
 } uni_in;
 
 layout(location = 0) in vec2 verts;
@@ -18,6 +19,6 @@ layout(location = 2) in vec2 deform;
 layout(location = 0) out vec2 texUVs;
 
 void main() {
-  gl_Position = uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
+  gl_Position = uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1) / vec4(uni_in.viewport, 1, 1);
   texUVs = uvs;
 }
