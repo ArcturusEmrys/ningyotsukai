@@ -214,7 +214,7 @@ impl<'window> WgpuRenderer<'window> {
 		});
 		let uvs = device.create_buffer_init(&BufferInitDescriptor {
 			label: Some(&format!(
-				"Inox2D {}::Verts",
+				"Inox2D {}::UVs",
 				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
 			)),
 			contents: cast_vec2(inox_buffers.vertex_buffers.uvs.as_slice()),
@@ -222,7 +222,7 @@ impl<'window> WgpuRenderer<'window> {
 		});
 		let deforms = device.create_buffer_init(&BufferInitDescriptor {
 			label: Some(&format!(
-				"Inox2D {}::Verts",
+				"Inox2D {}::Deforms",
 				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
 			)),
 			contents: cast_vec2(inox_buffers.vertex_buffers.deforms.as_slice()),
@@ -230,7 +230,7 @@ impl<'window> WgpuRenderer<'window> {
 		});
 		let indices = device.create_buffer_init(&BufferInitDescriptor {
 			label: Some(&format!(
-				"Inox2D {}::Verts",
+				"Inox2D {}::Indices",
 				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
 			)),
 			contents: cast_index(inox_buffers.vertex_buffers.indices.as_slice()),

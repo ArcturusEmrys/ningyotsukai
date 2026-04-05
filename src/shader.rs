@@ -1,6 +1,7 @@
 use wgpu;
 use wgpu::util::DeviceExt;
 
+use std::any::type_name;
 use std::hash::Hash;
 
 pub trait Shader: Clone {
@@ -29,7 +30,7 @@ pub trait UniformBlock<const SIZE: usize> {
 		self.write_buffer(&mut contents);
 
 		device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-			label: Some("UniformBlock::into_buffer"), //TODO: Can we get a type name in here?
+			label: Some(&format!("{}::into_buffer", type_name::<Self>())), //TODO: Can we get a type name in here?
 			contents: &contents,
 			usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
 		})
