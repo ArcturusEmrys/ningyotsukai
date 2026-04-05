@@ -3,6 +3,8 @@ use inox2d::model::Model;
 use inox2d::node::{InoxNodeUuid, components, drawables}; //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession, InoxRenderer};
 use inox2d::texture::decode_model_textures;
+use inox2d::math::camera::Camera;
+use glam::Vec2;
 use std::error::Error;
 use wgpu;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -58,6 +60,8 @@ pub enum WgpuRendererError {
 pub struct WgpuRenderer<'window> {
 	surface: wgpu::Surface<'window>,
 	config: wgpu::SurfaceConfiguration,
+
+	pub camera: Camera,
 
 	/// All textures used as render targets, excluding the surface color
 	/// buffer.
@@ -259,6 +263,7 @@ impl<'window> WgpuRenderer<'window> {
 		Ok(WgpuRenderer {
 			surface,
 			config,
+			camera: Camera::default(),
 			render_targets: None,
 			verts,
 			uvs,
@@ -356,12 +361,15 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
 			.iter()
 			.map(|n| (n.uuid, n.name.clone()))
 			.collect::<HashMap<_, _>>();
+		let viewport = Vec2::new(self.config.width as f32, self.config.height as f32);
+		let viewmatrix = self.camera.matrix(viewport);
 
 		Ok(WgpuDrawSession {
 			render: self,
 			encoder,
 			surface_texture,
 			view,
+			viewmatrix,
 			node_names,
 		})
 	}
@@ -372,6 +380,7 @@ pub struct WgpuDrawSession<'a, 'window> {
 	encoder: wgpu::CommandEncoder,
 	surface_texture: wgpu::SurfaceTexture,
 	view: wgpu::TextureView,
+	viewmatrix: Mat4,
 	node_names: HashMap<InoxNodeUuid, String>,
 }
 
@@ -514,10 +523,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 
 			//TODO: set blend mode
 			let uni_in_vert = basic_vert::Input {
-				// TODO: there is no provision for the renderer to learn the
-				// current camera/viewport matrix OpenGLRenderer just has a
-				// pub parameter for it which is dumb.
-				mvp: Mat4::IDENTITY.to_cols_array_2d(),
+				mvp: self.viewmatrix.to_cols_array_2d(),
 				offset: [0.0; 2],
 			}
 			.into_buffer(&self.render.device);
