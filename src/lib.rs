@@ -16,6 +16,8 @@ use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
 use shader::UniformBlock;
 use shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_mask_frag, composite_vert};
 
+use std::collections::HashMap;
+
 /// Cast Vec2 to array.
 ///
 /// SAFETY: This inherits the safety considerations of glam's own
@@ -349,11 +351,18 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
 
 		//TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
 
+		let node_names = puppet
+			.nodes()
+			.iter()
+			.map(|n| (n.uuid, n.name.clone()))
+			.collect::<HashMap<_, _>>();
+
 		Ok(WgpuDrawSession {
 			render: self,
 			encoder,
 			surface_texture,
 			view,
+			node_names,
 		})
 	}
 }
@@ -363,6 +372,7 @@ pub struct WgpuDrawSession<'a, 'window> {
 	encoder: wgpu::CommandEncoder,
 	surface_texture: wgpu::SurfaceTexture,
 	view: wgpu::TextureView,
+	node_names: HashMap<InoxNodeUuid, String>,
 }
 
 impl<'a, 'window> WgpuDrawSession<'a, 'window> {
@@ -440,7 +450,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 		render_mask: bool,
 		components: &drawables::TexturedMeshComponents,
 		render_ctx: &render::TexturedMeshRenderCtx,
-		_id: InoxNodeUuid,
+		id: InoxNodeUuid,
 	) {
 		if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
 			let gbuffer_color = composite.as_color_attachments();
@@ -488,7 +498,10 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 			let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
 
 			let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some("WgpuRenderer::draw_textured_mesh_content"),
+				label: Some(&format!(
+					"WgpuRenderer::draw_textured_mesh_content - {}",
+					self.node_names.get(&id).map(|s| s.as_str()).unwrap_or("<NODE UNKNOWN>")
+				)),
 				color_attachments,
 				depth_stencil_attachment,
 				occlusion_query_set: None,
@@ -650,7 +663,10 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				},
 			})];
 			let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some("WgpuRenderer Composite deferred pass"),
+				label: Some(&format!(
+					"WgpuRenderer::finish_composite_content - {}",
+					self.node_names.get(&id).map(|s| s.as_str()).unwrap_or("<NODE UNKNOWN>")
+				)),
 				color_attachments: &color_attachments,
 				depth_stencil_attachment,
 				occlusion_query_set: None,
