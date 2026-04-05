@@ -1,8 +1,7 @@
 use shaderc;
 use spirv_reflect;
 use spirv_reflect::types::{
-	ReflectBlockVariable, ReflectDescriptorType, ReflectEntryPoint, ReflectFormat, ReflectImageFormat,
-	ReflectTypeDescription, ReflectTypeFlags,
+	ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectEntryPoint, ReflectFormat, ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags
 };
 
 use std::borrow::Cow;
@@ -116,13 +115,30 @@ fn describe_block_struct(
 
 	for (blockmember, typemember) in blockvar.members.iter().zip(typevar.members.iter()) {
 		if typemember.type_flags.contains(ReflectTypeFlags::MATRIX) {
-			writeln!(
-				out,
-				"        out[{}..{}].copy_from_slice(&self.{}.iter().map(|c| c.iter().map(|c2| c2.to_ne_bytes()).flatten()).flatten().collect::<Vec<_>>());",
-				blockmember.offset,
-				blockmember.offset + blockmember.size,
-				blockmember.name
-			)?;
+			// Rust (and really, every CPU programming language) stores
+			// matrixes row-major for some reason, but GPUs want column-major
+			if typemember.decoration_flags.contains(ReflectDecorationFlags::ROW_MAJOR) {
+				// WHO WRITES SHADERS IN ROW-MAJOR
+				writeln!(
+					out,
+					"        out[{}..{}].copy_from_slice(&self.{}.iter().map(|c| c.iter().map(|c2| c2.to_ne_bytes()).flatten()).flatten().collect::<Vec<_>>());",
+					blockmember.offset,
+					blockmember.offset + blockmember.size,
+					blockmember.name
+				)?;
+			} else { //column major
+				let row_count = blockmember.numeric.matrix.row_count;
+				let col_count = blockmember.numeric.matrix.column_count;
+				writeln!(
+					out,
+					"        out[{}..{}].copy_from_slice(&(0..{}).flat_map(|c| (0..{}).map(move |r| self.{}[r][c].to_ne_bytes())).flatten().collect::<Vec<_>>());",
+					blockmember.offset,
+					blockmember.offset + blockmember.size,
+					col_count,
+					row_count,
+					blockmember.name
+				)?;
+			}
 		} else if typemember.type_flags.contains(ReflectTypeFlags::VECTOR) {
 			writeln!(
 				out,
