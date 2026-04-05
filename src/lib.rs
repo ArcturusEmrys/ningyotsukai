@@ -622,7 +622,11 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 				render_pass.set_pipeline(pipeline.pipeline());
 			}
 
-			render_pass.draw_indexed(0..render_ctx.index_len as u32, render_ctx.index_offset as i32, 0..1);
+			render_pass.draw_indexed(
+				render_ctx.index_offset as u32..(render_ctx.index_offset + render_ctx.index_len as u32),
+				0,
+				0..1,
+			);
 		}
 	}
 
