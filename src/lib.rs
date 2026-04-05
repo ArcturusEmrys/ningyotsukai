@@ -532,9 +532,9 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 			}
 			.into_buffer(&self.render.device);
 
-			render_pass.set_vertex_buffer(basic_vert::INPUT_LOCATION_VERTS, self.render.verts.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_LOCATION_UVS, self.render.uvs.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_LOCATION_DEFORM, self.render.deforms.slice(..));
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
+			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_DEFORM, self.render.deforms.slice(..));
 			render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
 
 			if render_mask {

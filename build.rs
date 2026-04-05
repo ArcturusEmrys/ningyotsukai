@@ -639,7 +639,7 @@ fn introspect_spirv(
 	for entrypoint in module.enumerate_entry_points()? {
 		// Most of these are stubs.
 		// We will eventually have this print Rust structs and consts.
-		for var in &entrypoint.input_variables {
+		for (index, var) in entrypoint.input_variables.iter().enumerate() {
 			writeln!(out, "/// input {}", var.name)?;
 			writeln!(out, "/// location {}", var.location)?;
 			writeln!(out, "/// semantic {}", var.semantic)?;
@@ -662,6 +662,16 @@ fn introspect_spirv(
 				"pub const INPUT_LOCATION_{}: u32 = {};",
 				var.name.to_uppercase(),
 				var.location
+			)?;
+
+			// SPIR-V locations are NOT the same as the order you provide
+			// buffers in your VertexState. *Indexes* are the IDs you give to
+			// set_vertex_buffer in your render pass to use the shader with.
+			writeln!(
+				out,
+				"pub const INPUT_INDEX_{}: u32 = {};",
+				var.name.to_uppercase(),
+				index
 			)?;
 		}
 
