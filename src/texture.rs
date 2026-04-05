@@ -249,9 +249,9 @@ impl GBuffer {
 		depth_format: wgpu::TextureFormat,
 	) -> Self {
 		Self {
-			albedo: DeviceTexture::empty_render_target(device, encoder, width, height, wgpu::TextureFormat::Rgba8Uint),
+			albedo: DeviceTexture::empty_render_target(device, encoder, width, height, wgpu::TextureFormat::Rgba8Unorm),
 			emissive: DeviceTexture::empty_render_target(device, encoder, width, height, format),
-			bump: DeviceTexture::empty_render_target(device, encoder, width, height, wgpu::TextureFormat::Rgba8Uint),
+			bump: DeviceTexture::empty_render_target(device, encoder, width, height, wgpu::TextureFormat::Rgba8Unorm),
 			stencil: DepthStencilTexture::empty_render_target(device, encoder, width, height, depth_format),
 		}
 	}
