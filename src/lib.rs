@@ -524,7 +524,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 
 			//TODO: set blend mode
 			let uni_in_vert = basic_vert::Input {
-				mvp: self.viewmatrix.to_cols_array_2d(),
+				mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
 				offset: [0.0; 2],
 			}
 			.into_buffer(&self.render.device);
