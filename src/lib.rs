@@ -133,7 +133,20 @@ impl<'window> WgpuRenderer<'window> {
 
 		// Find a suitable surface configuration.
 		let surface_caps = surface.get_capabilities(&adapter);
-		let surface_format = surface_caps.formats[0]; //TODO: SRGB?
+		let mut surface_format = surface_caps.formats[0];
+		let non_srgb_surface = surface_caps.formats[0].remove_srgb_suffix();
+
+		// SRGB makes blending look funny.
+		if surface_caps
+			.formats
+			.iter()
+			.find(|fmt| **fmt == non_srgb_surface)
+			.is_some()
+		{
+			surface_format = non_srgb_surface;
+		}
+
+		dbg!(&surface_caps.formats);
 		let config = wgpu::SurfaceConfiguration {
 			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
 			format: surface_format,
