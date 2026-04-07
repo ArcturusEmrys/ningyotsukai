@@ -1,5 +1,5 @@
 use glam::Mat4;
-use glam::Vec2;
+use glam::UVec2;
 use inox2d::math::camera::Camera;
 use inox2d::model::Model;
 use inox2d::node::{InoxNodeUuid, components, drawables}; //hey wait a second that's just a u32 newtype! UUIDs are four of those!
@@ -16,7 +16,9 @@ mod texture;
 
 use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
 use shader::UniformBlock;
-use shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_mask_frag, composite_vert};
+use shaders::basic::{
+    basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_mask_frag, composite_vert,
+};
 
 use std::collections::HashMap;
 
@@ -29,7 +31,7 @@ use std::collections::HashMap;
 /// NOTE: At some point, rewrite inox2D's vertex arrays to use bytemuck and a
 /// custom Vec2 struct.
 pub fn cast_vec2(array: &[glam::Vec2]) -> &[u8] {
-	unsafe { std::slice::from_raw_parts(array.as_ptr() as *const u8, std::mem::size_of_val(array)) }
+    unsafe { std::slice::from_raw_parts(array.as_ptr() as *const u8, std::mem::size_of_val(array)) }
 }
 
 /// Cast u16s to array.
@@ -39,749 +41,890 @@ pub fn cast_vec2(array: &[glam::Vec2]) -> &[u8] {
 ///
 /// NOTE: This probably can already be bytemucked
 pub fn cast_index(array: &[u32]) -> &[u8] {
-	unsafe { std::slice::from_raw_parts(array.as_ptr() as *const u8, std::mem::size_of_val(array)) }
+    unsafe { std::slice::from_raw_parts(array.as_ptr() as *const u8, std::mem::size_of_val(array)) }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("Could not initialize wgpu renderer: {0}")]
 pub enum WgpuRendererError {
-	CreateSurfaceError(#[from] wgpu::CreateSurfaceError),
-	RequestAdapterError(#[from] wgpu::RequestAdapterError),
-	RequestDeviceError(#[from] wgpu::RequestDeviceError),
-	SurfaceError(#[from] wgpu::SurfaceError),
+    CreateSurfaceError(#[from] wgpu::CreateSurfaceError),
+    RequestAdapterError(#[from] wgpu::RequestAdapterError),
+    RequestDeviceError(#[from] wgpu::RequestDeviceError),
+    SurfaceError(#[from] wgpu::SurfaceError),
 
-	#[error("Model rendering not initialized")]
-	ModelRenderingNotInitialized,
+    #[error("Model rendering not initialized")]
+    ModelRenderingNotInitialized,
 
-	#[error("Size cannot be zero")]
-	SizeCannotBeZero,
+    #[error("Size cannot be zero")]
+    SizeCannotBeZero,
 }
 
 pub struct WgpuRenderer<'window> {
-	surface: wgpu::Surface<'window>,
-	config: wgpu::SurfaceConfiguration,
+    surface: Option<(wgpu::Surface<'window>, wgpu::SurfaceConfiguration)>,
+    target: Option<DeviceTexture>,
 
-	pub camera: Camera,
+    viewport: UVec2,
+    pub camera: Camera,
 
-	/// All textures used as render targets, excluding the surface color
-	/// buffer.
-	///
-	/// GBuffer is used solely for composite rendering, where rendered pixels
-	/// are used for a deferred shading pass.
-	render_targets: Option<(GBuffer, DepthStencilTexture)>,
+    /// All textures used as render targets, excluding the surface color
+    /// buffer.
+    ///
+    /// GBuffer is used solely for composite rendering, where rendered pixels
+    /// are used for a deferred shading pass.
+    render_targets: Option<(GBuffer, DepthStencilTexture)>,
 
-	verts: wgpu::Buffer,
-	uvs: wgpu::Buffer,
-	deforms: wgpu::Buffer,
-	indices: wgpu::Buffer,
+    verts: wgpu::Buffer,
+    uvs: wgpu::Buffer,
+    deforms: wgpu::Buffer,
+    indices: wgpu::Buffer,
 
-	part_shader_vert: basic_vert::Shader,
-	part_shader_frag: basic_frag::Shader,
-	part_shader_mask_frag: basic_mask_frag::Shader,
+    part_shader_vert: basic_vert::Shader,
+    part_shader_frag: basic_frag::Shader,
+    part_shader_mask_frag: basic_mask_frag::Shader,
 
-	masked_depthstencil: wgpu::DepthStencilState,
-	mask_depthstencil: wgpu::DepthStencilState,
+    masked_depthstencil: wgpu::DepthStencilState,
+    mask_depthstencil: wgpu::DepthStencilState,
 
-	part_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_frag::Shader>,
-	part_mask_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_mask_frag::Shader>,
+    part_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_frag::Shader>,
+    part_mask_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_mask_frag::Shader>,
 
-	composite_shader_vert: composite_vert::Shader,
-	composite_shader_frag: composite_frag::Shader,
-	composite_shader_mask_frag: composite_mask_frag::Shader,
+    composite_shader_vert: composite_vert::Shader,
+    composite_shader_frag: composite_frag::Shader,
+    composite_shader_mask_frag: composite_mask_frag::Shader,
 
-	composite_pipeline: pipeline::PipelineGroup<composite_vert::Shader, composite_frag::Shader>,
-	composite_mask_pipeline: pipeline::PipelineGroup<composite_vert::Shader, composite_mask_frag::Shader>,
+    composite_pipeline: pipeline::PipelineGroup<composite_vert::Shader, composite_frag::Shader>,
+    composite_mask_pipeline:
+        pipeline::PipelineGroup<composite_vert::Shader, composite_mask_frag::Shader>,
 
-	model_textures: Vec<DeviceTexture>,
-	model_sampler: wgpu::Sampler,
+    model_textures: Vec<DeviceTexture>,
+    model_sampler: wgpu::Sampler,
 
-	last_mask_threshold: f32,
-	is_in_mask: bool,
-	is_in_composite: bool,
-	stencil_reference_value: u32,
+    last_mask_threshold: f32,
+    is_in_mask: bool,
+    is_in_composite: bool,
+    stencil_reference_value: u32,
 
-	device: wgpu::Device,
-	queue: wgpu::Queue,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
 }
 
 impl<'window> WgpuRenderer<'window> {
-	pub async fn new(
-		target: impl Into<wgpu::SurfaceTarget<'window>>,
-		model: &Model,
-	) -> Result<Self, WgpuRendererError> {
-		let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
-		let surface = instance.create_surface(target)?;
-		let adapter = instance
-			.request_adapter(&wgpu::RequestAdapterOptions {
-				compatible_surface: Some(&surface),
-				..Default::default()
-			})
-			.await?;
-		let (device, queue) = adapter
-			.request_device(&wgpu::DeviceDescriptor {
-				required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
-					| wgpu::Features::CLEAR_TEXTURE
-					| wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-					| wgpu::Features::DEPTH_CLIP_CONTROL,
-				required_limits: wgpu::Limits {
-					max_color_attachment_bytes_per_sample: 48,
-					..Default::default()
-				},
-				..Default::default()
-			})
-			.await?;
+    /// Create a WGPU renderer that presents a surface after rendering
+    /// completes.
+    pub async fn new_with_surface(
+        target: impl Into<wgpu::SurfaceTarget<'window>>,
+        model: &Model,
+    ) -> Result<Self, WgpuRendererError> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+        let surface = instance.create_surface(target)?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            })
+            .await?;
 
-		// Find a suitable surface configuration.
-		let surface_caps = surface.get_capabilities(&adapter);
-		let mut surface_format = surface_caps.formats[0];
-		let non_srgb_surface = surface_caps.formats[0].remove_srgb_suffix();
+        // Find a suitable surface configuration.
+        let surface_caps = surface.get_capabilities(&adapter);
+        let mut surface_format = surface_caps.formats[0];
+        let non_srgb_surface = surface_caps.formats[0].remove_srgb_suffix();
 
-		// SRGB makes blending look funny.
-		if surface_caps
-			.formats
-			.iter()
-			.find(|fmt| **fmt == non_srgb_surface)
-			.is_some()
-		{
-			surface_format = non_srgb_surface;
-		}
+        // SRGB makes blending look funny.
+        if surface_caps
+            .formats
+            .iter()
+            .find(|fmt| **fmt == non_srgb_surface)
+            .is_some()
+        {
+            surface_format = non_srgb_surface;
+        }
 
-		dbg!(&surface_caps.formats);
-		let config = wgpu::SurfaceConfiguration {
-			usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-			format: surface_format,
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
 
-			//TODO: We don't know the size of our surface at init time.
-			width: 640,
-			height: 480,
-			present_mode: surface_caps.present_modes[0],
-			alpha_mode: surface_caps.alpha_modes[0],
-			view_formats: vec![],
-			desired_maximum_frame_latency: 2,
-		};
+            //TODO: We don't know the size of our surface at init time.
+            width: 640,
+            height: 480,
+            present_mode: surface_caps.present_modes[0],
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
 
-		// Compile all our shaders now.
-		let part_shader_vert = basic_vert::Shader::new(&device);
-		let part_shader_frag = basic_frag::Shader::new(&device);
-		let part_shader_mask_frag = basic_mask_frag::Shader::new(&device);
+        let mut renderer = Self::new_internal(adapter, model).await?;
 
-		let masked_depthstencil = wgpu::DepthStencilState {
-			format: wgpu::TextureFormat::Depth24PlusStencil8,
-			depth_write_enabled: false,
-			depth_compare: wgpu::CompareFunction::Always,
-			stencil: wgpu::StencilState {
-				front: wgpu::StencilFaceState {
-					compare: wgpu::CompareFunction::Equal,
-					fail_op: wgpu::StencilOperation::Keep,
-					depth_fail_op: wgpu::StencilOperation::Keep,
-					pass_op: wgpu::StencilOperation::Replace,
-				},
-				back: wgpu::StencilFaceState {
-					compare: wgpu::CompareFunction::Equal,
-					fail_op: wgpu::StencilOperation::Keep,
-					depth_fail_op: wgpu::StencilOperation::Keep,
-					pass_op: wgpu::StencilOperation::Replace,
-				},
-				read_mask: 0xFF,
-				write_mask: 0x00,
-			},
-			bias: wgpu::DepthBiasState::default(),
-		};
+        renderer.surface = Some((surface, config));
 
-		let mask_depthstencil = wgpu::DepthStencilState {
-			format: wgpu::TextureFormat::Depth24PlusStencil8,
-			depth_write_enabled: false,
-			depth_compare: wgpu::CompareFunction::Always,
-			stencil: wgpu::StencilState {
-				front: wgpu::StencilFaceState {
-					compare: wgpu::CompareFunction::Always,
-					fail_op: wgpu::StencilOperation::Keep,
-					depth_fail_op: wgpu::StencilOperation::Keep,
-					pass_op: wgpu::StencilOperation::Replace,
-				},
-				back: wgpu::StencilFaceState {
-					compare: wgpu::CompareFunction::Always,
-					fail_op: wgpu::StencilOperation::Keep,
-					depth_fail_op: wgpu::StencilOperation::Keep,
-					pass_op: wgpu::StencilOperation::Replace,
-				},
-				read_mask: 0xFF,
-				write_mask: 0xFF,
-			},
-			bias: wgpu::DepthBiasState::default(),
-		};
+        Ok(renderer)
+    }
 
-		//TODO: We need a pipeline per Inochi blending mode
-		//(or some kind of ubershader blending)
+    /// Create a WGPU renderer that renders to an internal texture.
+    pub async fn new_headless(model: &Model) -> Result<Self, WgpuRendererError> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::from_env_or_default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                ..Default::default()
+            })
+            .await?;
 
-		let part_pipeline = pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_frag.clone());
-		let part_mask_pipeline = pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
+        // We actually can't create our render target until we know our size.
 
-		let composite_shader_vert = composite_vert::Shader::new(&device);
-		let composite_shader_frag = composite_frag::Shader::new(&device);
-		let composite_shader_mask_frag = composite_mask_frag::Shader::new(&device);
+        Ok(Self::new_internal(adapter, model).await?)
+    }
 
-		let composite_pipeline =
-			pipeline::PipelineGroup::new(composite_shader_vert.clone(), composite_shader_frag.clone());
-		let composite_mask_pipeline =
-			pipeline::PipelineGroup::new(composite_shader_vert.clone(), composite_shader_mask_frag.clone());
+    async fn new_internal(
+        adapter: wgpu::Adapter,
+        model: &Model,
+    ) -> Result<Self, WgpuRendererError> {
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
+                    | wgpu::Features::CLEAR_TEXTURE
+                    | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+                    | wgpu::Features::DEPTH_CLIP_CONTROL,
+                required_limits: wgpu::Limits {
+                    max_color_attachment_bytes_per_sample: 48,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .await?;
 
-		let inox_buffers = model
-			.puppet
-			.render_ctx
-			.as_ref()
-			.ok_or(WgpuRendererError::ModelRenderingNotInitialized)?;
-		//TODO: Change inox2d upstream to use a bytemuck-able array
-		let verts = device.create_buffer_init(&BufferInitDescriptor {
-			label: Some(&format!(
-				"Inox2D {}::Verts",
-				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
-			)),
-			contents: cast_vec2(inox_buffers.vertex_buffers.verts.as_slice()),
-			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-		});
-		let uvs = device.create_buffer_init(&BufferInitDescriptor {
-			label: Some(&format!(
-				"Inox2D {}::UVs",
-				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
-			)),
-			contents: cast_vec2(inox_buffers.vertex_buffers.uvs.as_slice()),
-			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-		});
-		let deforms = device.create_buffer_init(&BufferInitDescriptor {
-			label: Some(&format!(
-				"Inox2D {}::Deforms",
-				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
-			)),
-			contents: cast_vec2(inox_buffers.vertex_buffers.deforms.as_slice()),
-			usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-		});
-		let indices = device.create_buffer_init(&BufferInitDescriptor {
-			label: Some(&format!(
-				"Inox2D {}::Indices",
-				model.puppet.meta.name.as_deref().unwrap_or("<NAME NOT SPECIFIED>")
-			)),
-			contents: cast_index(inox_buffers.vertex_buffers.indices.as_slice()),
-			usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-		});
+        // Compile all our shaders now.
+        let part_shader_vert = basic_vert::Shader::new(&device);
+        let part_shader_frag = basic_frag::Shader::new(&device);
+        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device);
 
-		let decoded_textures = decode_model_textures(model.textures.iter());
-		let mut texture_handles = vec![];
-		for (index, texture) in decoded_textures.iter().enumerate() {
-			texture_handles.push(DeviceTexture::new_from_model(&device, &queue, model, index, texture));
-		}
+        let masked_depthstencil = wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::Always,
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Equal,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                read_mask: 0xFF,
+                write_mask: 0x00,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
 
-		let model_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-			address_mode_u: wgpu::AddressMode::ClampToBorder,
-			address_mode_v: wgpu::AddressMode::ClampToBorder,
-			address_mode_w: wgpu::AddressMode::ClampToBorder,
-			mag_filter: wgpu::FilterMode::Linear,
-			min_filter: wgpu::FilterMode::Linear,
-			..Default::default()
-		});
+        let mask_depthstencil = wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::Always,
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Keep,
+                    depth_fail_op: wgpu::StencilOperation::Keep,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
 
-		// Flush all pending work.
-		// In wgpu, texture uploads etc will only execute at submit time
-		queue.submit([]);
+        //TODO: We need a pipeline per Inochi blending mode
+        //(or some kind of ubershader blending)
 
-		Ok(WgpuRenderer {
-			surface,
-			config,
-			camera: Camera::default(),
-			render_targets: None,
-			verts,
-			uvs,
-			deforms,
-			indices,
-			part_shader_vert,
-			part_shader_frag,
-			part_shader_mask_frag,
-			mask_depthstencil,
-			masked_depthstencil,
-			part_pipeline,
-			part_mask_pipeline,
-			composite_shader_vert,
-			composite_shader_frag,
-			composite_shader_mask_frag,
-			composite_pipeline,
-			composite_mask_pipeline,
-			model_textures: texture_handles,
-			model_sampler,
-			last_mask_threshold: 0.0,
-			is_in_mask: false,
-			is_in_composite: false,
-			stencil_reference_value: 1,
-			device,
-			queue,
-		})
-	}
+        let part_pipeline =
+            pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_frag.clone());
+        let part_mask_pipeline =
+            pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
 
-	pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
-		if width > 0 && height > 0 {
-			let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-				label: Some("Inox2D texture resizes"),
-			});
+        let composite_shader_vert = composite_vert::Shader::new(&device);
+        let composite_shader_frag = composite_frag::Shader::new(&device);
+        let composite_shader_mask_frag = composite_mask_frag::Shader::new(&device);
 
-			self.config.width = width;
-			self.config.height = height;
-			self.surface.configure(&self.device, &self.config);
-			self.render_targets = Some((
-				GBuffer::new(
-					&self.device,
-					&mut encoder,
-					width,
-					height,
-					wgpu::TextureFormat::Rgba16Float,
-					wgpu::TextureFormat::Depth24PlusStencil8,
-				),
-				DepthStencilTexture::empty_render_target(
-					&self.device,
-					&mut encoder,
-					width,
-					height,
-					wgpu::TextureFormat::Depth24PlusStencil8,
-				),
-			));
+        let composite_pipeline = pipeline::PipelineGroup::new(
+            composite_shader_vert.clone(),
+            composite_shader_frag.clone(),
+        );
+        let composite_mask_pipeline = pipeline::PipelineGroup::new(
+            composite_shader_vert.clone(),
+            composite_shader_mask_frag.clone(),
+        );
 
-			self.queue.submit(std::iter::once(encoder.finish()));
-			Ok(())
-		} else {
-			Err(WgpuRendererError::SizeCannotBeZero)
-		}
-	}
+        let inox_buffers = model
+            .puppet
+            .render_ctx
+            .as_ref()
+            .ok_or(WgpuRendererError::ModelRenderingNotInitialized)?;
+        //TODO: Change inox2d upstream to use a bytemuck-able array
+        let verts = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(&format!(
+                "Inox2D {}::Verts",
+                model
+                    .puppet
+                    .meta
+                    .name
+                    .as_deref()
+                    .unwrap_or("<NAME NOT SPECIFIED>")
+            )),
+            contents: cast_vec2(inox_buffers.vertex_buffers.verts.as_slice()),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let uvs = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(&format!(
+                "Inox2D {}::UVs",
+                model
+                    .puppet
+                    .meta
+                    .name
+                    .as_deref()
+                    .unwrap_or("<NAME NOT SPECIFIED>")
+            )),
+            contents: cast_vec2(inox_buffers.vertex_buffers.uvs.as_slice()),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let deforms = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(&format!(
+                "Inox2D {}::Deforms",
+                model
+                    .puppet
+                    .meta
+                    .name
+                    .as_deref()
+                    .unwrap_or("<NAME NOT SPECIFIED>")
+            )),
+            contents: cast_vec2(inox_buffers.vertex_buffers.deforms.as_slice()),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let indices = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some(&format!(
+                "Inox2D {}::Indices",
+                model
+                    .puppet
+                    .meta
+                    .name
+                    .as_deref()
+                    .unwrap_or("<NAME NOT SPECIFIED>")
+            )),
+            contents: cast_index(inox_buffers.vertex_buffers.indices.as_slice()),
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+        });
 
-	fn textures_for_part(&self, part: &components::TexturedMesh) -> (&DeviceTexture, &DeviceTexture, &DeviceTexture) {
-		(
-			&self.model_textures[part.tex_albedo.raw()],
-			&self.model_textures[part.tex_bumpmap.raw()],
-			&self.model_textures[part.tex_emissive.raw()],
-		)
-	}
+        let decoded_textures = decode_model_textures(model.textures.iter());
+        let mut texture_handles = vec![];
+        for (index, texture) in decoded_textures.iter().enumerate() {
+            texture_handles.push(DeviceTexture::new_from_model(
+                &device, &queue, model, index, texture,
+            ));
+        }
+
+        let model_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToBorder,
+            address_mode_v: wgpu::AddressMode::ClampToBorder,
+            address_mode_w: wgpu::AddressMode::ClampToBorder,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
+        // Flush all pending work.
+        // In wgpu, texture uploads etc will only execute at submit time
+        queue.submit([]);
+
+        Ok(WgpuRenderer {
+            surface: None,
+            target: None,
+            viewport: UVec2::new(640, 480), //again, we don't know our size yet
+            camera: Camera::default(),
+            render_targets: None,
+            verts,
+            uvs,
+            deforms,
+            indices,
+            part_shader_vert,
+            part_shader_frag,
+            part_shader_mask_frag,
+            mask_depthstencil,
+            masked_depthstencil,
+            part_pipeline,
+            part_mask_pipeline,
+            composite_shader_vert,
+            composite_shader_frag,
+            composite_shader_mask_frag,
+            composite_pipeline,
+            composite_mask_pipeline,
+            model_textures: texture_handles,
+            model_sampler,
+            last_mask_threshold: 0.0,
+            is_in_mask: false,
+            is_in_composite: false,
+            stencil_reference_value: 1,
+            device,
+            queue,
+        })
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
+        if width > 0 && height > 0 {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Inox2D texture resizes"),
+                });
+
+            self.viewport.x = width;
+            self.viewport.y = height;
+
+            if let Some((surface, config)) = &mut self.surface {
+                config.width = width;
+                config.height = height;
+                surface.configure(&self.device, config);
+            } else {
+                self.target = Some(DeviceTexture::empty_render_target(
+                    &self.device,
+                    &mut encoder,
+                    width,
+                    height,
+                    wgpu::TextureFormat::Rgba8Unorm,
+                ));
+            }
+
+            self.render_targets = Some((
+                GBuffer::new(
+                    &self.device,
+                    &mut encoder,
+                    width,
+                    height,
+                    wgpu::TextureFormat::Rgba16Float,
+                    wgpu::TextureFormat::Depth24PlusStencil8,
+                ),
+                DepthStencilTexture::empty_render_target(
+                    &self.device,
+                    &mut encoder,
+                    width,
+                    height,
+                    wgpu::TextureFormat::Depth24PlusStencil8,
+                ),
+            ));
+
+            self.queue.submit(std::iter::once(encoder.finish()));
+            Ok(())
+        } else {
+            Err(WgpuRendererError::SizeCannotBeZero)
+        }
+    }
+
+    fn textures_for_part(
+        &self,
+        part: &components::TexturedMesh,
+    ) -> (&DeviceTexture, &DeviceTexture, &DeviceTexture) {
+        (
+            &self.model_textures[part.tex_albedo.raw()],
+            &self.model_textures[part.tex_bumpmap.raw()],
+            &self.model_textures[part.tex_emissive.raw()],
+        )
+    }
 }
 
 impl<'window> InoxRenderer for WgpuRenderer<'window> {
-	type Draw<'a>
-		= WgpuDrawSession<'a, 'window>
-	where
-		Self: 'a;
+    type Draw<'a>
+        = WgpuDrawSession<'a, 'window>
+    where
+        Self: 'a;
 
-	fn on_begin_draw<'a>(&'a mut self, puppet: &inox2d::puppet::Puppet) -> Result<Self::Draw<'a>, Box<dyn Error>> {
-		if self.render_targets.is_none() {
-			panic!("Buffer is not yet set up.");
-		}
+    fn on_begin_draw<'a>(
+        &'a mut self,
+        puppet: &inox2d::puppet::Puppet,
+    ) -> Result<Self::Draw<'a>, Box<dyn Error>> {
+        if self.render_targets.is_none() {
+            panic!("Buffer is not yet set up.");
+        }
 
-		let encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-			label: Some("Inox2DWGPU"),
-		});
-		let surface_texture = self.surface.get_current_texture()?;
-		let view = surface_texture
-			.texture
-			.create_view(&wgpu::TextureViewDescriptor::default());
+        let encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Inox2DWGPU"),
+            });
 
-		//TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
+        let surface_texture = self
+            .surface
+            .as_ref()
+            .map(|(surface, _)| surface.get_current_texture())
+            .transpose()?;
+        let view = if let Some(surface_texture) = &surface_texture {
+            surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        } else if let Some(device_texture) = &self.target {
+            device_texture.view().clone()
+        } else {
+            return Err("Please resize the renderer before drawing.".into());
+        };
 
-		let node_names = puppet
-			.nodes()
-			.iter()
-			.map(|n| (n.uuid, n.name.clone()))
-			.collect::<HashMap<_, _>>();
-		let viewport = Vec2::new(self.config.width as f32, self.config.height as f32);
-		let viewmatrix = self.camera.matrix(viewport);
+        //TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
 
-		Ok(WgpuDrawSession {
-			render: self,
-			encoder,
-			surface_texture,
-			view,
-			viewmatrix,
-			node_names,
-		})
-	}
+        let node_names = puppet
+            .nodes()
+            .iter()
+            .map(|n| (n.uuid, n.name.clone()))
+            .collect::<HashMap<_, _>>();
+        let viewmatrix = self.camera.matrix(self.viewport.as_vec2());
+
+        Ok(WgpuDrawSession {
+            render: self,
+            encoder,
+            surface_texture,
+            view,
+            viewmatrix,
+            node_names,
+        })
+    }
 }
 
 pub struct WgpuDrawSession<'a, 'window> {
-	render: &'a mut WgpuRenderer<'window>,
-	encoder: wgpu::CommandEncoder,
-	surface_texture: wgpu::SurfaceTexture,
-	view: wgpu::TextureView,
-	viewmatrix: Mat4,
-	node_names: HashMap<InoxNodeUuid, String>,
+    /// The renderer that owns this draw session.
+    render: &'a mut WgpuRenderer<'window>,
+
+    /// The drawing session's command encoder.
+    encoder: wgpu::CommandEncoder,
+
+    /// A surface to be presented at the end of rendering.
+    surface_texture: Option<wgpu::SurfaceTexture>,
+
+    /// The output texture to render.
+    view: wgpu::TextureView,
+
+    /// The position of the root of our model.
+    viewmatrix: Mat4,
+
+    /// All of the node names (for debugging purposes).
+    node_names: HashMap<InoxNodeUuid, String>,
 }
 
 impl<'a, 'window> WgpuDrawSession<'a, 'window> {
-	fn blend_mode_to_state(state: components::BlendMode) -> wgpu::BlendState {
-		let component = match state {
-			components::BlendMode::Normal => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::One,
-				dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::Multiply => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::Dst,
-				dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::ColorDodge => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::Dst,
-				dst_factor: wgpu::BlendFactor::One,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::LinearDodge => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::One,
-				dst_factor: wgpu::BlendFactor::One,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::Screen => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::One,
-				dst_factor: wgpu::BlendFactor::OneMinusSrc,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::ClipToLower => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::DstAlpha,
-				dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-				operation: wgpu::BlendOperation::Add,
-			},
-			components::BlendMode::SliceFromLower => wgpu::BlendComponent {
-				src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
-				dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-				operation: wgpu::BlendOperation::Subtract,
-			},
-		};
+    fn blend_mode_to_state(state: components::BlendMode) -> wgpu::BlendState {
+        let component = match state {
+            components::BlendMode::Normal => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::Multiply => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Dst,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::ColorDodge => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::Dst,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::LinearDodge => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::Screen => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrc,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::ClipToLower => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::DstAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            components::BlendMode::SliceFromLower => wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Subtract,
+            },
+        };
 
-		wgpu::BlendState {
-			color: component,
-			alpha: component,
-		}
-	}
+        wgpu::BlendState {
+            color: component,
+            alpha: component,
+        }
+    }
 }
 
 impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
-	fn on_begin_masks(&mut self, masks: &components::Masks) {
-		self.render.last_mask_threshold = masks.threshold.clamp(0.0, 1.0);
-		//TODO: Enable stencilling on the render target.
+    fn on_begin_masks(&mut self, masks: &components::Masks) {
+        self.render.last_mask_threshold = masks.threshold.clamp(0.0, 1.0);
+        //TODO: Enable stencilling on the render target.
 
-		if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
-			composite.stencil().clear(&mut self.encoder);
-			surface_stencil.clear(&mut self.encoder);
-		}
-	}
+        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+            composite.stencil().clear(&mut self.encoder);
+            surface_stencil.clear(&mut self.encoder);
+        }
+    }
 
-	fn on_begin_mask(&mut self, mask: &components::Mask) {
-		self.render.stencil_reference_value = (mask.mode == components::MaskMode::Mask) as u32;
-	}
+    fn on_begin_mask(&mut self, mask: &components::Mask) {
+        self.render.stencil_reference_value = (mask.mode == components::MaskMode::Mask) as u32;
+    }
 
-	fn on_begin_masked_content(&mut self) {
-		self.render.is_in_mask = true;
-	}
+    fn on_begin_masked_content(&mut self) {
+        self.render.is_in_mask = true;
+    }
 
-	fn on_end_mask(&mut self) {
-		self.render.is_in_mask = false;
-	}
+    fn on_end_mask(&mut self) {
+        self.render.is_in_mask = false;
+    }
 
-	fn draw_textured_mesh_content(
-		&mut self,
-		render_mask: bool,
-		components: &drawables::TexturedMeshComponents,
-		render_ctx: &render::TexturedMeshRenderCtx,
-		id: InoxNodeUuid,
-	) {
-		if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
-			let gbuffer_color = composite.as_color_attachments();
-			let surface_color_view = &self.view;
-			let surface_color_attach = Some(wgpu::RenderPassColorAttachment {
-				view: &surface_color_view,
-				depth_slice: None,
-				resolve_target: None,
-				ops: wgpu::Operations {
-					load: wgpu::LoadOp::Load,
-					store: wgpu::StoreOp::Store,
-				},
-			});
-			let masked_attach = [surface_color_attach.clone()];
-			let unmasked_attach = [surface_color_attach, None, None];
+    fn draw_textured_mesh_content(
+        &mut self,
+        render_mask: bool,
+        components: &drawables::TexturedMeshComponents,
+        render_ctx: &render::TexturedMeshRenderCtx,
+        id: InoxNodeUuid,
+    ) {
+        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+            let gbuffer_color = composite.as_color_attachments();
+            let surface_color_view = &self.view;
+            let surface_color_attach = Some(wgpu::RenderPassColorAttachment {
+                view: &surface_color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            });
+            let masked_attach = [surface_color_attach.clone()];
+            let unmasked_attach = [surface_color_attach, None, None];
 
-			let color_attachments = if self.render.is_in_composite {
-				if render_mask {
-					&[gbuffer_color[0].clone()]
-				} else {
-					gbuffer_color.as_slice()
-				}
-			} else {
-				if render_mask {
-					masked_attach.as_slice()
-				} else {
-					unmasked_attach.as_slice()
-				}
-			};
-			let stencil_texture = if self.render.is_in_composite {
-				composite.stencil()
-			} else {
-				surface_stencil
-			};
+            let color_attachments = if self.render.is_in_composite {
+                if render_mask {
+                    &[gbuffer_color[0].clone()]
+                } else {
+                    gbuffer_color.as_slice()
+                }
+            } else {
+                if render_mask {
+                    masked_attach.as_slice()
+                } else {
+                    unmasked_attach.as_slice()
+                }
+            };
+            let stencil_texture = if self.render.is_in_composite {
+                composite.stencil()
+            } else {
+                surface_stencil
+            };
 
-			let depth_stencil_attachment = if render_mask {
-				Some(stencil_texture.as_depth_stencil_attachment_rw())
-			} else if self.render.is_in_mask {
-				Some(stencil_texture.as_depth_stencil_attachment_ro())
-			} else {
-				None
-			};
+            let depth_stencil_attachment = if render_mask {
+                Some(stencil_texture.as_depth_stencil_attachment_rw())
+            } else if self.render.is_in_mask {
+                Some(stencil_texture.as_depth_stencil_attachment_ro())
+            } else {
+                None
+            };
 
-			//TODO: Do we even want blending on in Normal mode?
-			let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
+            //TODO: Do we even want blending on in Normal mode?
+            let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
 
-			let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some(&format!(
-					"WgpuRenderer::draw_textured_mesh_content - {}",
-					self.node_names.get(&id).map(|s| s.as_str()).unwrap_or("<NODE UNKNOWN>")
-				)),
-				color_attachments,
-				depth_stencil_attachment,
-				occlusion_query_set: None,
-				timestamp_writes: None,
-				multiview_mask: None,
-			});
+            let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(&format!(
+                    "WgpuRenderer::draw_textured_mesh_content - {}",
+                    self.node_names
+                        .get(&id)
+                        .map(|s| s.as_str())
+                        .unwrap_or("<NODE UNKNOWN>")
+                )),
+                color_attachments,
+                depth_stencil_attachment,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
 
-			let (albedo, bumpmap, emissive) = self.render.textures_for_part(components.texture);
-			let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
+            let (albedo, bumpmap, emissive) = self.render.textures_for_part(components.texture);
+            let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
 
-			//TODO: set blend mode
-			let uni_in_vert = basic_vert::Input {
-				mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
-				offset: [0.0; 2],
-			}
-			.into_buffer(&self.render.device);
+            //TODO: set blend mode
+            let uni_in_vert = basic_vert::Input {
+                mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
+                offset: [0.0; 2],
+            }
+            .into_buffer(&self.render.device);
 
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_DEFORM, self.render.deforms.slice(..));
-			render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass
+                .set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
+            render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
+            render_pass.set_vertex_buffer(
+                basic_vert::INPUT_INDEX_DEFORM,
+                self.render.deforms.slice(..),
+            );
+            render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-			if render_mask {
-				//TODO: What happens if a mask is also masked?
-				let pipeline = self.render.part_mask_pipeline.with_configuration(
-					&self.render.device,
-					[color_attachments[0].as_ref().map(|ca| ca.view.texture().format())],
-					[blend],
-					[wgpu::ColorWrites::empty()],
-					Some(self.render.mask_depthstencil.clone()),
-				);
-				let uni_in_frag = basic_mask_frag::Input {
-					threshold: self.render.last_mask_threshold,
-				}
-				.into_buffer(&self.render.device);
+            if render_mask {
+                //TODO: What happens if a mask is also masked?
+                let pipeline = self.render.part_mask_pipeline.with_configuration(
+                    &self.render.device,
+                    [color_attachments[0]
+                        .as_ref()
+                        .map(|ca| ca.view.texture().format())],
+                    [blend],
+                    [wgpu::ColorWrites::empty()],
+                    Some(self.render.mask_depthstencil.clone()),
+                );
+                let uni_in_frag = basic_mask_frag::Input {
+                    threshold: self.render.last_mask_threshold,
+                }
+                .into_buffer(&self.render.device);
 
-				render_pass.set_pipeline(pipeline.pipeline());
-				pipeline.bind_frag(
-					&mut render_pass,
-					Some(&self.render.part_shader_mask_frag.bind(
-						&self.render.device,
-						albedo.view(),
-						&self.render.model_sampler,
-						&uni_in_frag,
-					)),
-				);
-				pipeline.bind_vertex(
-					&mut render_pass,
-					Some(&self.render.part_shader_vert.bind(&self.render.device, &uni_in_vert)),
-				);
+                render_pass.set_pipeline(pipeline.pipeline());
+                pipeline.bind_frag(
+                    &mut render_pass,
+                    Some(&self.render.part_shader_mask_frag.bind(
+                        &self.render.device,
+                        albedo.view(),
+                        &self.render.model_sampler,
+                        &uni_in_frag,
+                    )),
+                );
+                pipeline.bind_vertex(
+                    &mut render_pass,
+                    Some(
+                        &self
+                            .render
+                            .part_shader_vert
+                            .bind(&self.render.device, &uni_in_vert),
+                    ),
+                );
 
-				render_pass.set_stencil_reference(self.render.stencil_reference_value);
-			} else {
-				let all = wgpu::ColorWrites::ALL;
-				//Regular parts
-				let formats = [
-					color_attachments[0].as_ref().map(|ca| ca.view.texture().format()),
-					color_attachments[1].as_ref().map(|ca| ca.view.texture().format()),
-					color_attachments[2].as_ref().map(|ca| ca.view.texture().format()),
-				];
-				let pipeline = if self.render.is_in_mask {
-					self.render.part_pipeline.with_configuration(
-						&self.render.device,
-						formats,
-						[blend, blend, blend],
-						[all, all, all],
-						Some(self.render.masked_depthstencil.clone()),
-					)
-				} else {
-					self.render.part_pipeline.with_configuration(
-						&self.render.device,
-						formats,
-						[blend, blend, blend],
-						[all, all, all],
-						None,
-					)
-				};
+                render_pass.set_stencil_reference(self.render.stencil_reference_value);
+            } else {
+                let all = wgpu::ColorWrites::ALL;
+                //Regular parts
+                let formats = [
+                    color_attachments[0]
+                        .as_ref()
+                        .map(|ca| ca.view.texture().format()),
+                    color_attachments[1]
+                        .as_ref()
+                        .map(|ca| ca.view.texture().format()),
+                    color_attachments[2]
+                        .as_ref()
+                        .map(|ca| ca.view.texture().format()),
+                ];
+                let pipeline = if self.render.is_in_mask {
+                    self.render.part_pipeline.with_configuration(
+                        &self.render.device,
+                        formats,
+                        [blend, blend, blend],
+                        [all, all, all],
+                        Some(self.render.masked_depthstencil.clone()),
+                    )
+                } else {
+                    self.render.part_pipeline.with_configuration(
+                        &self.render.device,
+                        formats,
+                        [blend, blend, blend],
+                        [all, all, all],
+                        None,
+                    )
+                };
 
-				let uni_in_frag = basic_frag::Input {
-					opacity: components.drawable.blending.opacity,
-					multColor: components.drawable.blending.tint.into(),
-					screenColor: components.drawable.blending.screen_tint.into(),
-					emissionStrength: 1.0, //NOTE: OpenGL never sets this.
-				}
-				.into_buffer(&self.render.device);
+                let uni_in_frag = basic_frag::Input {
+                    opacity: components.drawable.blending.opacity,
+                    multColor: components.drawable.blending.tint.into(),
+                    screenColor: components.drawable.blending.screen_tint.into(),
+                    emissionStrength: 1.0, //NOTE: OpenGL never sets this.
+                }
+                .into_buffer(&self.render.device);
 
-				render_pass.set_pipeline(pipeline.pipeline());
-				pipeline.bind_frag(
-					&mut render_pass,
-					Some(&self.render.part_shader_frag.bind(
-						&self.render.device,
-						albedo.view(),
-						bumpmap.view(),
-						emissive.view(),
-						&self.render.model_sampler,
-						&uni_in_frag,
-					)),
-				);
-				pipeline.bind_vertex(
-					&mut render_pass,
-					Some(&self.render.part_shader_vert.bind(&self.render.device, &uni_in_vert)),
-				);
+                render_pass.set_pipeline(pipeline.pipeline());
+                pipeline.bind_frag(
+                    &mut render_pass,
+                    Some(&self.render.part_shader_frag.bind(
+                        &self.render.device,
+                        albedo.view(),
+                        bumpmap.view(),
+                        emissive.view(),
+                        &self.render.model_sampler,
+                        &uni_in_frag,
+                    )),
+                );
+                pipeline.bind_vertex(
+                    &mut render_pass,
+                    Some(
+                        &self
+                            .render
+                            .part_shader_vert
+                            .bind(&self.render.device, &uni_in_vert),
+                    ),
+                );
 
-				render_pass.set_stencil_reference(1);
-				render_pass.set_pipeline(pipeline.pipeline());
-			}
+                render_pass.set_stencil_reference(1);
+                render_pass.set_pipeline(pipeline.pipeline());
+            }
 
-			render_pass.draw_indexed(
-				render_ctx.index_offset as u32..(render_ctx.index_offset + render_ctx.index_len as u32),
-				0,
-				0..1,
-			);
-		}
-	}
+            render_pass.draw_indexed(
+                render_ctx.index_offset as u32
+                    ..(render_ctx.index_offset + render_ctx.index_len as u32),
+                0,
+                0..1,
+            );
+        }
+    }
 
-	fn begin_composite_content(
-		&mut self,
-		as_mask: bool,
-		components: &drawables::CompositeComponents,
-		render_ctx: &render::CompositeRenderCtx,
-		id: InoxNodeUuid,
-	) {
-		self.render.is_in_composite = true;
+    fn begin_composite_content(
+        &mut self,
+        as_mask: bool,
+        components: &drawables::CompositeComponents,
+        render_ctx: &render::CompositeRenderCtx,
+        id: InoxNodeUuid,
+    ) {
+        self.render.is_in_composite = true;
 
-		if let Some((composite, _surface_stencil)) = self.render.render_targets.as_ref() {
-			composite.clear(&mut self.encoder);
-		}
-	}
+        if let Some((composite, _surface_stencil)) = self.render.render_targets.as_ref() {
+            composite.clear(&mut self.encoder);
+        }
+    }
 
-	fn finish_composite_content(
-		&mut self,
-		render_mask: bool,
-		components: &drawables::CompositeComponents,
-		render_ctx: &render::CompositeRenderCtx,
-		id: InoxNodeUuid,
-	) {
-		assert!(self.render.is_in_composite);
-		self.render.is_in_composite = false;
+    fn finish_composite_content(
+        &mut self,
+        render_mask: bool,
+        components: &drawables::CompositeComponents,
+        render_ctx: &render::CompositeRenderCtx,
+        id: InoxNodeUuid,
+    ) {
+        assert!(self.render.is_in_composite);
+        self.render.is_in_composite = false;
 
-		if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
-			let surface_color_view = &self.view;
-			let depth_stencil_attachment = if render_mask {
-				Some(surface_stencil.as_depth_stencil_attachment_rw())
-			} else if self.render.is_in_mask {
-				Some(surface_stencil.as_depth_stencil_attachment_ro())
-			} else {
-				None
-			};
+        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+            let surface_color_view = &self.view;
+            let depth_stencil_attachment = if render_mask {
+                Some(surface_stencil.as_depth_stencil_attachment_rw())
+            } else if self.render.is_in_mask {
+                Some(surface_stencil.as_depth_stencil_attachment_ro())
+            } else {
+                None
+            };
 
-			//TODO: Do we even want blending on in Normal mode?
-			let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
+            //TODO: Do we even want blending on in Normal mode?
+            let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
 
-			let color_attachments = [
-				Some(wgpu::RenderPassColorAttachment {
-					view: &surface_color_view,
-					depth_slice: None,
-					resolve_target: None,
-					ops: wgpu::Operations {
-						load: wgpu::LoadOp::Load,
-						store: wgpu::StoreOp::Store,
-					},
-				}),
-				None,
-				None,
-			];
-			let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-				label: Some(&format!(
-					"WgpuRenderer::finish_composite_content - {}",
-					self.node_names.get(&id).map(|s| s.as_str()).unwrap_or("<NODE UNKNOWN>")
-				)),
-				color_attachments: &color_attachments,
-				depth_stencil_attachment,
-				occlusion_query_set: None,
-				timestamp_writes: None,
-				multiview_mask: None,
-			});
+            let color_attachments = [
+                Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                None,
+                None,
+            ];
+            let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some(&format!(
+                    "WgpuRenderer::finish_composite_content - {}",
+                    self.node_names
+                        .get(&id)
+                        .map(|s| s.as_str())
+                        .unwrap_or("<NODE UNKNOWN>")
+                )),
+                color_attachments: &color_attachments,
+                depth_stencil_attachment,
+                occlusion_query_set: None,
+                timestamp_writes: None,
+                multiview_mask: None,
+            });
 
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
-			render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_DEFORM, self.render.deforms.slice(..));
-			render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass
+                .set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.render.verts.slice(..));
+            render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.render.uvs.slice(..));
+            render_pass.set_vertex_buffer(
+                basic_vert::INPUT_INDEX_DEFORM,
+                self.render.deforms.slice(..),
+            );
+            render_pass.set_index_buffer(self.render.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-			if render_mask {
-				// LOL, the OpenGL renderer didn't handle the "mask by composite" case.
-				// I may want to see what Inochi2D's D library does.
-				todo!();
-			} else {
-				let all = wgpu::ColorWrites::ALL;
-				let depth_stencil = if self.render.is_in_mask {
-					Some(self.render.masked_depthstencil.clone())
-				} else {
-					None
-				};
-				let formats = [
-					color_attachments[0].as_ref().map(|ca| ca.view.texture().format()),
-					None,
-					None,
-				];
-				let pipeline = self.render.composite_pipeline.with_configuration(
-					&self.render.device,
-					formats,
-					[blend, blend, blend],
-					[all, all, all],
-					depth_stencil,
-				);
+            if render_mask {
+                // LOL, the OpenGL renderer didn't handle the "mask by composite" case.
+                // I may want to see what Inochi2D's D library does.
+                todo!();
+            } else {
+                let all = wgpu::ColorWrites::ALL;
+                let depth_stencil = if self.render.is_in_mask {
+                    Some(self.render.masked_depthstencil.clone())
+                } else {
+                    None
+                };
+                let formats = [
+                    color_attachments[0]
+                        .as_ref()
+                        .map(|ca| ca.view.texture().format()),
+                    None,
+                    None,
+                ];
+                let pipeline = self.render.composite_pipeline.with_configuration(
+                    &self.render.device,
+                    formats,
+                    [blend, blend, blend],
+                    [all, all, all],
+                    depth_stencil,
+                );
 
-				let uni_in_frag = composite_frag::Input {
-					opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
-					multColor: components
-						.drawable
-						.blending
-						.tint
-						.clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-						.into(),
-					screenColor: components
-						.drawable
-						.blending
-						.screen_tint
-						.clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-						.into(),
-				}
-				.into_buffer(&self.render.device);
+                let uni_in_frag = composite_frag::Input {
+                    opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
+                    multColor: components
+                        .drawable
+                        .blending
+                        .tint
+                        .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                        .into(),
+                    screenColor: components
+                        .drawable
+                        .blending
+                        .screen_tint
+                        .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                        .into(),
+                }
+                .into_buffer(&self.render.device);
 
-				render_pass.set_pipeline(pipeline.pipeline());
-				pipeline.bind_frag(
-					&mut render_pass,
-					Some(&self.render.composite_shader_frag.bind(
-						&self.render.device,
-						composite.albedo().view(),
-						composite.emissive().view(),
-						composite.bump().view(),
-						&self.render.model_sampler,
-						&uni_in_frag,
-					)),
-				);
-				pipeline.bind_vertex(
-					&mut render_pass,
-					Some(&self.render.composite_shader_vert.bind(&self.render.device)),
-				);
-				render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
-			}
-		}
-	}
+                render_pass.set_pipeline(pipeline.pipeline());
+                pipeline.bind_frag(
+                    &mut render_pass,
+                    Some(&self.render.composite_shader_frag.bind(
+                        &self.render.device,
+                        composite.albedo().view(),
+                        composite.emissive().view(),
+                        composite.bump().view(),
+                        &self.render.model_sampler,
+                        &uni_in_frag,
+                    )),
+                );
+                pipeline.bind_vertex(
+                    &mut render_pass,
+                    Some(&self.render.composite_shader_vert.bind(&self.render.device)),
+                );
+                render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
+            }
+        }
+    }
 
-	fn on_end_draw(self, puppet: &inox2d::puppet::Puppet) {
-		let end = self.encoder.finish();
-		self.render.queue.submit(std::iter::once(end));
-		self.surface_texture.present();
-	}
+    fn on_end_draw(self, puppet: &inox2d::puppet::Puppet) {
+        let end = self.encoder.finish();
+        self.render.queue.submit(std::iter::once(end));
+
+        if let Some(surface_texture) = self.surface_texture {
+            surface_texture.present();
+        }
+    }
 }
