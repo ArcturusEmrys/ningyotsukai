@@ -26,9 +26,13 @@ ningyo-binding = { path = "../ningyo-binding" }
 renderdoc = { version = "0.12.1", optional = true }
 mlua = { version = "0.11.6", features = ["send"] }
 
-[target.'cfg(not(windows))'.dependencies]
+[target.'cfg(target_os="linux")'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_10"] }
 gdk4 = { version = "0.11.0", features = ["v4_10"] }
+ningyo-gtk-wgpu = {path = "../ningyo-gtk-wgpu" }
+ningyo-render-wgpu = {path = "../ningyo-render-wgpu" }
+pollster = "0.4.0"
+wgpu = { version = "28.0.0" }
 
 [target.'cfg(windows)'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_20"] }

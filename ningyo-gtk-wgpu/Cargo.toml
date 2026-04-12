@@ -1,0 +1,24 @@
+[package]
+name = "ningyo-gtk-wgpu"
+description = "Wrappers for WGPU rendering to a GTK widget"
+authors = ["Arcturus Emrys <aemrys@arcturus.live>"]
+version = "0.3.0"
+edition = "2024"
+license = "BSD-2-Clause"
+keywords = ["graphics", "wgpu", "gtk"]
+categories = ["graphics", "rendering"]
+
+[dependencies]
+wgpu = { version = "28.0.0" }
+wgpu-hal = { version = "28.0.0" }
+wgpu-core = { version = "28.0.0" }
+thiserror = "1.0.39"
+ash = "0.38.0"
+
+[target.'cfg(target_os="linux")'.dependencies]
+dma-buf = "0.5.0"
+glib = { version = "0.22.0" }
+gtk4 = { version = "0.11.0", features = ["v4_14"] }
+gdk4 = { version = "0.11.0", features = ["v4_14"] }
+graphene = { package="graphene-rs", version = "0.22.0" }
+drm-fourcc = "2.2.0"

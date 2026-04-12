@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use generational_arena::Index;
 
 use glam::Vec2;
+use ningyo_gtk_wgpu::prelude::*;
 
 use crate::document::Document;
 use crate::stage::gestures::{DragGesture, SelectGesture, ZoomGesture};
@@ -276,6 +277,7 @@ impl WidgetImpl for StageWidgetImp {
         );
 
         drop(document);
+        drop(state);
 
         if let Some(ref border) = self.state.borrow().border_gizmo {
             self.obj().snapshot_child(border, snapshot);
