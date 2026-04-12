@@ -3,7 +3,7 @@ use wgpu;
 use inox2d::model::Model;
 use inox2d::texture::ShallowTexture;
 
-use ningyo_gtk_wgpu::prelude::*;
+use ningyo_texshare::prelude::*;
 
 #[derive(Clone)]
 pub struct DeviceTexture {

@@ -11,9 +11,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use inox2d::render::InoxRendererExt;
+use ningyo_texshare::ExportedTexture;
 use ningyo_gtk_wgpu::prelude::*;
 use ningyo_gtk_wgpu::subclass::prelude::*;
-use ningyo_gtk_wgpu::{ExportedTexture, WgpuArea};
+use ningyo_gtk_wgpu::WgpuArea;
 use ningyo_render_wgpu::WgpuRenderer;
 
 use generational_arena::Index;

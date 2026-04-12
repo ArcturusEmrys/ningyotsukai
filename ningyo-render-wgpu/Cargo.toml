@@ -14,7 +14,7 @@ glam = "0.29.0"
 wgpu-hal = { version = "28.0.0" }
 wgpu = { version = "28.0.0", features=["spirv"] }
 thiserror = "1.0.39"
-ningyo-gtk-wgpu = {path = "../ningyo-gtk-wgpu" }
+ningyo-texshare = {path = "../ningyo-texshare" }
 
 [build-dependencies]
 shaderc = { version = "0.10", features=["build-from-source"] }

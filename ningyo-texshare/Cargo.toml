@@ -1,6 +1,6 @@
 [package]
-name = "ningyo-gtk-wgpu"
-description = "Wrappers for WGPU rendering to a GTK widget"
+name = "ningyo-texshare"
+description = "Support for sharing textures across rendering APIs and processes."
 authors = ["Arcturus Emrys <aemrys@arcturus.live>"]
 version = "0.1.0"
 edition = "2024"

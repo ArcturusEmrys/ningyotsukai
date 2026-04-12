@@ -23,7 +23,7 @@ use shaders::basic::{
 
 use std::collections::HashMap;
 
-use ningyo_gtk_wgpu::prelude::*;
+use ningyo_texshare::prelude::*;
 
 /// Cast Vec2 to array.
 ///

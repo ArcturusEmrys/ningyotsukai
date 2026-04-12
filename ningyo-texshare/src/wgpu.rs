@@ -1,9 +1,9 @@
 //! Glue functions to generate WGPU objects holding our required API
 //! extensions.
 
-use crate::texshare::vulkan;
-use crate::texshare::vulkan::AdapterExt as VulkanAdapterExt;
-use crate::texshare::vulkan::DeviceExt as VulkanDeviceExt;
+use crate::vulkan;
+use crate::vulkan::AdapterExt as VulkanAdapterExt;
+use crate::vulkan::DeviceExt as VulkanDeviceExt;
 use wgpu::{
     Adapter, Device, DeviceDescriptor, Instance, InstanceDescriptor, Queue, RequestDeviceError,
     Texture, TextureDescriptor,
@@ -11,7 +11,7 @@ use wgpu::{
 use wgpu_core::device::DeviceError as CoreDeviceError;
 use wgpu_core::instance::RequestDeviceError as CoreRequestDeviceError;
 use wgpu_hal::vulkan::Api as VulkanApi;
-use wgpu_hal::{DynDevice, InstanceError};
+use wgpu_hal::InstanceError;
 
 pub trait InstanceExt {
     fn new_with_extensions(desc: InstanceDescriptor) -> Result<Instance, InstanceError>;
@@ -30,6 +30,7 @@ impl InstanceExt for Instance {
 }
 
 pub trait AdapterExt {
+    #[allow(async_fn_in_trait)]
     async fn request_device_with_extensions(
         &self,
         desc: &DeviceDescriptor<'_>,

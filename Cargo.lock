@@ -1441,7 +1441,7 @@ dependencies = [
 
 [[package]]
 name = "ningyo-gtk-wgpu"
-version = "0.3.0"
+version = "0.1.0"
 dependencies = [
  "ash",
  "dma-buf",
@@ -1474,11 +1474,28 @@ version = "0.3.0"
 dependencies = [
  "glam",
  "inox2d",
- "ningyo-gtk-wgpu",
+ "ningyo-texshare",
  "shaderc",
  "spirv-reflect",
  "thiserror 1.0.69",
  "wgpu",
+ "wgpu-hal",
+]
+
+[[package]]
+name = "ningyo-texshare"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "dma-buf",
+ "drm-fourcc",
+ "gdk4",
+ "glib",
+ "graphene-rs",
+ "gtk4",
+ "thiserror 1.0.69",
+ "wgpu",
+ "wgpu-core",
  "wgpu-hal",
 ]
 
@@ -1506,6 +1523,7 @@ dependencies = [
  "ningyo-gtk-wgpu",
  "ningyo-look-and-feel",
  "ningyo-render-wgpu",
+ "ningyo-texshare",
  "pollster",
  "renderdoc",
  "smol",

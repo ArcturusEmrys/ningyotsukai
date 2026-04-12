@@ -2,7 +2,6 @@ use wgpu_hal::vulkan::TextureMemory;
 
 use ash::ext::image_drm_format_modifier;
 use ash::khr::external_memory_fd;
-use ash::vk;
 use ash::vk::{
     ExternalMemoryHandleTypeFlags, ImageAspectFlags, ImageDrmFormatModifierPropertiesEXT,
     ImageSubresource, MemoryGetFdInfoKHR, StructureType,
