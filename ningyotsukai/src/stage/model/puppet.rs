@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use inox2d::math::rect::Rect;
 use inox2d::model::Model;
 use inox2d::params::Param;
@@ -9,6 +11,7 @@ use json::JsonValue;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
+use std::sync::{Arc, RwLock};
 
 use glam::Vec2;
 use mlua::Error as LuaError;
@@ -16,7 +19,10 @@ use mlua::Error as LuaError;
 use ningyo_binding::tracker::TrackerPacket;
 use ningyo_binding::{Binding, ExpressionEval, parse_bindings};
 
-pub struct Puppet {
+use owning_ref::{OwningRef, OwningRefMut};
+
+pub struct Puppet(Arc<RwLock<PuppetInner>>);
+struct PuppetInner {
     /// The position of the puppet's origin point, (0,0), relative to the stage.
     position: Vec2,
 
@@ -76,7 +82,7 @@ impl Puppet {
             param_uuid_index.insert(param.uuid, name.clone());
         }
 
-        Ok(Self {
+        Ok(Self(Arc::new(RwLock::new(PuppetInner {
             position: Vec2::new(0.0, 0.0),
             scale: 1.0,
             puppet_json,
@@ -87,88 +93,116 @@ impl Puppet {
             bindings,
             param_uuid_index,
             expression_eval: ExpressionEval::new()?,
-        })
+        }))))
     }
 
-    pub fn ensure_render_initialized(&mut self) {
-        if !self.is_render_initialized {
-            self.model.puppet.init_transforms();
-            self.model.puppet.init_rendering();
-            self.model.puppet.init_params();
-            self.model.puppet.init_physics();
+    pub fn ensure_render_initialized(&self) {
+        let mut inner = self.0.write().unwrap();
+        if !inner.is_render_initialized {
+            inner.model.puppet.init_transforms();
+            inner.model.puppet.init_rendering();
+            inner.model.puppet.init_params();
+            inner.model.puppet.init_physics();
 
             // One frame is required to prevent Inox from choking.
-            self.model.puppet.begin_frame();
-            self.model.puppet.end_frame(0.01);
+            inner.model.puppet.begin_frame();
+            inner.model.puppet.end_frame(0.01);
         }
 
-        self.is_render_initialized = true;
+        inner.is_render_initialized = true;
     }
 
-    pub fn model(&self) -> &Model {
-        &self.model
+    pub fn model(&self) -> impl Deref<Target = Model> {
+        OwningRef::new(self.0.read().unwrap()).map(|me| &me.model)
     }
 
-    pub fn model_mut(&mut self) -> &mut Model {
-        &mut self.model
+    pub fn model_mut(&mut self) -> impl DerefMut<Target = Model> {
+        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.model)
     }
 
     pub fn position(&self) -> Vec2 {
-        self.position
+        self.0.read().unwrap().position
     }
 
     pub fn set_position(&mut self, new_pos: Vec2) {
-        self.position = new_pos;
+        self.0.write().unwrap().position = new_pos;
     }
 
     pub fn scale(&self) -> f32 {
-        self.scale
+        self.0.read().unwrap().scale
     }
 
     pub fn set_scale(&mut self, new_scale: f32) {
-        self.scale = new_scale
+        self.0.write().unwrap().scale = new_scale
     }
 
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
-        self.expression_eval.set_tracker_packet(packet);
+        self.0
+            .write()
+            .unwrap()
+            .expression_eval
+            .set_tracker_packet(packet);
     }
 
     /// Get the current puppet bounds.
-    pub fn bounds(&self) -> Option<&Rect> {
-        self.bounds.as_ref()
+    pub fn bounds(&self) -> Option<impl Deref<Target = Rect>> {
+        let me = self.0.read().unwrap();
+
+        if me.bounds.is_none() {
+            return None;
+        }
+
+        Some(OwningRef::new(me).map(|me| me.bounds.as_ref().unwrap()))
     }
 
-    pub fn param_by_uuid(&self, uuid: ParamUuid) -> Option<&Param> {
-        let name = self.param_uuid_index.get(&uuid)?;
-        self.model.puppet.params().get(name)
+    pub fn param_by_uuid(&self, uuid: ParamUuid) -> Option<impl Deref<Target = Param>> {
+        let me = self.0.read().unwrap();
+
+        OwningRef::new(me)
+            .try_map(|me| {
+                let name = me.param_uuid_index.get(&uuid).ok_or(())?;
+                me.model.puppet.params().get(name).ok_or(())
+            })
+            .ok()
     }
 
-    pub fn bindings(&self) -> &[(Binding, f32, f32, Option<LuaError>)] {
-        &self.bindings.as_slice()
+    pub fn bindings(&self) -> impl Deref<Target = [(Binding, f32, f32, Option<LuaError>)]> {
+        OwningRef::new(self.0.read().unwrap()).map(|me| me.bindings.as_slice())
     }
 
-    pub fn bindings_mut(&mut self) -> &mut [(Binding, f32, f32, Option<LuaError>)] {
-        self.bindings.as_mut_slice()
+    pub fn bindings_mut(
+        &mut self,
+    ) -> impl DerefMut<Target = [(Binding, f32, f32, Option<LuaError>)]> {
+        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| me.bindings.as_mut_slice())
     }
 
     /// Update the puppet's physics and apply tracker data to this puppet.
-    pub fn update(&mut self, dt: f32) {
+    pub fn update(&self, dt: f32) {
         self.ensure_render_initialized();
 
+        let mut inner = self.0.write().unwrap();
+
         if dt > 0.0 {
-            self.model.puppet.begin_frame();
+            inner.model.puppet.begin_frame();
         }
 
-        for (binding, bind_in_value, bind_out_value, bind_last_error) in self.bindings.iter_mut() {
-            match binding.eval(&self.expression_eval) {
+        let PuppetInner {
+            bindings,
+            expression_eval,
+            param_uuid_index,
+            model,
+            ..
+        } = &mut *inner;
+
+        for (binding, bind_in_value, bind_out_value, bind_last_error) in bindings.iter_mut() {
+            match binding.eval(expression_eval) {
                 Ok((in_value, Some(out_value))) => {
                     *bind_in_value = in_value.unwrap_or(*bind_in_value);
                     *bind_out_value = out_value;
                     *bind_last_error = None;
 
-                    if let Some(param_name) = self.param_uuid_index.get(&binding.param) {
-                        let mut orig = self
-                            .model
+                    if let Some(param_name) = param_uuid_index.get(&binding.param) {
+                        let mut orig = model
                             .puppet
                             .param_ctx
                             .as_ref()
@@ -178,7 +212,7 @@ impl Puppet {
 
                         orig[binding.axis as usize] = out_value;
 
-                        self.model
+                        model
                             .puppet
                             .param_ctx
                             .as_mut()
@@ -196,9 +230,9 @@ impl Puppet {
         }
 
         if dt > 0.0 {
-            self.model.puppet.end_frame(dt);
+            inner.model.puppet.end_frame(dt);
         }
 
-        self.bounds = self.model.puppet.bounds();
+        inner.bounds = inner.model.puppet.bounds();
     }
 }
