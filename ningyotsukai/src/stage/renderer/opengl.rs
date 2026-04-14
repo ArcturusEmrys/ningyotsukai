@@ -8,7 +8,6 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use inox2d::render::InoxRendererExt;
 use inox2d_opengl::OpenglRenderer;
@@ -21,7 +20,7 @@ use crate::stage::Puppet as StagePuppet;
 
 #[derive(Default)]
 pub struct StageRendererState {
-    document: Option<Arc<Mutex<Document>>>,
+    document: Option<Document>,
 
     /// All the renderers that exist to render puppets on our stage.
     renderers: HashMap<Index, OpenglRenderer>,
@@ -88,27 +87,29 @@ impl WidgetImpl for StageRendererImp {}
 impl GLAreaImpl for StageRendererImp {
     fn render(&self, _context: &gdk4::GLContext) -> glib::Propagation {
         let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
-        let document = document.lock().unwrap();
+        let StageRendererState {
+            document,
+            renderers,
+            native_gl,
+            #[cfg(feature = "renderdoc")]
+            doc,
+        } = &mut *state;
+        let document = document.as_mut().unwrap();
 
         #[cfg(feature = "renderdoc")]
         {
             use std::ptr::null;
-            if state.doc.is_none() {
-                state.doc = renderdoc::RenderDoc::new().ok();
+            if doc.is_none() {
+                *doc = renderdoc::RenderDoc::new().ok();
             }
 
             //TODO: Can I get native window handles out of GTK?
-            if state.doc.is_some() {
-                state
-                    .doc
-                    .as_mut()
-                    .unwrap()
-                    .start_frame_capture(null(), null());
+            if doc.is_some() {
+                doc.as_mut().unwrap().start_frame_capture(null(), null());
             }
         }
 
-        let native_gl = state.native_gl.as_ref().unwrap();
+        let native_gl = native_gl.as_ref().unwrap();
         let fb = self.obj().framebuffer(native_gl);
 
         unsafe {
@@ -117,7 +118,7 @@ impl GLAreaImpl for StageRendererImp {
         }
 
         for (index, puppet) in document.stage().iter() {
-            let mut renderer = state.renderers.entry(index).or_insert_with(|| {
+            let mut renderer = renderers.entry(index).or_insert_with(|| {
                 let gl = self.obj().as_glow_context();
 
                 //TODO: Propagate this error to UI instead of panicing
@@ -132,7 +133,6 @@ impl GLAreaImpl for StageRendererImp {
                 .expect("successful draw");
         }
 
-        drop(document);
         drop(state);
 
         self.collect_garbage();
@@ -200,11 +200,15 @@ impl StageRendererImp {
 
     fn viewport_changed(&self) {
         let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
-        let mut document = document.lock().unwrap();
+        let StageRendererState {
+            document,
+            renderers,
+            ..
+        } = &mut *state;
+        let document = document.as_mut().unwrap();
 
         for (index, puppet) in document.stage_mut().iter_mut() {
-            if let Some(render) = state.renderers.get_mut(&index) {
+            if let Some(render) = renderers.get_mut(&index) {
                 self.apply_viewport_to_renderer(render, &puppet);
             }
         }
@@ -212,10 +216,14 @@ impl StageRendererImp {
 
     fn collect_garbage(&self) {
         let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
-        let document = document.lock().unwrap();
+        let StageRendererState {
+            document,
+            renderers,
+            ..
+        } = &mut *state;
+        let document = document.as_ref().unwrap();
 
-        document.collect_garbage(&mut state.renderers);
+        document.collect_garbage(renderers);
     }
 
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
@@ -263,7 +271,7 @@ impl StageRenderer {
         glib::Object::builder().build()
     }
 
-    pub fn with_document(&self, document: Arc<Mutex<Document>>) -> &Self {
+    pub fn with_document(&self, document: Document) -> &Self {
         let mut state = self.imp().state.borrow_mut();
 
         state.document = Some(document);

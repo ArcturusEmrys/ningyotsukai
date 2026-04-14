@@ -14,12 +14,11 @@ use crate::tracker::reference::{TrackerRef, TrackerRefItem};
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 struct State {
     tracker_manager: Rc<TrackerManager>,
 
-    document: Arc<Mutex<Document>>,
+    document: Document,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -88,19 +87,18 @@ impl ObjectImpl for TrackerPanelImp {
 
             let form_connect_self = new_button_self.clone();
             form_window.connect_save(move |form, tracker| {
-                let state = form_connect_self.imp().state.borrow();
-                let state = state.as_ref().unwrap();
-                let mut document = state.document.lock().unwrap();
+                let mut state_outer = form_connect_self.imp().state.borrow_mut();
+                let state = state_outer.as_mut().unwrap();
 
-                let tracker_id = document.trackers_mut().register(tracker);
-
-                drop(document);
+                let tracker_id = state.document.trackers_mut().register(tracker);
 
                 state
                     .tracker_manager
                     .register_tracker(TrackerRef::new(&state.document, tracker_id));
 
                 form.destroy();
+
+                drop(state_outer);
 
                 form_connect_self.imp().populate_list();
             });
@@ -130,28 +128,27 @@ impl ObjectImpl for TrackerPanelImp {
                 form_window.connect_save(move |form, tracker| {
                     // For various reasons, we treat trackers as immutable
                     // once registered, so this is delete-and-create
-                    let state = form_connect_self.imp().state.borrow();
-                    let state = state.as_ref().unwrap();
+                    let mut state_outer = form_connect_self.imp().state.borrow_mut();
+                    let state = state_outer.as_mut().unwrap();
 
                     state.tracker_manager.unregister_tracker(TrackerRef::new(
                         &state.document,
                         tracker_ref.tracker_index(),
                     ));
 
-                    let mut document = state.document.lock().unwrap();
-
-                    document
+                    state
+                        .document
                         .trackers_mut()
                         .unregister(tracker_ref.tracker_index());
-                    let new_tracker_id = document.trackers_mut().register(tracker);
-
-                    drop(document);
+                    let new_tracker_id = state.document.trackers_mut().register(tracker);
 
                     state
                         .tracker_manager
                         .register_tracker(TrackerRef::new(&state.document, new_tracker_id));
 
                     form.destroy();
+
+                    drop(state_outer);
 
                     form_connect_self.imp().populate_list();
                 });
@@ -169,21 +166,20 @@ impl ObjectImpl for TrackerPanelImp {
             if let Some(tracker_ref) = delete_button_self.imp().tracker_select.selected_item() {
                 let tracker_ref = tracker_ref.downcast_ref::<TrackerRefItem>().unwrap();
                 let tracker_ref = tracker_ref.contents();
-                let state = delete_button_self.imp().state.borrow();
-                let state = state.as_ref().unwrap();
+                let mut state_outer = delete_button_self.imp().state.borrow_mut();
+                let state = state_outer.as_mut().unwrap();
 
                 state.tracker_manager.unregister_tracker(TrackerRef::new(
                     &state.document,
                     tracker_ref.tracker_index(),
                 ));
 
-                let mut document = state.document.lock().unwrap();
-
-                document
+                state
+                    .document
                     .trackers_mut()
                     .unregister(tracker_ref.tracker_index());
 
-                drop(document);
+                drop(state_outer);
 
                 delete_button_self.imp().populate_list();
             }
@@ -209,10 +205,9 @@ impl TrackerPanelImp {
         let state = state.as_ref().unwrap();
 
         let trackers = {
-            let document = state.document.lock().unwrap();
             let mut trackers = vec![];
 
-            for (index, _tracker) in document.trackers().iter() {
+            for (index, _tracker) in state.document.trackers().iter() {
                 let tracker_ref = TrackerRefItem::from(TrackerRef::new(&state.document, index));
                 trackers.push(tracker_ref);
             }
@@ -231,7 +226,7 @@ glib::wrapper! {
 }
 
 impl TrackerPanel {
-    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Arc<Mutex<Document>>) {
+    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Document) {
         *self.imp().state.borrow_mut() = Some(State {
             tracker_manager,
             document,

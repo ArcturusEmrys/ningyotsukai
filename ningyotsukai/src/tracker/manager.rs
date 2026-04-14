@@ -97,8 +97,7 @@ impl TrackerManager {
                     Ok(IoResponse::VtsTrackerPacket(data, c)) => {
                         match c {
                             TrackerCookie::TrackerRef(tracker_ref) => {
-                                if let Some(document) = tracker_ref.document() {
-                                    let mut document = document.lock().unwrap();
+                                if let Some(mut document) = tracker_ref.document() {
                                     let data = data.as_tracker_packet();
                                     document
                                         .trackers_mut()

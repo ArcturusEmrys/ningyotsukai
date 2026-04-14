@@ -1,40 +1,48 @@
-use crate::stage::Stage;
+use std::collections::{HashMap, HashSet};
+use std::ops::{Deref, DerefMut};
+use std::sync::{Arc, RwLock, Weak};
 
 use generational_arena::Index;
-use std::collections::{HashMap, HashSet};
+use owning_ref::{OwningRef, OwningRefMut};
 
+use crate::stage::Stage;
 use crate::tracker::Trackers;
 
 /// A Ningyotsukai document.
-pub struct Document {
+#[derive(Clone)]
+pub struct Document(Arc<RwLock<DocumentInner>>);
+
+#[derive(Clone)]
+pub struct WeakDocument(Weak<RwLock<DocumentInner>>);
+struct DocumentInner {
     stage: Stage,
     trackers: Trackers,
 }
 
 impl Default for Document {
     fn default() -> Self {
-        Document {
+        Document(Arc::new(RwLock::new(DocumentInner {
             stage: Stage::new_with_size((1920.0, 1080.0)),
             trackers: Trackers::new(),
-        }
+        })))
     }
 }
 
 impl Document {
-    pub fn stage(&self) -> &Stage {
-        &self.stage
+    pub fn stage(&self) -> impl Deref<Target = Stage> {
+        OwningRef::new(self.0.read().unwrap()).map(|me| &me.stage)
     }
 
-    pub fn stage_mut(&mut self) -> &mut Stage {
-        &mut self.stage
+    pub fn stage_mut(&mut self) -> impl DerefMut<Target = Stage> {
+        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.stage)
     }
 
-    pub fn trackers(&self) -> &Trackers {
-        &self.trackers
+    pub fn trackers(&self) -> impl Deref<Target = Trackers> {
+        OwningRef::new(self.0.read().unwrap()).map(|me| &me.trackers)
     }
 
-    pub fn trackers_mut(&mut self) -> &mut Trackers {
-        &mut self.trackers
+    pub fn trackers_mut(&mut self) -> impl DerefMut<Target = Trackers> {
+        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.trackers)
     }
 
     /// Given a map of puppet-associated items, clear out any entries whose
@@ -63,5 +71,27 @@ impl Document {
         for index in garbage {
             set.remove(&index);
         }
+    }
+
+    pub fn downgrade(&self) -> WeakDocument {
+        WeakDocument(Arc::downgrade(&self.0))
+    }
+
+    pub fn as_ptr_val(&self) -> usize {
+        Arc::as_ptr(&self.0) as usize
+    }
+}
+
+impl WeakDocument {
+    pub fn upgrade(&self) -> Option<Document> {
+        Some(Document(self.0.upgrade()?))
+    }
+
+    pub fn as_ptr_val(&self) -> usize {
+        Weak::as_ptr(&self.0) as usize
+    }
+
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        self.as_ptr_val() == other.as_ptr_val()
     }
 }

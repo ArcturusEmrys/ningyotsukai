@@ -9,7 +9,6 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use generational_arena::Index;
 
@@ -20,7 +19,7 @@ use ningyo_extensions::prelude::*;
 
 #[derive(Default)]
 pub struct PuppetSelectionGizmoState {
-    document: Arc<Mutex<Document>>,
+    document: Document,
     selected: Vec<Index>,
 
     /// All the resize handles this gizmo uses.
@@ -96,8 +95,7 @@ impl PuppetSelectionGizmoImp {
         let mut individual_bounds = vec![];
 
         for puppet_index in &state.selected {
-            let document = state.document.lock().unwrap();
-            if let Some(puppet) = document.stage().puppet(*puppet_index) {
+            if let Some(puppet) = state.document.stage().puppet(*puppet_index) {
                 let puppet_bounds = puppet.bounds().map(|inox_bounds| {
                     let tl = inox_bounds.top_left_point();
                     let br = inox_bounds.bottom_right_point();
@@ -135,8 +133,7 @@ impl PuppetSelectionGizmoImp {
     /// first.
     fn rescale(&self, origin: &graphene::Point, scale: f32) {
         let state = self.state.borrow_mut();
-        let mut document = state.document.lock().unwrap();
-
+        let mut document = state.document.clone();
         let stage = self.obj().closest::<StageWidget>().unwrap();
 
         if let Some((Some(union), puppet_bounds)) = &state.resize_bounds {
@@ -165,7 +162,7 @@ impl PuppetSelectionGizmoImp {
                     let scaled_width = scaled_bounds_br_x - scaled_bounds_tl_x;
                     let extra_scale = scaled_width / width;
 
-                    if let Some(puppet) = document.stage_mut().puppet_mut(*index) {
+                    if let Some(mut puppet) = document.stage_mut().puppet(*index) {
                         puppet.set_position(glam::Vec2::new(scaled_origin_x, scaled_origin_y));
                         puppet.set_scale(old_scale * extra_scale);
                     }
@@ -409,7 +406,7 @@ impl PuppetSelectionGizmo {
         glib::Object::builder().build()
     }
 
-    pub fn set_document(&self, document: Arc<Mutex<Document>>) {
+    pub fn set_document(&self, document: Document) {
         let mut state = self.imp().state.borrow_mut();
 
         state.resize_bounds = None;

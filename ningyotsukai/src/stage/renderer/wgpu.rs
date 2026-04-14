@@ -20,11 +20,10 @@ use generational_arena::Index;
 
 use crate::document::Document;
 use crate::stage::Puppet as StagePuppet;
-use pollster::block_on;
 
 #[derive(Default)]
 pub struct StageRendererState {
-    document: Option<Arc<Mutex<Document>>>,
+    document: Option<Document>,
 
     resources: Option<Arc<Mutex<WgpuResources>>>,
 
@@ -105,33 +104,36 @@ impl WgpuAreaImpl for StageRendererImp {
 
     fn render(&self) -> glib::Propagation {
         let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
-        let document = document.lock().unwrap();
+        let StageRendererState {
+            document,
+            resources,
+            renderers,
+            #[cfg(feature = "renderdoc")]
+            doc,
+        } = &mut *state;
+        let document = document.as_mut().unwrap();
 
         #[cfg(feature = "renderdoc")]
         {
             use std::ptr::null;
-            if state.doc.is_none() {
-                state.doc = renderdoc::RenderDoc::new().ok();
+            if doc.is_none() {
+                *doc = renderdoc::RenderDoc::new().ok();
             }
 
             //TODO: Can I get native window handles out of GTK?
-            if state.doc.is_some() {
-                state
-                    .doc
-                    .as_mut()
-                    .unwrap()
-                    .start_frame_capture(null(), null());
+            if doc.is_some() {
+                doc.as_mut().unwrap().start_frame_capture(null(), null());
             }
         }
 
-        let resources = state.resources.clone().unwrap();
-
         // TODO: Issue a clear command on one of the renderers.
         for (index, puppet) in document.stage().iter() {
-            let mut renderer = state.renderers.entry(index).or_insert_with(|| {
-                WgpuRenderer::new_headless_with_resources(resources.clone(), &puppet.model())
-                    .unwrap()
+            let mut renderer = renderers.entry(index).or_insert_with(|| {
+                WgpuRenderer::new_headless_with_resources(
+                    resources.clone().unwrap(),
+                    &*puppet.model(),
+                )
+                .unwrap()
             });
 
             renderer
@@ -144,8 +146,6 @@ impl WgpuAreaImpl for StageRendererImp {
                 .draw(&puppet.model().puppet)
                 .expect("successful draw");
         }
-
-        drop(document);
         drop(state);
 
         self.collect_garbage();
@@ -218,9 +218,8 @@ impl StageRendererImp {
     fn viewport_changed(&self) {
         let mut state = self.state.borrow_mut();
         let document = state.document.clone().unwrap();
-        let mut document = document.lock().unwrap();
 
-        for (index, puppet) in document.stage_mut().iter_mut() {
+        for (index, puppet) in document.stage().iter() {
             if let Some(render) = state.renderers.get_mut(&index) {
                 self.apply_viewport_to_renderer(render, &puppet);
             }
@@ -229,10 +228,15 @@ impl StageRendererImp {
 
     fn collect_garbage(&self) {
         let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
-        let document = document.lock().unwrap();
+        let StageRendererState {
+            document,
+            renderers,
+            ..
+        } = &mut *state;
 
-        document.collect_garbage(&mut state.renderers);
+        let document = document.as_ref().unwrap();
+
+        document.collect_garbage(renderers);
     }
 
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
@@ -280,7 +284,7 @@ impl StageRenderer {
         glib::Object::builder().build()
     }
 
-    pub fn with_document(&self, document: Arc<Mutex<Document>>) -> &Self {
+    pub fn with_document(&self, document: Document) -> &Self {
         let mut state = self.imp().state.borrow_mut();
 
         state.document = Some(document);

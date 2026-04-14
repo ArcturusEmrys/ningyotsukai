@@ -6,8 +6,6 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use generational_arena::Index;
 use glam::Vec2;
@@ -20,7 +18,7 @@ use crate::stage::gizmos::origin::PuppetOriginGizmo;
 
 struct PuppetBoundsGizmoState {
     /// The document this gizmo's puppet is from.
-    document: Arc<Mutex<Document>>,
+    document: Document,
 
     /// The puppet we're tracking.
     puppet: Index,
@@ -63,18 +61,16 @@ impl ObjectImpl for PuppetBoundsGizmoImp {
         drag.connect_drag_update(move |_, now_x, now_y| {
             let mut state_outer = drag_end_self.imp().state.borrow_mut();
             let state = state_outer.as_mut().unwrap();
-            let mut document = state.document.lock().unwrap();
             let index = state.puppet;
-            let puppet = document.stage_mut().puppet_mut(index);
+            let puppet = state.document.stage_mut().puppet(index);
 
-            if let Some(puppet) = puppet {
+            if let Some(mut puppet) = puppet {
                 let delta = Vec2::new(now_x as f32, now_y as f32);
                 let rune = puppet.position();
 
                 puppet.set_position(delta + rune);
             }
 
-            drop(document);
             drop(state_outer);
 
             if let Some(stage) = drag_end_self.closest::<StageWidget>() {
@@ -116,7 +112,7 @@ glib::wrapper! {
 }
 
 impl PuppetBoundsGizmo {
-    pub fn new(document: Arc<Mutex<Document>>, puppet: Index) -> Self {
+    pub fn new(document: Document, puppet: Index) -> Self {
         let gizmo: Self = glib::Object::builder().build();
 
         gizmo.set_cursor(gdk4::Cursor::from_name("grab", None).as_ref());
@@ -141,9 +137,7 @@ impl PuppetBoundsGizmo {
     pub fn puppet_updated(&self, stage: &StageWidget) {
         let state = self.imp().state.borrow_mut();
         let state = state.as_ref().unwrap();
-        let document_arc = state.document.clone();
-        let document = document_arc.lock().unwrap();
-        let puppet = document.stage().puppet(state.puppet).unwrap();
+        let puppet = state.document.stage().puppet(state.puppet).unwrap();
 
         if let Some(bounds) = puppet.bounds() {
             let puppet_scale = puppet.scale();

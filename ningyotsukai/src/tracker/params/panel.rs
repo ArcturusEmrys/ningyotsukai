@@ -13,11 +13,10 @@ use crate::tracker::reference::{TrackerParamRefItem, TrackerRef, TrackerRefItem}
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 struct State {
-    document: Arc<Mutex<Document>>,
+    document: Document,
 
     pending_update: Option<glib::SourceId>,
 }
@@ -165,10 +164,9 @@ impl TrackerParamPanelImp {
         let state = state.as_ref().unwrap();
 
         let trackers = {
-            let document = state.document.lock().unwrap();
             let mut trackers = vec![];
 
-            for (index, _tracker) in document.trackers().iter() {
+            for (index, _tracker) in state.document.trackers().iter() {
                 let tracker_ref = TrackerRefItem::from(TrackerRef::new(&state.document, index));
                 trackers.push(tracker_ref);
             }
@@ -187,7 +185,7 @@ glib::wrapper! {
 }
 
 impl TrackerParamPanel {
-    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Arc<Mutex<Document>>) {
+    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Document) {
         // Don't ask why, but calling connect_params_changed on stack panics.
         let idle_self = self.clone();
         let idle_tm = tracker_manager.clone();
@@ -239,7 +237,6 @@ impl TrackerParamPanel {
             let tracker_ref = tracker_ref_item.contents();
 
             let document = tracker_ref.document().unwrap();
-            let document = document.lock().unwrap();
             if let Some(data) = document.trackers().data(tracker_ref.tracker_index()) {
                 for (name, datatype) in data.iter_params() {
                     if let Some(value) = data.value(name, datatype) {

@@ -1,7 +1,6 @@
 //! Asynchronous I/O thread
 
-use std::io;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
 
 use crate::io::error::IoThreadError;
 use ningyo_binding::vts::VtsPacket;

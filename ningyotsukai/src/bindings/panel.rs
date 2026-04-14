@@ -13,10 +13,9 @@ use crate::stage::{StageWidget, StageWidgetExt};
 use generational_arena::Index;
 
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
 
 struct State {
-    document: Arc<Mutex<Document>>,
+    document: Document,
 
     stage: WeakRef<StageWidget>,
 
@@ -61,10 +60,9 @@ impl BindingPanelImp {
     fn with_binding_mut<F: FnOnce(&mut Binding)>(&self, binding_index: usize, f: F) {
         let mut state = self.state.borrow_mut();
         let state = state.as_mut().unwrap();
-        let mut document = state.document.lock().unwrap();
 
         if let Some(select) = state.current_selection {
-            if let Some(puppet) = document.stage_mut().puppet_mut(select) {
+            if let Some(mut puppet) = state.document.stage_mut().puppet(select) {
                 if let Some((binding, _in, _out, _error)) =
                     puppet.bindings_mut().get_mut(binding_index)
                 {
@@ -95,10 +93,8 @@ impl BindingPanelImp {
             self.bindings_contents.remove(&child);
         }
 
-        let document = state.document.lock().unwrap();
-
         if let Some(index) = new_selection {
-            if let Some(puppet) = document.stage().puppet(index) {
+            if let Some(puppet) = state.document.stage().puppet(index) {
                 for (binding_index, (binding, in_value, out_value, last_error)) in
                     puppet.bindings().iter().enumerate()
                 {
@@ -252,8 +248,7 @@ impl BindingPanelImp {
         let state = state.as_ref().unwrap();
 
         if let Some(selection) = state.current_selection {
-            let document = state.document.lock().unwrap();
-            let puppet = document.stage().puppet(selection).unwrap();
+            let puppet = state.document.stage().puppet(selection).unwrap();
 
             let mut maybe_form = self.bindings_contents.first_child();
             let mut binding_index = 0;
@@ -285,7 +280,7 @@ glib::wrapper! {
 }
 
 impl BindingPanel {
-    pub fn bind(&self, document: Arc<Mutex<Document>>, stage: StageWidget) {
+    pub fn bind(&self, document: Document, stage: StageWidget) {
         *self.imp().state.borrow_mut() = Some(State {
             document,
             stage: stage.downgrade(),

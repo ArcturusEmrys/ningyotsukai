@@ -21,6 +21,7 @@ use ningyo_binding::{Binding, ExpressionEval, parse_bindings};
 
 use owning_ref::{OwningRef, OwningRefMut};
 
+#[derive(Clone)]
 pub struct Puppet(Arc<RwLock<PuppetInner>>);
 struct PuppetInner {
     /// The position of the puppet's origin point, (0,0), relative to the stage.
@@ -96,7 +97,7 @@ impl Puppet {
         }))))
     }
 
-    pub fn ensure_render_initialized(&self) {
+    pub fn ensure_render_initialized(&mut self) {
         let mut inner = self.0.write().unwrap();
         if !inner.is_render_initialized {
             inner.model.puppet.init_transforms();
@@ -177,7 +178,7 @@ impl Puppet {
     }
 
     /// Update the puppet's physics and apply tracker data to this puppet.
-    pub fn update(&self, dt: f32) {
+    pub fn update(&mut self, dt: f32) {
         self.ensure_render_initialized();
 
         let mut inner = self.0.write().unwrap();

@@ -17,8 +17,8 @@ impl Stage {
         }
     }
 
-    pub fn size(&self) -> &Vec2 {
-        &self.size
+    pub fn size(&self) -> Vec2 {
+        self.size
     }
 
     pub fn add_puppet(&mut self, mut puppet: Puppet) -> Index {
@@ -26,12 +26,8 @@ impl Stage {
         self.puppets.insert(puppet)
     }
 
-    pub fn puppet(&self, index: Index) -> Option<&Puppet> {
-        self.puppets.get(index)
-    }
-
-    pub fn puppet_mut(&mut self, index: Index) -> Option<&mut Puppet> {
-        self.puppets.get_mut(index)
+    pub fn puppet(&self, index: Index) -> Option<Puppet> {
+        self.puppets.get(index).cloned()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Index, &Puppet)> {

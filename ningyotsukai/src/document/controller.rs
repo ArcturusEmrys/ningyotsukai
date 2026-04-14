@@ -9,7 +9,6 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use crate::bindings::BindingPanel;
 use crate::document::model::Document;
@@ -22,7 +21,7 @@ use ningyo_extensions::{FileIn, WidgetExt2};
 
 pub struct DocumentControllerState {
     tracker_manager: Rc<TrackerManager>,
-    document: Arc<Mutex<Document>>,
+    document: Document,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -253,7 +252,7 @@ glib::wrapper! {
 }
 
 impl DocumentController {
-    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Arc<Mutex<Document>>) {
+    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Document) {
         *self.imp().state.borrow_mut() = Some(DocumentControllerState {
             tracker_manager,
             document: document.clone(),
@@ -270,8 +269,8 @@ impl DocumentController {
 
         puppet.ensure_render_initialized();
 
-        let state = self.imp().state.borrow_mut();
-        let mut document = state.as_ref().unwrap().document.lock().unwrap();
+        let mut state = self.imp().state.borrow_mut();
+        let document = &mut state.as_mut().unwrap().document;
 
         // This heuristic is here to ensure very large puppets get scaled down
         // to something reasonable.

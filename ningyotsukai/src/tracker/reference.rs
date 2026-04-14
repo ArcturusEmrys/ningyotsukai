@@ -1,29 +1,24 @@
 use generational_arena::Index;
 use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Mutex, Weak};
 
 use gtk4::subclass::prelude::*;
 
-use crate::document::Document;
+use crate::document::{Document, WeakDocument};
 use crate::tracker::model::Tracker;
 
 /// Reference to an individual tracker in a document.
 ///
 /// This is also available in a GObject wrapped form, see `TrackerRefItem`.
 #[derive(Clone)]
-pub struct TrackerRef(Weak<Mutex<Document>>, usize, Index);
+pub struct TrackerRef(WeakDocument, usize, Index);
 
 impl TrackerRef {
-    pub fn new(document: &Arc<Mutex<Document>>, tracker: Index) -> Self {
-        Self(
-            Arc::downgrade(document),
-            document.as_ptr() as usize,
-            tracker,
-        )
+    pub fn new(document: &Document, tracker: Index) -> Self {
+        Self(document.downgrade(), document.as_ptr_val(), tracker)
     }
 
-    pub fn document(&self) -> Option<Arc<Mutex<Document>>> {
+    pub fn document(&self) -> Option<Document> {
         self.0.upgrade()
     }
 
@@ -36,8 +31,8 @@ impl TrackerRef {
     /// Panics if the tracker is no longer available.
     pub fn with_tracker<T, F: FnOnce(&Tracker) -> T>(&self, f: F) -> T {
         let doc = self.document().unwrap();
-        let doc = doc.lock().unwrap();
-        let track = doc.trackers().tracker(self.tracker_index()).unwrap();
+        let trackers = doc.trackers();
+        let track = trackers.tracker(self.tracker_index()).unwrap();
 
         f(track)
     }
@@ -107,20 +102,20 @@ impl TrackerRefItem {
 ///
 /// This is also available in a GObject wrapped form, see `TrackerParamRefItem`.
 #[derive(Clone)]
-pub struct TrackerParamRef(Weak<Mutex<Document>>, (), Index, String, String, f32);
+pub struct TrackerParamRef(WeakDocument, (), Index, String, String, f32);
 
 impl TrackerParamRef {
     pub fn new(
-        document: &Arc<Mutex<Document>>,
+        document: &Document,
         tracker: Index,
         name: String,
         datatype: String,
         value: f32,
     ) -> Self {
-        Self(Arc::downgrade(document), (), tracker, name, datatype, value)
+        Self(document.downgrade(), (), tracker, name, datatype, value)
     }
 
-    pub fn document(&self) -> Option<Arc<Mutex<Document>>> {
+    pub fn document(&self) -> Option<Document> {
         self.0.upgrade()
     }
 

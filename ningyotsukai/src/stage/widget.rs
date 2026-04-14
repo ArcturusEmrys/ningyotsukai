@@ -8,7 +8,7 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use generational_arena::Index;
 
@@ -24,7 +24,7 @@ use crate::stage::renderer::StageRenderer;
 
 #[derive(Default)]
 pub struct StageWidgetState {
-    document: Arc<Mutex<Document>>,
+    document: Document,
 
     /// List of puppets that are currently selected.
     selected: HashSet<Index>,
@@ -231,7 +231,6 @@ impl ObjectImpl for StageWidgetImp {
 impl WidgetImpl for StageWidgetImp {
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
         let state = self.state.borrow();
-        let document = state.document.lock().unwrap();
 
         snapshot.push_clip(&graphene::Rect::new(
             0.0,
@@ -242,7 +241,7 @@ impl WidgetImpl for StageWidgetImp {
 
         snapshot.save();
 
-        let size = document.stage().size();
+        let size = state.document.stage().size();
 
         // This is a log scale, but we need linear zoom.
         // See document/controller.ui for more info
@@ -276,7 +275,6 @@ impl WidgetImpl for StageWidgetImp {
             &graphene::Rect::new(0.0, 0.0, size.x, size.y),
         );
 
-        drop(document);
         drop(state);
 
         if let Some(ref border) = self.state.borrow().border_gizmo {
@@ -324,13 +322,12 @@ impl StageWidgetImp {
     /// 3. The window is resized
     fn configure_adjustments(&self) {
         let state = self.state.borrow();
-        let document = state.document.lock().unwrap();
 
         let width = self.obj().width();
         let height = self.obj().height();
 
-        let stage_width = document.stage().size().x;
-        let stage_height = document.stage().size().y;
+        let stage_width = state.document.stage().size().x;
+        let stage_height = state.document.stage().size().y;
 
         //TODO: Off-stage scrolling should be limited to:
         // 1. Minimum: 3/4ths the window size (so you can't normally scroll the stage off)
@@ -354,8 +351,6 @@ impl StageWidgetImp {
             border.measure(gtk4::Orientation::Horizontal, stage_width as i32);
             border.allocate(stage_width as i32, stage_height as i32, -1, None);
         }
-
-        drop(document);
 
         if let Some(ref render) = state.render_area {
             render.measure(gtk4::Orientation::Horizontal, stage_width as i32);
@@ -446,11 +441,9 @@ impl StageWidgetImp {
         //TODO: This should be moved into a separate DocumentManager so that
         //having two windows displaying the same Document doesn't double time
         {
-            let state = self.state.borrow_mut();
-            let document_arc = state.document.clone();
-            let mut document = document_arc.lock().unwrap();
+            let mut state = self.state.borrow_mut();
 
-            for (_, puppet) in document.stage_mut().iter_mut() {
+            for (_, puppet) in state.document.stage_mut().iter_mut() {
                 puppet.update(dt);
             }
         }
@@ -474,7 +467,7 @@ impl StageWidget {
         selfish
     }
 
-    pub fn set_document(&self, document: Arc<Mutex<Document>>) {
+    pub fn set_document(&self, document: Document) {
         {
             let mut state = self.imp().state.borrow_mut();
 
@@ -514,18 +507,22 @@ impl StageWidget {
     /// Called by child gizmos whenever a puppet's bounds need to be updated.
     pub fn puppet_updated(&self) {
         let mut state = self.imp().state.borrow_mut();
-        let document_arc = state.document.clone();
-        let document = document_arc.lock().unwrap();
+        let StageWidgetState {
+            document,
+            selected,
+            puppet_gizmos,
+            ..
+        } = &mut *state;
 
         //First, collect the garbage.
-        document.collect_garbage(&mut state.puppet_gizmos);
-        document.collect_garbage_set(&mut state.selected);
+        document.collect_garbage(puppet_gizmos);
+        document.collect_garbage_set(selected);
 
         for (index, _puppet) in document.stage().iter() {
-            let is_selected = state.selected.contains(&index);
+            let is_selected = selected.contains(&index);
 
-            let gizmo = state.puppet_gizmos.entry(index).or_insert_with(|| {
-                let gizmo = PuppetBoundsGizmo::new(document_arc.clone(), index);
+            let gizmo = puppet_gizmos.entry(index).or_insert_with(|| {
+                let gizmo = PuppetBoundsGizmo::new(document.clone(), index);
                 gizmo.set_parent(self);
 
                 gizmo
@@ -538,9 +535,7 @@ impl StageWidget {
             }
         }
 
-        drop(document);
-
-        for (_, gizmo) in state.puppet_gizmos.iter() {
+        for (_, gizmo) in puppet_gizmos.iter() {
             gizmo.puppet_updated(self);
         }
 
