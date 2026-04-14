@@ -367,6 +367,14 @@ impl StageWidgetImp {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
+                self_obj
+                    .imp()
+                    .state
+                    .borrow()
+                    .render_area
+                    .as_ref()
+                    .unwrap()
+                    .queue_render();
                 self_obj.queue_draw();
             });
         }
@@ -384,6 +392,14 @@ impl StageWidgetImp {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
+                self_obj
+                    .imp()
+                    .state
+                    .borrow()
+                    .render_area
+                    .as_ref()
+                    .unwrap()
+                    .queue_render();
                 self_obj.queue_draw();
             });
         }
@@ -401,6 +417,14 @@ impl StageWidgetImp {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
+                self_obj
+                    .imp()
+                    .state
+                    .borrow()
+                    .render_area
+                    .as_ref()
+                    .unwrap()
+                    .queue_render();
                 self_obj.queue_draw();
             });
         }
