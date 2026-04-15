@@ -15,7 +15,7 @@ use generational_arena::Index;
 use glam::Vec2;
 use ningyo_gtk_wgpu::prelude::*;
 
-use crate::document::Document;
+use crate::document::{Document, DocumentManager};
 use crate::stage::gestures::{DragGesture, SelectGesture, ZoomGesture};
 use crate::stage::gizmos::{
     DragSelectGizmo, PuppetBoundsGizmo, PuppetSelectionGizmo, StageBorderGizmo,
@@ -467,7 +467,7 @@ impl StageWidget {
         selfish
     }
 
-    pub fn set_document(&self, document: Document) {
+    pub fn set_document(&self, document: Document, document_manager: DocumentManager) {
         {
             let mut state = self.imp().state.borrow_mut();
 
@@ -476,7 +476,7 @@ impl StageWidget {
                 .render_area
                 .as_ref()
                 .unwrap()
-                .with_document(document.clone());
+                .with_document(document.clone(), document_manager);
 
             for (_, gizmo) in &state.puppet_gizmos {
                 gizmo.unparent();

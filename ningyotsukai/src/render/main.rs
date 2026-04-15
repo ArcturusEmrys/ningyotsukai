@@ -6,20 +6,14 @@ use crate::render::offscreen::OffscreenRender;
 
 /// Main loop for off-canvas rendering.
 pub fn render_main<C>(recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
-    let mut wgpu_instance = None;
-    let mut wgpu_adapter = None;
-    let mut wgpu_device = None;
-    let mut wgpu_queue = None;
+    let mut wgpu_resources = None;
 
     let mut renderers = vec![];
 
     loop {
         match recv.recv() {
-            Ok(RenderMessage::UseWgpuDevice(c, inst, adapter, dev, queue)) => {
-                wgpu_instance = Some(inst);
-                wgpu_adapter = Some(adapter);
-                wgpu_device = Some(dev);
-                wgpu_queue = Some(queue);
+            Ok(RenderMessage::UseResources(c, resources)) => {
+                wgpu_resources = Some(resources);
 
                 send.send(RenderResponse::Ack(c)).unwrap();
             }

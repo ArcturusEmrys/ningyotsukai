@@ -18,12 +18,14 @@ use ningyo_render_wgpu::{WgpuRenderer, WgpuResources};
 
 use generational_arena::Index;
 
-use crate::document::Document;
+use crate::document::{Document, DocumentManager};
 use crate::stage::Puppet as StagePuppet;
 
 #[derive(Default)]
 pub struct StageRendererState {
     document: Option<Document>,
+
+    document_manager: Option<DocumentManager>,
 
     resources: Option<Arc<Mutex<WgpuResources>>>,
 
@@ -72,11 +74,18 @@ impl WidgetImpl for StageRendererImp {
     fn realize(&self) {
         self.parent_realize();
 
-        self.state.borrow_mut().resources =
-            Some(Arc::new(Mutex::new(WgpuResources::new_with_user_device(
-                self.obj().device().unwrap(),
-                self.obj().queue().unwrap(),
-            ))));
+        let resources = Arc::new(Mutex::new(WgpuResources::new_with_user_device(
+            self.obj().device().unwrap(),
+            self.obj().queue().unwrap(),
+        )));
+
+        let mut state = self.state.borrow_mut();
+
+        if let Some(document_manager) = &state.document_manager {
+            document_manager.use_resources(resources.clone());
+        }
+
+        state.resources = Some(resources);
     }
 }
 
@@ -106,6 +115,7 @@ impl WgpuAreaImpl for StageRendererImp {
         let mut state = self.state.borrow_mut();
         let StageRendererState {
             document,
+            document_manager,
             resources,
             renderers,
             #[cfg(feature = "renderdoc")]
@@ -284,10 +294,15 @@ impl StageRenderer {
         glib::Object::builder().build()
     }
 
-    pub fn with_document(&self, document: Document) -> &Self {
+    pub fn with_document(&self, document: Document, document_manager: DocumentManager) -> &Self {
         let mut state = self.imp().state.borrow_mut();
 
+        if let Some(resources) = &state.resources {
+            document_manager.use_resources(resources.clone());
+        }
+
         state.document = Some(document);
+        state.document_manager = Some(document_manager);
         state.renderers = HashMap::new();
 
         self

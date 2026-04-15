@@ -11,6 +11,7 @@ use std::error::Error;
 use std::rc::Rc;
 
 use crate::bindings::BindingPanel;
+use crate::document::DocumentManager;
 use crate::document::model::Document;
 use crate::panels::PanelDock;
 use crate::panels::PanelFrame;
@@ -21,6 +22,7 @@ use ningyo_extensions::{FileIn, WidgetExt2};
 
 pub struct DocumentControllerState {
     tracker_manager: Rc<TrackerManager>,
+    document_manager: DocumentManager,
     document: Document,
 }
 
@@ -252,13 +254,30 @@ glib::wrapper! {
 }
 
 impl DocumentController {
-    pub fn bind(&self, tracker_manager: Rc<TrackerManager>, document: Document) {
+    pub fn bind(
+        &self,
+        tracker_manager: Rc<TrackerManager>,
+        document_manager: DocumentManager,
+        document: Document,
+    ) {
+        if let Some(DocumentControllerState {
+            document,
+            document_manager,
+            ..
+        }) = &*self.imp().state.borrow_mut()
+        {
+            document_manager.unregister_document(document.clone());
+        }
+
+        document_manager.register_document(document.clone());
+
         *self.imp().state.borrow_mut() = Some(DocumentControllerState {
             tracker_manager,
+            document_manager: document_manager.clone(),
             document: document.clone(),
         });
 
-        self.imp().stage.set_document(document);
+        self.imp().stage.set_document(document, document_manager);
     }
 
     pub fn import_puppet(&self, file: gio::File) -> Result<(), Box<dyn Error>> {

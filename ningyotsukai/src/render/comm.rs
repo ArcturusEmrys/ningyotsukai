@@ -1,7 +1,10 @@
+use std::sync::{Arc, Mutex};
+
 use crate::document::Document;
+use ningyo_render_wgpu::WgpuResources;
 
 pub enum RenderMessage<C> {
-    UseWgpuDevice(C, wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue),
+    UseResources(C, Arc<Mutex<WgpuResources>>),
     RegisterDocument(C, Document),
     DoFrameUpdate(C),
     UnregisterDocument(C, Document),

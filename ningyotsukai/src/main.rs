@@ -46,7 +46,11 @@ fn main() -> glib::ExitCode {
             tracker::TrackerParamPanel::ensure_type();
             bindings::BindingPanel::ensure_type();
 
-            let window = window::WindowController::new(app, tracker_manager.clone());
+            let window = window::WindowController::new(
+                app,
+                tracker_manager.clone(),
+                document_manager.clone(),
+            );
 
             window.present();
         }

@@ -7,7 +7,7 @@ use gtk4::CompositeTemplate;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
-use crate::document::DocumentController;
+use crate::document::{DocumentController, DocumentManager};
 use crate::tracker::TrackerManager;
 
 use std::cell::RefCell;
@@ -25,6 +25,7 @@ pub struct WindowControllerImp {
 
     // external / non-GTK goes here
     tracker_manager: RefCell<Option<Rc<TrackerManager>>>,
+    document_manager: RefCell<Option<DocumentManager>>,
 }
 
 #[glib::object_subclass]
@@ -69,11 +70,16 @@ glib::wrapper! {
 }
 
 impl WindowController {
-    pub fn new(app: &gtk4::Application, tracker_manager: Rc<TrackerManager>) -> Self {
+    pub fn new(
+        app: &gtk4::Application,
+        tracker_manager: Rc<TrackerManager>,
+        document_manager: DocumentManager,
+    ) -> Self {
         let selfish: WindowController =
             glib::Object::builder().property("application", app).build();
 
         *selfish.imp().tracker_manager.borrow_mut() = Some(tracker_manager);
+        *selfish.imp().document_manager.borrow_mut() = Some(document_manager);
 
         selfish.bind();
 
@@ -86,12 +92,8 @@ impl WindowController {
         main_menu_button.set_menu_model(Some(&main_menu));
 
         self.imp().document_controller.bind(
-            self.imp()
-                .tracker_manager
-                .borrow_mut()
-                .as_ref()
-                .unwrap()
-                .clone(),
+            self.imp().tracker_manager.borrow().clone().unwrap(),
+            self.imp().document_manager.borrow().clone().unwrap(),
             Default::default(),
         )
     }
