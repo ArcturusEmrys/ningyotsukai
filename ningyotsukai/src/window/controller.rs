@@ -4,6 +4,7 @@ use gtk4;
 
 use glib::subclass::InitializingObject;
 use gtk4::CompositeTemplate;
+use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use crate::document::DocumentController;
@@ -44,6 +45,7 @@ impl ObjectSubclass for WindowControllerImp {
 impl ObjectImpl for WindowControllerImp {
     fn constructed(&self) {
         self.parent_constructed();
+        self.obj().add_css_class("NingyoAppWindow");
     }
 }
 

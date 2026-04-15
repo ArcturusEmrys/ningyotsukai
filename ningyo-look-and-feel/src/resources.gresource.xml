@@ -3,5 +3,6 @@
     <gresource prefix="/live/arcturus/ningyo-laf">
         <file compressed="true">look-and-feel.css</file>
         <file compressed="true">windows-look-and-feel.css</file>
+        <file compressed="true" preprocess="xml-stripblanks">headline-border-image-12px.svg</file>
     </gresource>
 </gresources>
