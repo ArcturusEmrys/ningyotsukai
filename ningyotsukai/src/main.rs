@@ -7,6 +7,7 @@ mod bindings;
 mod document;
 mod io;
 mod panels;
+mod render;
 mod stage;
 mod tracker;
 mod window;
@@ -37,6 +38,7 @@ fn main() -> glib::ExitCode {
         move |app| {
             let tracker_manager: std::rc::Rc<tracker::TrackerManager> =
                 tracker::TrackerManager::new();
+            let document_manager = document::DocumentManager::new();
 
             panels::PanelDock::ensure_type();
             panels::PanelFrame::ensure_type();

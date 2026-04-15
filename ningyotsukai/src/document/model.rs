@@ -82,6 +82,12 @@ impl Document {
     }
 }
 
+impl PartialEq for Document {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::as_ptr(&self.0) == Arc::as_ptr(&other.0)
+    }
+}
+
 impl WeakDocument {
     pub fn upgrade(&self) -> Option<Document> {
         Some(Document(self.0.upgrade()?))
