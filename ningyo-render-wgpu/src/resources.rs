@@ -19,8 +19,8 @@ use crate::shaders::basic::{
 /// It is recommended to shove this in an Arc<Mutex<>> so it can be shared
 /// across all renderers in a process.
 pub struct WgpuResources {
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 
     pub(crate) part_shader_vert: basic_vert::Shader,
     pub(crate) part_shader_frag: basic_frag::Shader,

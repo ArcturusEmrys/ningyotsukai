@@ -1764,6 +1764,7 @@ dependencies = [
 name = "ningyotsukai"
 version = "0.1.0"
 dependencies = [
+ "drm-fourcc",
  "env_logger",
  "gdk4",
  "generational-arena",
@@ -1779,6 +1780,8 @@ dependencies = [
  "inox2d",
  "inox2d-opengl",
  "json",
+ "libspa",
+ "libspa-sys",
  "mlua",
  "ningyo-binding",
  "ningyo-extensions",

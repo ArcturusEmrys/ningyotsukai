@@ -1,43 +1,194 @@
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
+use ningyo_render_wgpu::WgpuResources;
+
+use crate::document::{Document, WeakDocument};
+use crate::render::SinkPlugin;
 use crate::render::comm::{RenderMessage, RenderResponse};
 use crate::render::offscreen::OffscreenRender;
 
-/// Main loop for off-canvas rendering.
-pub fn render_main<C>(recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
-    let mut wgpu_resources = None;
+struct RenderThread {
+    wgpu_resources: Option<Arc<Mutex<WgpuResources>>>,
+    wgpu_adapter: Option<wgpu::Adapter>,
 
-    let mut renderers = vec![];
+    renderers: Vec<OffscreenRender>,
+    unregistered_documents: Vec<WeakDocument>,
 
-    loop {
-        match recv.recv() {
-            Ok(RenderMessage::UseResources(c, resources)) => {
-                wgpu_resources = Some(resources);
+    plugins: Vec<Box<dyn SinkPlugin>>,
 
-                send.send(RenderResponse::Ack(c)).unwrap();
-            }
-            Ok(RenderMessage::RegisterDocument(c, document)) => {
-                renderers.push(OffscreenRender::new(document));
+    /// Renderdoc API
+    #[cfg(feature = "renderdoc")]
+    doc: Option<renderdoc::RenderDoc<renderdoc::V100>>,
+}
 
-                send.send(RenderResponse::Ack(c)).unwrap();
-            }
-            Ok(RenderMessage::DoFrameUpdate(c)) => {
-                send.send(RenderResponse::Ack(c)).unwrap();
-            }
-            Ok(RenderMessage::UnregisterDocument(c, document)) => {
-                let index = renderers
-                    .iter()
-                    .enumerate()
-                    .find(|(_, d)| d.is_for_document(&document));
+impl RenderThread {
+    fn new() -> Self {
+        let wgpu_resources = None;
+        let wgpu_adapter = None;
 
-                if let Some((index, _)) = index {
-                    renderers.remove(index);
+        let renderers = vec![];
+        let unregistered_documents = vec![];
+
+        let plugins = vec![];
+
+        RenderThread {
+            wgpu_resources,
+            wgpu_adapter,
+            renderers,
+            unregistered_documents,
+            plugins,
+
+            #[cfg(feature = "renderdoc")]
+            doc: None,
+        }
+    }
+
+    fn register_document(&mut self, document: Document) {
+        let size = document.stage().size();
+
+        self.renderers.push(OffscreenRender::new(
+            document.clone(),
+            self.wgpu_resources.clone().unwrap(),
+        ));
+
+        for plugin in &mut self.plugins {
+            plugin.publish_stream(
+                document.clone(),
+                "Ningyotsukai Document".to_string(),
+                size,
+                (60, 1),
+            );
+        }
+    }
+
+    /// Main loop for off-canvas rendering.
+    fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
+        loop {
+            match recv.recv() {
+                Ok(RenderMessage::UseResources(c, adapter, resources)) => {
+                    self.wgpu_resources = Some(resources);
+                    self.wgpu_adapter = Some(adapter);
+
+                    #[cfg(feature = "pipewire")]
+                    {
+                        let resources = self.wgpu_resources.as_ref().unwrap();
+                        let resources = resources.lock().unwrap();
+                        let adapter = self.wgpu_adapter.clone().unwrap();
+
+                        self.plugins
+                            .push(crate::render::pipewire::PipewirePlugin::new(
+                                adapter,
+                                resources.device.clone(),
+                                resources.queue.clone(),
+                            ));
+                    }
+
+                    let mut doclist = vec![];
+
+                    for document in self.unregistered_documents.drain(..) {
+                        if let Some(document) = document.upgrade() {
+                            doclist.push(document);
+                        }
+                    }
+
+                    for document in doclist {
+                        self.register_document(document);
+                    }
+
+                    send.send(RenderResponse::Ack(c)).unwrap();
                 }
+                Ok(RenderMessage::RegisterDocument(c, document)) => {
+                    if self.wgpu_adapter.is_none() || self.wgpu_resources.is_none() {
+                        self.unregistered_documents.push(document.downgrade());
+                    } else {
+                        self.register_document(document);
+                    }
 
-                send.send(RenderResponse::Ack(c)).unwrap();
+                    send.send(RenderResponse::Ack(c)).unwrap();
+                }
+                Ok(RenderMessage::DidFrameUpdate(c)) => {
+                    #[cfg(feature = "renderdoc")]
+                    {
+                        use std::ptr::null;
+                        if self.doc.is_none() {
+                            self.doc = renderdoc::RenderDoc::new().ok();
+                        }
+
+                        //TODO: Can I get native window handles out of GTK?
+                        if self.doc.is_some() {
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .start_frame_capture(null(), null());
+                        }
+                    }
+
+                    for renderer in self.renderers.iter_mut() {
+                        //TODO: Force an allocation every frame so that plugins
+                        //don't ever see intermediate results.
+                        //Ideally, this should be a ring buffer.
+                        renderer.alloc_texture();
+                        renderer.render();
+                    }
+
+                    if let Some(resources) = self.wgpu_resources.as_ref() {
+                        resources
+                            .lock()
+                            .unwrap()
+                            .device
+                            .poll(wgpu::PollType::Wait {
+                                submission_index: None,
+                                timeout: None,
+                            })
+                            .unwrap();
+                    }
+
+                    for plugin in &mut self.plugins {
+                        for renderer in &mut self.renderers {
+                            plugin.update_stream_image(
+                                renderer.document().upgrade().unwrap(),
+                                renderer.texture().clone(),
+                            );
+                        }
+                    }
+
+                    #[cfg(feature = "renderdoc")]
+                    {
+                        use std::ptr::null;
+                        if self.doc.is_some() {
+                            self.doc.as_mut().unwrap().end_frame_capture(null(), null());
+                        }
+                    }
+
+                    send.send(RenderResponse::Ack(c)).unwrap();
+                }
+                Ok(RenderMessage::UnregisterDocument(c, document)) => {
+                    let index = self
+                        .renderers
+                        .iter()
+                        .enumerate()
+                        .find(|(_, d)| d.is_for_document(&document));
+
+                    if let Some((index, _)) = index {
+                        self.renderers.remove(index);
+                    }
+
+                    let unreg_index = self
+                        .unregistered_documents
+                        .iter()
+                        .enumerate()
+                        .find(|(_, d)| d.ptr_eq(&document.downgrade()));
+
+                    if let Some((index, _)) = unreg_index {
+                        self.unregistered_documents.remove(index);
+                    }
+
+                    send.send(RenderResponse::Ack(c)).unwrap();
+                }
+                Ok(RenderMessage::Shutdown) | Err(_) => return,
             }
-            Ok(RenderMessage::Shutdown) | Err(_) => return,
         }
     }
 }
@@ -52,7 +203,7 @@ pub fn render_start<C: Send + 'static>() -> (Sender<RenderMessage<C>>, Receiver<
     let (send_response, recv_response) = channel();
 
     spawn(|| {
-        render_main(recv_message, send_response);
+        RenderThread::new().main::<C>(recv_message, send_response);
     });
 
     (send_message, recv_response)

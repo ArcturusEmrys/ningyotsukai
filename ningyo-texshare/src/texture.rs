@@ -12,6 +12,8 @@ use crate::error::Error;
 #[derive(Debug, Clone)]
 pub struct ExportableTexture {
     pub(crate) texture: wgpu::Texture,
+    pub(crate) size: u64,
+    pub(crate) row_stride: u64,
 
     #[cfg_attr(target_os = "linux", allow(unused))]
     pub(crate) alignment: u64,
@@ -20,6 +22,14 @@ pub struct ExportableTexture {
 impl ExportableTexture {
     pub fn texture(&self) -> &wgpu::Texture {
         &self.texture
+    }
+
+    pub fn data_size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn row_stride(&self) -> u64 {
+        self.row_stride
     }
 
     #[cfg(target_os = "linux")]

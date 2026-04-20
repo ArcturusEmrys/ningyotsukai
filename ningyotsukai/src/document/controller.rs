@@ -257,19 +257,17 @@ impl DocumentController {
     pub fn bind(
         &self,
         tracker_manager: Rc<TrackerManager>,
-        document_manager: DocumentManager,
+        mut document_manager: DocumentManager,
         document: Document,
     ) {
         if let Some(DocumentControllerState {
             document,
             document_manager,
             ..
-        }) = &*self.imp().state.borrow_mut()
+        }) = &mut *self.imp().state.borrow_mut()
         {
             document_manager.unregister_document(document.clone());
         }
-
-        document_manager.register_document(document.clone());
 
         *self.imp().state.borrow_mut() = Some(DocumentControllerState {
             tracker_manager,
@@ -277,6 +275,7 @@ impl DocumentController {
             document: document.clone(),
         });
 
+        document_manager.register_document(document.clone());
         self.imp().stage.set_document(document, document_manager);
     }
 

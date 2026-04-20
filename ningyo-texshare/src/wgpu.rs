@@ -196,7 +196,8 @@ impl DeviceExt for Device {
         };
 
         if let Some(vkdevice) = unsafe { self.as_hal::<VulkanApi>() } {
-            let (hal_texture, alignment) = vkdevice.create_texture_exportable(&inner_desc).unwrap();
+            let (hal_texture, mem_req, subresource_layout) =
+                vkdevice.create_texture_exportable(&inner_desc).unwrap();
             //TODO: Really? We're going to unwrap!?
             let texture =
                 unsafe { self.create_texture_from_hal::<VulkanApi>(hal_texture, &texture) };
@@ -223,11 +224,21 @@ impl DeviceExt for Device {
                 },
             );
 
-            Some(ExportableTexture { texture, alignment })
+            Some(ExportableTexture {
+                texture,
+                size: mem_req.size,
+                row_stride: subresource_layout.row_pitch,
+                alignment: mem_req.alignment,
+            })
         } else {
             //TODO: Actually implement texture export for DX12 and Metal.
+            let texture = self.create_texture(texture);
+
+            //TODO: These values are bad guesses.
             Some(ExportableTexture {
-                texture: self.create_texture(texture),
+                texture: texture.clone(),
+                size: texture.width() as u64 * texture.height() as u64 * 4 as u64,
+                row_stride: texture.width() as u64 * 4 as u64,
                 alignment: 1,
             })
         }

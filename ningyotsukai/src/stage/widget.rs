@@ -26,6 +26,8 @@ use crate::stage::renderer::StageRenderer;
 pub struct StageWidgetState {
     document: Document,
 
+    document_manager: Option<DocumentManager>,
+
     /// List of puppets that are currently selected.
     selected: HashSet<Index>,
 
@@ -438,15 +440,12 @@ impl StageWidgetImp {
     }
 
     fn update_puppets(&self, dt: f32) {
-        //TODO: This should be moved into a separate DocumentManager so that
-        //having two windows displaying the same Document doesn't double time
-        {
-            let mut state = self.state.borrow_mut();
-
-            for (_, puppet) in state.document.stage_mut().iter_mut() {
-                puppet.update(dt);
-            }
-        }
+        self.state
+            .borrow_mut()
+            .document_manager
+            .as_mut()
+            .unwrap()
+            .update(dt);
 
         self.obj().puppet_updated();
     }
@@ -472,6 +471,7 @@ impl StageWidget {
             let mut state = self.imp().state.borrow_mut();
 
             state.document = document.clone();
+            state.document_manager = Some(document_manager.clone());
             state
                 .render_area
                 .as_ref()

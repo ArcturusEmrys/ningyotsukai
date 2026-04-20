@@ -84,7 +84,7 @@ pub trait DeviceExt {
     fn create_texture_exportable(
         &self,
         texture: &TextureDescriptor<'_>,
-    ) -> Result<(Texture, u64), OurError>;
+    ) -> Result<(Texture, vk::MemoryRequirements, vk::SubresourceLayout), OurError>;
 
     /// Retrieve the LUID of the device.
     fn physical_device_luid(&self) -> Option<[u8; 8]>;
@@ -94,7 +94,7 @@ impl DeviceExt for Device {
     fn create_texture_exportable(
         &self,
         texture: &TextureDescriptor<'_>,
-    ) -> Result<(Texture, u64), OurError> {
+    ) -> Result<(Texture, vk::MemoryRequirements, vk::SubresourceLayout), OurError> {
         let mut handle_types = vk::ExternalMemoryHandleTypeFlags::default();
         let mut tiling = vk::ImageTiling::OPTIMAL;
 
@@ -204,11 +204,21 @@ impl DeviceExt for Device {
                 .bind_image_memory(image, memory, 0)
                 .map_err(|e| OurError::from(e))?;
 
+            let subresource_layout = self.raw_device().get_image_subresource_layout(
+                image,
+                vk::ImageSubresource {
+                    aspect_mask: vk::ImageAspectFlags::COLOR,
+                    mip_level: 0,
+                    array_layer: 0,
+                },
+            );
+
             #[cfg(feature = "chatty_debug")]
             dbg!(texture);
             Ok((
                 self.texture_from_raw(image, texture, None, TextureMemory::Dedicated(memory)),
-                mem_req.alignment,
+                mem_req,
+                subresource_layout,
             ))
         }
     }

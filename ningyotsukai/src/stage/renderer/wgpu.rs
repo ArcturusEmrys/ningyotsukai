@@ -82,7 +82,7 @@ impl WidgetImpl for StageRendererImp {
         let mut state = self.state.borrow_mut();
 
         if let Some(document_manager) = &state.document_manager {
-            document_manager.use_resources(resources.clone());
+            document_manager.use_resources(self.obj().adapter().unwrap(), resources.clone());
         }
 
         state.resources = Some(resources);
@@ -115,7 +115,7 @@ impl WgpuAreaImpl for StageRendererImp {
         let mut state = self.state.borrow_mut();
         let StageRendererState {
             document,
-            document_manager,
+            document_manager: _,
             resources,
             renderers,
             #[cfg(feature = "renderdoc")]
@@ -298,7 +298,7 @@ impl StageRenderer {
         let mut state = self.imp().state.borrow_mut();
 
         if let Some(resources) = &state.resources {
-            document_manager.use_resources(resources.clone());
+            document_manager.use_resources(self.adapter().unwrap(), resources.clone());
         }
 
         state.document = Some(document);

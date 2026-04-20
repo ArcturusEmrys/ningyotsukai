@@ -94,15 +94,18 @@ impl ExportedTexture {
     }
 
     /// Get the fd for this exported texture.
-    ///
-    /// SAFETY: This FD is only valid for the lifetime of the ExportedTexture.
-    pub unsafe fn fd<'a>(&'a self) -> BorrowedFd<'a> {
+    pub fn fd<'a>(&'a self) -> BorrowedFd<'a> {
         self.fd.as_fd()
     }
 
     /// Get the texture that was exported.
     pub fn texture(&self) -> &wgpu::Texture {
         &self.texture
+    }
+
+    /// Get the LinuxDRM / DMA-BUF format modifier for this texture.
+    pub fn modifier(&self) -> u64 {
+        self.modifier
     }
 
     pub fn into_gdk_texture(self) -> Result<gdk4::Texture, Box<dyn std::error::Error>> {
@@ -140,5 +143,9 @@ impl ExportedTexture {
                     drop(self);
                 })?)
         }
+    }
+
+    pub fn into_fd(self) -> (wgpu::Texture, OwnedFd) {
+        (self.texture, self.fd)
     }
 }

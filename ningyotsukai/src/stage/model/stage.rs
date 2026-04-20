@@ -41,4 +41,10 @@ impl Stage {
     pub fn contains_puppet(&self, index: Index) -> bool {
         self.puppets.contains(index)
     }
+
+    pub fn update(&mut self, dt: f32) {
+        for (_, puppet) in self.iter_mut() {
+            puppet.update(dt);
+        }
+    }
 }

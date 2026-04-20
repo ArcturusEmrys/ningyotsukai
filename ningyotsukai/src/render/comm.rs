@@ -4,9 +4,9 @@ use crate::document::Document;
 use ningyo_render_wgpu::WgpuResources;
 
 pub enum RenderMessage<C> {
-    UseResources(C, Arc<Mutex<WgpuResources>>),
+    UseResources(C, wgpu::Adapter, Arc<Mutex<WgpuResources>>),
     RegisterDocument(C, Document),
-    DoFrameUpdate(C),
+    DidFrameUpdate(C),
     UnregisterDocument(C, Document),
     Shutdown,
 }
