@@ -40,12 +40,12 @@ impl ExportableTexture {
     }
 
     #[cfg(target_os = "windows")]
-    pub fn as_d3d12_resource(
+    pub fn as_d3d_resource(
         &self,
         device: &wgpu::Device,
     ) -> Result<crate::windows::ExportedTexture, Error> {
         use crate::windows;
 
-        windows::ExportedTexture::export_to_d3d12_resource(device, self)
+        windows::ExportedTexture::from_exportable(self)
     }
 }

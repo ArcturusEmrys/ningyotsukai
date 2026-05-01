@@ -1,6 +1,16 @@
 [workspace]
 resolver="3"
-members = ["ningyo-look-and-feel", "ningyo-extensions", "puppet-inspector", "ningyotsukai", "ningyo-binding", "ningyo-render-wgpu", "ningyo-gtk-wgpu", "ningyo-texshare"]
+members = [
+    "ningyo-look-and-feel",
+    "ningyo-extensions",
+    "puppet-inspector",
+    "ningyotsukai",
+    "ningyo-binding",
+    "ningyo-render-wgpu",
+    "ningyo-gtk-wgpu",
+    "ningyo-texshare",
+    "ningyo-spout2",
+]
 
 [profile.dev.package.inox2d]
 opt-level = 3

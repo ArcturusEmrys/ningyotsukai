@@ -4,7 +4,7 @@ description = "Wrappers for WGPU rendering to a GTK widget"
 authors = ["Arcturus Emrys <aemrys@arcturus.live>"]
 version = "0.1.0"
 edition = "2024"
-license = "BSD-2-Clause"
+license = "GPL-3.0-or-later"
 keywords = ["graphics", "wgpu", "gtk"]
 categories = ["graphics", "rendering"]
 

@@ -1742,6 +1742,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ningyo-spout2"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "ntapi",
+ "thiserror 2.0.18",
+ "windows",
+ "windows-result",
+ "windows-strings",
+]
+
+[[package]]
 name = "ningyo-texshare"
 version = "0.1.0"
 dependencies = [
@@ -1756,6 +1768,7 @@ dependencies = [
  "wgpu",
  "wgpu-core",
  "wgpu-hal 29.0.1",
+ "wgpu-types 29.0.1",
  "windows",
  "windows-result",
 ]
@@ -1788,6 +1801,7 @@ dependencies = [
  "ningyo-gtk-wgpu",
  "ningyo-look-and-feel",
  "ningyo-render-wgpu",
+ "ningyo-spout2",
  "ningyo-texshare",
  "owning_ref",
  "pipewire",
@@ -1796,6 +1810,7 @@ dependencies = [
  "smol",
  "thiserror 2.0.18",
  "wgpu",
+ "windows",
 ]
 
 [[package]]
@@ -1827,6 +1842,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]

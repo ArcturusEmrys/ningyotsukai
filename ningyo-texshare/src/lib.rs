@@ -8,15 +8,16 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+pub mod dx12;
 pub mod vulkan;
 
 pub use error::Error;
 pub use texture::ExportableTexture;
-pub use wgpu::{AdapterExt, DeviceExt, InstanceExt};
+pub use wgpu::{AdapterExt, ExtendedDevice, InstanceExt};
 
 #[cfg(target_os = "linux")]
 pub use linux::ExportedTexture;
 
 pub mod prelude {
-    pub use crate::wgpu::{AdapterExt, DeviceExt, InstanceExt};
+    pub use crate::wgpu::{AdapterExt, InstanceExt};
 }

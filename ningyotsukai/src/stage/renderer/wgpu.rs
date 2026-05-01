@@ -82,7 +82,11 @@ impl WidgetImpl for StageRendererImp {
         let mut state = self.state.borrow_mut();
 
         if let Some(document_manager) = &state.document_manager {
-            document_manager.use_resources(self.obj().adapter().unwrap(), resources.clone());
+            document_manager.use_resources(
+                self.obj().adapter().unwrap(),
+                resources.clone(),
+                self.obj().extended_device().unwrap(),
+            );
         }
 
         state.resources = Some(resources);
@@ -298,7 +302,11 @@ impl StageRenderer {
         let mut state = self.imp().state.borrow_mut();
 
         if let Some(resources) = &state.resources {
-            document_manager.use_resources(self.adapter().unwrap(), resources.clone());
+            document_manager.use_resources(
+                self.adapter().unwrap(),
+                resources.clone(),
+                self.extended_device().unwrap(),
+            );
         }
 
         state.document = Some(document);

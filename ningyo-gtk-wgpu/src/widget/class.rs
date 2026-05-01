@@ -13,9 +13,8 @@ use glib::types::StaticType;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
-use ningyo_texshare::DeviceExt as WgpuDeviceExt;
-use ningyo_texshare::ExportableTexture;
 use ningyo_texshare::prelude::*;
+use ningyo_texshare::{ExportableTexture, ExtendedDevice};
 
 use pollster::block_on;
 
@@ -35,7 +34,7 @@ pub struct WgpuAreaImp {
 
     wgpu_instance: RefCell<Option<wgpu::Instance>>,
     wgpu_adapter: RefCell<Option<wgpu::Adapter>>,
-    wgpu_device: RefCell<Option<wgpu::Device>>,
+    wgpu_device: RefCell<Option<ExtendedDevice>>,
     wgpu_queue: RefCell<Option<wgpu::Queue>>,
 
     /// WGPU texture, double-buffered.
@@ -166,7 +165,7 @@ impl WidgetImpl for WgpuAreaImp {
                             },
                         )
                         .expect("Exported texture");
-                    let buffer_texture = device.create_texture(&wgpu::TextureDescriptor {
+                    let buffer_texture = device.device().create_texture(&wgpu::TextureDescriptor {
                         size,
                         mip_level_count: 1,
                         sample_count: 1,
@@ -195,7 +194,7 @@ impl WidgetImpl for WgpuAreaImp {
                     .1
                     .clone()
                     .into_gdk_texture(
-                        &self.wgpu_device.borrow().as_ref().unwrap(),
+                        &self.wgpu_device.borrow().as_ref().unwrap().device(),
                         &self.obj().display(),
                     )
                     .expect("working gdk4 import");
@@ -216,9 +215,12 @@ impl WidgetImpl for WgpuAreaImp {
                 let texture = texture.as_ref().unwrap();
                 let (buffer_texture, _backing_texture) = texture;
 
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("NGWgpuArea internal buffer clear"),
-                });
+                let mut encoder =
+                    device
+                        .device()
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("NGWgpuArea internal buffer clear"),
+                        });
 
                 encoder.clear_texture(
                     buffer_texture,
@@ -243,6 +245,7 @@ impl WidgetImpl for WgpuAreaImp {
                 let queue = queue.as_ref().unwrap();
 
                 device
+                    .device()
                     .poll(wgpu::PollType::Wait {
                         submission_index: None,
                         timeout: None,
@@ -253,9 +256,12 @@ impl WidgetImpl for WgpuAreaImp {
                 let texture = texture.as_ref().unwrap();
                 let (buffer_texture, backing_texture) = texture;
 
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("NGWgpuArea internal copy to backing texture"),
-                });
+                let mut encoder =
+                    device
+                        .device()
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("NGWgpuArea internal copy to backing texture"),
+                        });
 
                 encoder.copy_texture_to_texture(
                     wgpu::TexelCopyTextureInfo {
@@ -280,6 +286,7 @@ impl WidgetImpl for WgpuAreaImp {
                 queue.submit(std::iter::once(encoder.finish()));
 
                 device
+                    .device()
                     .poll(wgpu::PollType::Wait {
                         submission_index: None,
                         timeout: None,
@@ -316,12 +323,6 @@ impl WgpuAreaImp {
     async fn create_instance(me: WgpuArea) -> Result<(), Box<dyn Error>> {
         #[allow(unused)]
         let mut instance_desc = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
-
-        // Force DX12 on Windows.
-        #[cfg(target_os = "windows")]
-        {
-            instance_desc.backends = wgpu::Backends::DX12;
-        }
 
         let instance = wgpu::Instance::new_with_extensions(instance_desc)?;
         let adapter = instance
@@ -417,6 +418,18 @@ impl WgpuArea {
     ///
     /// This function returns None if the device has not yet been created.
     pub fn device(&self) -> Option<wgpu::Device> {
+        let data = self.imp().wgpu_device.borrow();
+        if let Some(ref device) = *data {
+            Some(device.device().clone())
+        } else {
+            None
+        }
+    }
+
+    /// Retrieve the object's device, with texture-sharing extensions.
+    ///
+    /// This function returns None if the device has not yet been created.
+    pub fn extended_device(&self) -> Option<ExtendedDevice> {
         (*self.imp().wgpu_device.borrow()).clone()
     }
 

@@ -4,7 +4,7 @@ description = "Support for sharing textures across rendering APIs and processes.
 authors = ["Arcturus Emrys <aemrys@arcturus.live>"]
 version = "0.1.0"
 edition = "2024"
-license = "BSD-2-Clause"
+license = "GPL-3.0-or-later"
 keywords = ["graphics", "wgpu", "gtk"]
 categories = ["graphics", "rendering"]
 
@@ -15,6 +15,7 @@ chatty_debug = []
 wgpu = { version = "29.0.0" }
 wgpu-hal = { version = "29.0.0" }
 wgpu-core = { version = "29.0.0" }
+wgpu-types = { version = "29.0.0" }
 thiserror = "1.0.39"
 ash = "0.38.0"
 glib = { version = "0.22.0" }
@@ -27,5 +28,14 @@ dma-buf = "0.5.0"
 drm-fourcc = "2.2.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_Graphics_Direct3D12", "Win32_Graphics_Dxgi", "Win32_Graphics_Direct3D"]}
 windows-result = "0.4.1"
+
+[target.'cfg(target_os="windows")'.dependencies.windows]
+version = "0.62.2"
+features = [
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11on12",
+    "Win32_Graphics_Direct3D11"
+]

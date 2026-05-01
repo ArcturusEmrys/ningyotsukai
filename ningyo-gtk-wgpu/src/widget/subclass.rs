@@ -5,6 +5,8 @@ use glib::translate::from_glib_borrow;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
+use ningyo_texshare::ExtendedDevice;
+
 use crate::boxed::*;
 use crate::widget::class::{WgpuArea, WgpuAreaImp};
 
@@ -182,6 +184,17 @@ pub trait WgpuAreaExt {
     /// is guaranteed to be Some if the widget has already been realized.
     fn device(&self) -> Option<wgpu::Device>;
 
+    /// Retrieve the object's extended device.
+    ///
+    /// An Extended Device is used to create exportable textures for cross-API
+    /// or cross-process texture sharing. See `ningyo_texshare` for more
+    /// information.
+    ///
+    /// This function returns None if the extended device has not yet been
+    /// created. It is guaranteed to be Some if the widget has already been
+    /// realized.
+    fn extended_device(&self) -> Option<ExtendedDevice>;
+
     /// Retrieve the object's queue.
     ///
     /// This function returns None if the queue has not yet been created. It
@@ -244,6 +257,10 @@ where
 
     fn device(&self) -> Option<wgpu::Device> {
         self.clone().upcast::<WgpuArea>().device()
+    }
+
+    fn extended_device(&self) -> Option<ExtendedDevice> {
+        self.clone().upcast::<WgpuArea>().extended_device()
     }
 
     fn queue(&self) -> Option<wgpu::Queue> {

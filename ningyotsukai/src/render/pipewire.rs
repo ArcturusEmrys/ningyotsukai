@@ -24,6 +24,7 @@ use pipewire::stream::{StreamFlags, StreamListener, StreamRc};
 use glam::Vec2;
 
 use ningyo_render_wgpu::WgpuRenderer;
+use ningyo_texshare::ExtendedDevice;
 use ningyo_texshare::prelude::*;
 
 use crate::document::Document;
@@ -534,7 +535,7 @@ impl PipewireThread {
                             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                             mapped_at_creation: false
                         });
-                        
+
                         stream.copy_buffer = Some(buffer);
                     }
                 }
@@ -583,7 +584,7 @@ impl PipewireThread {
                     if data.type_ == sys::SPA_DATA_DmaBuf {
                         let texture = unsafe { (*raw_buffer).user_data } as *mut wgpu::Texture;
                         let texture = unsafe { &mut *texture };
-                        
+
                         encoder.copy_texture_to_texture(wgpu::TexelCopyTextureInfo {
                             texture: &last_tex,
                             mip_level: 0,
@@ -639,7 +640,7 @@ impl PipewireThread {
 
                         buffer.map_async(wgpu::MapMode::Read, .., |_| {});
                         device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
-                        
+
                         let view = buffer.get_mapped_range(..);
                         let cpu_stride = size.x as usize * 4;
 
@@ -653,7 +654,7 @@ impl PipewireThread {
                                 let src = &view[gpu_base..gpu_base + cpu_stride];
                                 memptr_data[cpu_base..cpu_base + cpu_stride].copy_from_slice(src);
                             }
-                            
+
                             let data = &mut *data;
                             data.type_ = sys::SPA_DATA_MemPtr;
                             data.flags = sys::SPA_DATA_FLAG_READWRITE;
@@ -704,7 +705,14 @@ impl PipewireThread {
         );
     }
 
-    fn update_stream_image(&self, document: Document, texture: wgpu::Texture) {
+    fn update_stream_image(
+        &self,
+        document: Document,
+        adapter: &wgpu::Adapter,
+        device: &ExtendedDevice,
+        queue: &wgpu::Queue,
+        texture: wgpu::Texture,
+    ) {
         let mut state = self.0.borrow_mut();
         let stream = state.streams.get_mut(&document);
 

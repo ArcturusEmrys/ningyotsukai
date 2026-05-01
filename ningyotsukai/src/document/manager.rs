@@ -4,6 +4,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 use ningyo_render_wgpu::WgpuResources;
+use ningyo_texshare::ExtendedDevice;
 
 use crate::document::{Document, WeakDocument};
 use crate::render::{RenderMessage, RenderResponse, render_start};
@@ -59,11 +60,21 @@ impl DocumentManager {
             .unwrap();
     }
 
-    pub fn use_resources(&self, adapter: wgpu::Adapter, resources: Arc<Mutex<WgpuResources>>) {
+    pub fn use_resources(
+        &self,
+        adapter: wgpu::Adapter,
+        resources: Arc<Mutex<WgpuResources>>,
+        extended_device: ExtendedDevice,
+    ) {
         self.0
             .borrow()
             .send
-            .send(RenderMessage::UseResources((), adapter, resources))
+            .send(RenderMessage::UseResources(
+                (),
+                adapter,
+                resources,
+                extended_device,
+            ))
             .unwrap();
     }
 

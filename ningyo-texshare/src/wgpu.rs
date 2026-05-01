@@ -14,12 +14,30 @@ use wgpu_core::instance::RequestDeviceError as CoreRequestDeviceError;
 use wgpu_hal::InstanceError;
 use wgpu_hal::vulkan::Api as VulkanApi;
 
+#[cfg(target_os = "windows")]
+pub type ExtendedDevice = crate::windows::ExtendedDevice;
+
+#[cfg(target_os = "linux")]
+pub type ExtendedDevice = crate::linux::ExtendedDevice;
+
 pub trait InstanceExt {
     fn new_with_extensions(desc: InstanceDescriptor) -> Result<Instance, InstanceError>;
 }
 
 impl InstanceExt for Instance {
-    fn new_with_extensions(desc: InstanceDescriptor) -> Result<Instance, InstanceError> {
+    fn new_with_extensions(mut desc: InstanceDescriptor) -> Result<Instance, InstanceError> {
+        // On windows, DX12 basically has to allocate all the memory, so we
+        // *have* to make a DX12 backend. Ignore the caller's requests and ONLY
+        // use DX12.
+        //
+        // TODO: In the future, maybe figure out if we can open two backends
+        // for the Vulkan case and have the texture get imported into Vulkan
+        // from DX12.
+        #[cfg(target_os = "windows")]
+        {
+            desc.backends = wgpu::Backends::DX12;
+        }
+
         // TODO: Use desc's backend flags to choose a backend once we have all of
         // them set up.
         if desc.backends.contains(wgpu::Backends::VULKAN) {
@@ -39,16 +57,16 @@ pub trait AdapterExt {
     async fn request_device_with_extensions(
         &self,
         desc: &DeviceDescriptor<'_>,
-    ) -> Result<(Device, Queue), RequestDeviceError>;
+    ) -> Result<(ExtendedDevice, Queue), RequestDeviceError>;
 }
 
 impl AdapterExt for Adapter {
     async fn request_device_with_extensions(
         &self,
         desc: &DeviceDescriptor<'_>,
-    ) -> Result<(Device, Queue), RequestDeviceError> {
+    ) -> Result<(ExtendedDevice, Queue), RequestDeviceError> {
         // SAFETY: We aren't going to destroy the adapter.
-        if let Some(vulkan_adapter) = unsafe { self.as_hal::<VulkanApi>() } {
+        let (device, queue) = if let Some(vulkan_adapter) = unsafe { self.as_hal::<VulkanApi>() } {
             unsafe {
                 let open_device = vulkan_adapter
                     .open_with_extensions(
@@ -62,12 +80,18 @@ impl AdapterExt for Adapter {
                         ))
                     })?;
 
-                Ok(self.create_device_from_hal(open_device, desc)?)
+                self.create_device_from_hal(open_device, desc)?
             }
         } else {
             //fall back to standard
-            self.request_device(desc).await
-        }
+            self.request_device(desc).await?
+        };
+
+        #[cfg(target_os = "linux")]
+        return Ok((device, queue));
+
+        #[cfg(target_os = "windows")]
+        return Ok((ExtendedDevice::wrap(device), queue));
     }
 }
 
@@ -148,7 +172,7 @@ fn map_texture_usage(
     u
 }
 
-fn map_texture_usage_for_texture(
+pub fn map_texture_usage_for_texture(
     desc: &TextureDescriptor,
     format_features: &wgpu::TextureFormatFeatures,
 ) -> wgpu::TextureUses {
@@ -231,7 +255,8 @@ impl DeviceExt for Device {
                 alignment: mem_req.alignment,
             })
         } else {
-            //TODO: Actually implement texture export for DX12 and Metal.
+            //TODO: Actually implement texture export for Metal.
+            //NOTE: DX12 is not implemented in the cross-platform files.
             let texture = self.create_texture(texture);
 
             //TODO: These values are bad guesses.

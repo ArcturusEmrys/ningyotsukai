@@ -1,171 +1,214 @@
-use std::ffi::c_void;
-use std::ptr::null;
-
-use wgpu_hal::vulkan::TextureMemory;
-
-use ash::ext::image_drm_format_modifier;
-use ash::khr::external_memory_win32;
-use ash::vk::{
-    ExternalMemoryHandleTypeFlags, ImageDrmFormatModifierPropertiesEXT, MemoryGetWin32HandleInfoKHR,
+use windows::Win32::Foundation::{GENERIC_ALL, HANDLE};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
 };
-
-use windows::Win32::Foundation::{DuplicateHandle, HANDLE, LUID};
-use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
-use windows::Win32::Graphics::Direct3D12::{self, D3D12GetDebugInterface, ID3D12Debug};
+use windows::Win32::Graphics::Direct3D11on12::{
+    D3D11_RESOURCE_FLAGS, D3D11On12CreateDevice, ID3D11On12Device,
+};
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12_RESOURCE_DESC, D3D12CreateDevice, ID3D12Device, ID3D12Heap, ID3D12Resource,
+    D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT, D3D12GetDebugInterface,
+    ID3D12Debug, ID3D12Resource,
 };
-use windows::Win32::Graphics::Dxgi;
-use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, IDXGIAdapter1, IDXGIFactory4};
-use windows::core::{IUnknown, Interface};
+use windows::core::Interface;
 
+use wgpu_hal::dx12::Api as Dx12Api;
+
+use crate::dx12::DeviceExt as Dx12DeviceExt;
 use crate::error::Error as OurError;
 use crate::texture::ExportableTexture;
-use crate::vulkan::DeviceExt;
+use crate::wgpu::DeviceExt as WgpuDeviceExt;
+use crate::wgpu::map_texture_usage_for_texture;
+
+/// An extended device type that can hold a D3D11On12 device for DX11 sharing.
+#[derive(Clone)]
+pub struct ExtendedDevice {
+    inner: wgpu::Device,
+    d3d11on12_dev: ID3D11On12Device,
+}
+
+impl ExtendedDevice {
+    pub fn wrap(device: wgpu::Device) -> Self {
+        let dx12_hal = unsafe { device.as_hal::<wgpu_hal::api::Dx12>() }.unwrap();
+        let dx12_device = dx12_hal.raw_device();
+        let dx12_queue = dx12_hal.raw_queue();
+
+        let mut dx11_device = None;
+        let mut dx11_immediate_context = None;
+
+        unsafe {
+            D3D11On12CreateDevice(
+                dx12_device,
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT.0,
+                None,
+                Some(&[Some(dx12_queue.cast().unwrap())]),
+                0,
+                Some(&mut dx11_device),
+                Some(&mut dx11_immediate_context),
+                None,
+            )
+            .unwrap();
+        }
+
+        //Turn on the debug layer
+        let mut debug: Option<ID3D12Debug> = None;
+        unsafe {
+            D3D12GetDebugInterface(&mut debug).unwrap();
+            debug.unwrap().EnableDebugLayer();
+        }
+
+        Self {
+            inner: device,
+            d3d11on12_dev: dx11_device.unwrap().cast().unwrap(),
+        }
+    }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.inner
+    }
+
+    pub fn create_texture_exportable(
+        &self,
+        adapter: &wgpu::Adapter,
+        queue: &wgpu::Queue,
+        texture: &wgpu::TextureDescriptor<'_>,
+    ) -> Option<ExportableTexture> {
+        if let Some(dx12device) = unsafe { self.inner.as_hal::<Dx12Api>() } {
+            let format_features = adapter.get_texture_format_features(texture.format);
+
+            let inner_desc = wgpu_hal::TextureDescriptor {
+                label: texture.label.into(),
+                size: texture.size,
+                mip_level_count: texture.mip_level_count,
+                sample_count: texture.sample_count,
+                dimension: texture.dimension,
+                format: texture.format,
+                usage: map_texture_usage_for_texture(texture, &format_features),
+                memory_flags: wgpu_hal::MemoryFlags::empty(),
+                view_formats: texture.view_formats.to_vec(),
+            };
+
+            let (dxtexture, size, alignment) =
+                dx12device.create_texture_exportable(&inner_desc).unwrap();
+            let texture = unsafe {
+                self.inner
+                    .create_texture_from_hal::<Dx12Api>(dxtexture, &texture)
+            };
+
+            Some(ExportableTexture {
+                texture,
+                size,
+                row_stride: 512,
+                alignment,
+            })
+        } else {
+            // TODO: This should never happen and we really should panic here
+            self.inner
+                .create_texture_exportable(adapter, queue, texture)
+        }
+    }
+}
 
 /// A texture that has been exported as a D3D12 resource handle.
 #[derive(Debug)]
 pub struct ExportedTexture {
     texture: wgpu::Texture,
-    handle: isize,
-    alignment: u64,
 }
 
 impl ExportedTexture {
-    pub fn export_to_d3d12_resource(
-        device: &wgpu::Device,
-        texture: &ExportableTexture,
-    ) -> Result<ExportedTexture, OurError> {
+    pub fn from_exportable(exportable: &ExportableTexture) -> Result<Self, OurError> {
+        Ok(Self {
+            texture: exportable.texture.clone(),
+        })
+    }
+
+    pub fn as_id3d12_resource(&self) -> ID3D12Resource {
         unsafe {
-            let Some(inner_texture) = texture.texture().as_hal::<wgpu_hal::api::Vulkan>() else {
-                return Err(OurError::WrongAPIError);
-            };
-            let device = device.as_hal::<wgpu_hal::api::Vulkan>().unwrap();
-            let instance = device.shared_instance();
-            if instance
-                .extensions()
-                .iter()
-                .find(|ext| ext.to_bytes() == "VK_KHR_external_memory_capabilities".as_bytes())
-                .is_none()
-            {
-                return Err(OurError::MissingExtension);
-            }
+            self.texture
+                .as_hal::<wgpu_hal::dx12::Api>()
+                .unwrap()
+                .raw_resource()
+                .clone()
+        }
+    }
 
-            let memory = match inner_texture.memory() {
-                TextureMemory::Allocation(alloc) => alloc.memory(),
-                TextureMemory::Dedicated(memory) => *memory,
-                TextureMemory::External => return Err(OurError::OpaqueExport),
-            };
+    /// Consume the WGPU texture, producing a D3D11 resource.
+    ///
+    /// NOTE: Calling this function invalidates the associated WGPU texture.
+    /// Probably. I don't know yet, but D3D11On12 makes me change the resource
+    /// state behind WGPU's back and that's gotta piss off the GPU bureaucrats
+    /// somehow
+    pub fn into_d3d11_resource(
+        self,
+        device: &ExtendedDevice,
+        queue: &wgpu::Queue,
+    ) -> Result<ID3D11Resource, OurError> {
+        let resource = self.as_id3d12_resource();
 
-            #[cfg(feature = "chatty_debug")]
-            dbg!(inner_texture.memory());
+        // NOTE: I'm told we have to force a resource state transition and this
+        // is the easiest way to do that in WGPU.
+        let mut encoder = device
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Bogus copy to force D3D12 state transition for D3D11 resource"),
+            });
 
-            let ext_mem_api =
-                external_memory_win32::Device::new(instance.raw_instance(), device.raw_device());
-            let mut ext_mem_props = MemoryGetWin32HandleInfoKHR::default();
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: 0,
+                height: 0,
+                depth_or_array_layers: 1,
+            },
+        );
 
-            ext_mem_props.memory = memory;
-            ext_mem_props.handle_type = ExternalMemoryHandleTypeFlags::OPAQUE_WIN32;
-
-            let handle = ext_mem_api.get_memory_win32_handle(&ext_mem_props)?;
-
-            #[cfg(feature = "chatty_debug")]
-            dbg!(handle);
-
-            Ok(ExportedTexture {
-                texture: texture.texture().clone(),
-                handle,
-                alignment: texture.alignment,
+        let index = queue.submit(std::iter::once(encoder.finish()));
+        device
+            .device()
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(index),
+                timeout: None,
             })
-        }
-    }
+            .unwrap();
 
-    fn raw_handle(&self) -> isize {
-        self.handle
-    }
-
-    pub fn convert_to_id3d12_resource(
-        &self,
-        device: &wgpu::Device,
-        target_device: &ID3D12Device,
-    ) -> Result<ID3D12Resource, OurError> {
-        let Some(device_vk) = (unsafe { device.as_hal::<wgpu_hal::api::Vulkan>() }) else {
-            return Err(OurError::WrongAPIError);
-        };
-
-        let Some(device_luid) = device_vk.physical_device_luid() else {
-            return Err(OurError::NoDx12Identity);
-        };
-
-        #[cfg(feature = "chatty_debug")]
-        dbg!(device_luid);
+        let flags11 = D3D11_RESOURCE_FLAGS::default();
+        let mut resource11 = None;
 
         unsafe {
-            if target_device.GetAdapterLuid() != std::mem::transmute(device_luid) {
-                return Err(OurError::InvalidTransferTarget);
-            };
-
-            let nthandle = HANDLE(self.raw_handle() as *mut c_void);
-
-            let mut resource: Option<ID3D12Resource> = None;
-            target_device
-                .OpenSharedHandle(nthandle, &mut resource)
-                .map_err(|e| OurError::from(e))?;
-
-            /* Alternative code path: Attempt to open the handle as a heap
-            let mut heap: Option<ID3D12Heap> = None;
-            eprintln!("about to ask for heap");
-            target_device
-                .OpenSharedHandle::<ID3D12Heap>(nthandle, &mut heap)
-                .map_err(|e| OurError::from(e))?;
-
-            let heap = heap.unwrap();
-            #[cfg(feature="chatty_debug")]
-            dbg!(&heap);
-            eprintln!("We got the heap");
-
-            let mut resource_desc = D3D12_RESOURCE_DESC::default();
-            resource_desc.Dimension = match self.texture.dimension() {
-                wgpu::TextureDimension::D1 => Direct3D12::D3D12_RESOURCE_DIMENSION_TEXTURE1D,
-                wgpu::TextureDimension::D2 => Direct3D12::D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                wgpu::TextureDimension::D3 => Direct3D12::D3D12_RESOURCE_DIMENSION_TEXTURE3D,
-            };
-            resource_desc.Alignment = self.alignment;
-            resource_desc.Width = self.texture.width() as u64;
-            resource_desc.Height = self.texture.height();
-            resource_desc.DepthOrArraySize = self.texture.depth_or_array_layers() as u16;
-            resource_desc.MipLevels = self.texture.mip_level_count() as u16;
-            resource_desc.Format = match self.texture.format() {
-                wgpu::TextureFormat::Rgba8Unorm => Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
-                _ => unimplemented!(),
-            };
-            resource_desc.SampleDesc = Dxgi::Common::DXGI_SAMPLE_DESC {
-                Count: self.texture.sample_count(),
-                Quality: 1, //TODO: huh?
-            };
-            resource_desc.Layout = Direct3D12::D3D12_TEXTURE_LAYOUT_UNKNOWN;
-            resource_desc.Flags = Direct3D12::D3D12_RESOURCE_FLAG_NONE; //TODO: Any wgpu flags go here?
-
-            #[cfg(feature="chatty_debug")]
-            dbg!(resource_desc);
-
-            let mut resource = None;
-            target_device
-                .CreatePlacedResource(
-                    &heap,
-                    0,
-                    &resource_desc,
-                    Direct3D12::D3D12_RESOURCE_STATE_COMMON,
-                    None,
-                    &mut resource,
+            device
+                .d3d11on12_dev
+                .CreateWrappedResource(
+                    &resource,
+                    &flags11,
+                    D3D12_RESOURCE_STATE_COPY_SOURCE,
+                    D3D12_RESOURCE_STATE_PRESENT,
+                    &mut resource11,
                 )
-                .map_err(|e| OurError::from(e))?;
-
-            #[cfg(feature="chatty_debug")]
-            dbg!(&resource);
-            eprintln!("We got the resource"); */
-
-            resource.ok_or(OurError::InvalidHandle)
+                .unwrap();
         }
+
+        Ok(resource11.unwrap())
+    }
+
+    pub fn as_share_handle(&self, device: &ExtendedDevice) -> Result<HANDLE, OurError> {
+        //TODO: We're checking to see if D3D12 resources can be sent directly.
+        //If this doesn't work, try converting with into_id3d12_resource first
+        let dx12_hal = unsafe { device.inner.as_hal::<wgpu_hal::api::Dx12>() }.unwrap();
+        let dx12_device = dx12_hal.raw_device();
+        let d3dresource = self.as_id3d12_resource();
+        let share_handle =
+            unsafe { dx12_device.CreateSharedHandle(&d3dresource, None, GENERIC_ALL.0, None)? };
+
+        Ok(share_handle)
     }
 }

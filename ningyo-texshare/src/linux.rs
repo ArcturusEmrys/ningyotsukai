@@ -13,6 +13,32 @@ use std::ptr::null;
 use crate::error::Error as OurError;
 use crate::texture::ExportableTexture;
 
+/// An extended device that has the necessary extensions for texture sharing.
+#[derive(Clone)]
+pub struct ExtendedDevice {
+    inner: wgpu::Device,
+}
+
+impl ExtendedDevice {
+    pub fn wrap(device: wgpu::Device) -> Self {
+        Self { inner: device }
+    }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.inner
+    }
+
+    pub fn create_texture_exportable(
+        &self,
+        adapter: &wgpu::Adapter,
+        queue: &wgpu::Queue,
+        texture: &wgpu::TextureDescriptor<'_>,
+    ) -> Option<ExportableTexture> {
+        self.inner
+            .create_texture_exportable(adapter, queue, texture)
+    }
+}
+
 //TODO: Actually write a test case for all of this code.
 
 pub struct ExportedTexture {

@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 
 use ningyo_render_wgpu::WgpuResources;
+use ningyo_texshare::ExtendedDevice;
 
 use crate::document::{Document, WeakDocument};
 use crate::render::SinkPlugin;
@@ -12,6 +13,7 @@ use crate::render::offscreen::OffscreenRender;
 struct RenderThread {
     wgpu_resources: Option<Arc<Mutex<WgpuResources>>>,
     wgpu_adapter: Option<wgpu::Adapter>,
+    extended_device: Option<ExtendedDevice>,
 
     renderers: Vec<OffscreenRender>,
     unregistered_documents: Vec<WeakDocument>,
@@ -36,6 +38,7 @@ impl RenderThread {
         RenderThread {
             wgpu_resources,
             wgpu_adapter,
+            extended_device: None,
             renderers,
             unregistered_documents,
             plugins,
@@ -67,9 +70,10 @@ impl RenderThread {
     fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
         loop {
             match recv.recv() {
-                Ok(RenderMessage::UseResources(c, adapter, resources)) => {
+                Ok(RenderMessage::UseResources(c, adapter, resources, extended_device)) => {
                     self.wgpu_resources = Some(resources);
                     self.wgpu_adapter = Some(adapter);
+                    self.extended_device = Some(extended_device);
 
                     #[cfg(feature = "pipewire")]
                     {
@@ -83,6 +87,11 @@ impl RenderThread {
                                 resources.device.clone(),
                                 resources.queue.clone(),
                             ));
+                    }
+
+                    #[cfg(feature = "spout")]
+                    {
+                        self.plugins.push(crate::render::spout::SpoutPlugin::new());
                     }
 
                     let mut doclist = vec![];
@@ -143,14 +152,26 @@ impl RenderThread {
                                 timeout: None,
                             })
                             .unwrap();
-                    }
 
-                    for plugin in &mut self.plugins {
-                        for renderer in &mut self.renderers {
-                            plugin.update_stream_image(
-                                renderer.document().upgrade().unwrap(),
-                                renderer.texture().clone(),
-                            );
+                        let queue = self
+                            .wgpu_resources
+                            .as_ref()
+                            .unwrap()
+                            .lock()
+                            .unwrap()
+                            .queue
+                            .clone();
+
+                        for plugin in &mut self.plugins {
+                            for renderer in &mut self.renderers {
+                                plugin.update_stream_image(
+                                    renderer.document().upgrade().unwrap(),
+                                    self.wgpu_adapter.as_ref().unwrap(),
+                                    self.extended_device.as_ref().unwrap(),
+                                    &queue,
+                                    renderer.texture().clone(),
+                                );
+                            }
                         }
                     }
 

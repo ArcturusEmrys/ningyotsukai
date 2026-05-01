@@ -1,0 +1,18 @@
+[package]
+name = "ningyo-spout2"
+description = "Rust reimplementation of Spout2 because I can't be arsed to figure out how to get autocxx to compile the DX12 support"
+authors = ["Arcturus Emrys <aemrys@arcturus.live>", "Lynn Jarvis <spout.email@gmail.com>"]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+windows-strings = "0.5.1"
+windows-result = "0.4.1"
+ntapi = "0.4.3"
+thiserror="2.0.18"
+bytemuck="1.25.0"
+
+[dependencies.windows]
+version = "0.62.2"
+features = ["Win32_Foundation", "Win32_System_Memory", "Win32_System_Registry"]
