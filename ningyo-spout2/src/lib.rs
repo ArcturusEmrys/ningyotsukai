@@ -1,6 +1,7 @@
 mod error;
 mod name;
 mod registry;
+mod semaphore;
 mod sender;
 mod shm;
 
