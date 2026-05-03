@@ -1,4 +1,5 @@
 mod error;
+mod event;
 mod name;
 mod registry;
 mod semaphore;

@@ -15,4 +15,7 @@ pub enum RegisterError {
 
     #[error("The given object has been abandoned by its prior holder.")]
     Poisoned,
+
+    #[error("The operation could not be completed in time.")]
+    TimedOut,
 }
