@@ -49,13 +49,6 @@ impl ExtendedDevice {
             .unwrap();
         }
 
-        //Turn on the debug layer
-        let mut debug: Option<ID3D12Debug> = None;
-        unsafe {
-            D3D12GetDebugInterface(&mut debug).unwrap();
-            debug.unwrap().EnableDebugLayer();
-        }
-
         Self {
             inner: device,
             d3d11on12_dev: dx11_device.unwrap().cast().unwrap(),
