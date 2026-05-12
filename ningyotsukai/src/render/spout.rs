@@ -107,13 +107,14 @@ impl SinkPlugin for SpoutPlugin {
             },
         );
 
-        if let Some(reg) = &self.registration {
+        if let Some(reg) = &mut self.registration {
             reg.publish_dx11_texture(
                 texture.width(),
                 texture.height(),
                 DXGI_FORMAT_R8G8B8A8_UNORM.0 as u32,
                 share_handle,
-            );
+            )
+            .unwrap();
         }
     }
 }

@@ -130,6 +130,8 @@ impl SenderRegistry {
             active: self.active.clone(),
             data,
             name: cstr_name,
+            event: None,
+            frame_count: None,
         })
     }
 }

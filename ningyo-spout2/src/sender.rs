@@ -1,10 +1,13 @@
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
 
 use windows::Win32::Foundation::HANDLE;
 
+use crate::RegisterError;
+use crate::event::BareEvent;
 use crate::name::SenderName;
 use crate::registry::with_sender_set;
+use crate::semaphore::BareSemaphore;
 use crate::shm::{SharedCell, SharedSliceCell};
 
 #[repr(C)]
@@ -90,16 +93,62 @@ pub struct Registration {
     pub(crate) active: SharedCell<SenderName>,
     pub(crate) data: SharedCell<SharedTextureInfo>,
     pub(crate) name: CString,
+    pub(crate) event: Option<BareEvent>,
+    pub(crate) frame_count: Option<BareSemaphore>,
 }
 
 impl Registration {
-    pub fn publish_dx11_texture(&self, width: u32, height: u32, format: u32, share_handle: HANDLE) {
+    pub fn publish_dx11_texture(
+        &mut self,
+        width: u32,
+        height: u32,
+        format: u32,
+        share_handle: HANDLE,
+    ) -> Result<(), RegisterError> {
         let mut data = self.data.lock().unwrap();
 
         data.width = width;
         data.height = height;
         data.format = format;
         data.set_share_handle(share_handle);
+
+        if let Some(event) = &mut self.event {
+            event.wait(0)?;
+        }
+
+        if let Some(frame_count) = &mut self.frame_count {
+            frame_count.increment()?;
+        }
+
+        Ok(())
+    }
+
+    const EVENT_SUFFIX: &'static CStr = c"_Sync_Event";
+
+    pub fn with_event(mut self) -> Result<Self, RegisterError> {
+        if self.event.is_none() {
+            let mut event_name = self.name.clone().into_bytes();
+            event_name.extend_from_slice(Self::EVENT_SUFFIX.to_bytes_with_nul());
+            let event_name = CString::from_vec_with_nul(event_name).unwrap();
+
+            self.event = Some(BareEvent::create(&event_name)?)
+        }
+
+        Ok(self)
+    }
+
+    const SEMAPHORE_SUFFIX: &'static CStr = c"_Count_Semaphore";
+
+    pub fn with_frame_count(mut self) -> Result<Self, RegisterError> {
+        if self.frame_count.is_none() {
+            let mut count_name = self.name.clone().into_bytes();
+            count_name.extend_from_slice(Self::SEMAPHORE_SUFFIX.to_bytes_with_nul());
+            let count_name = CString::from_vec_with_nul(count_name).unwrap();
+
+            self.frame_count = Some(BareSemaphore::with_name(&count_name)?)
+        }
+
+        Ok(self)
     }
 }
 
