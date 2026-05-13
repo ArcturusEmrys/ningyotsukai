@@ -9,7 +9,7 @@ use windows_strings::PCSTR;
 use crate::error::RegisterError;
 use crate::name::SenderName;
 use crate::sender::Registration;
-use crate::shm::{SharedCell, SharedSliceCell};
+use crate::shm::{SharedCell, SharedSliceCell, SliceLockGuard};
 
 const ACTIVE_SENDER_REGISTRY_NAME: &'static CStr = c"ActiveSenderName";
 
@@ -133,5 +133,49 @@ impl SenderRegistry {
             event: None,
             frame_count: None,
         })
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CStr> {
+        SenderRegistryIterator::new(self.senders.lock().unwrap())
+    }
+}
+
+pub struct SenderRegistryIterator<'a> {
+    _lock_guard: SliceLockGuard<'a, SenderName>,
+    ptr: *const SenderName,
+    end: *const SenderName,
+}
+
+impl<'a> SenderRegistryIterator<'a> {
+    fn new(lock_guard: SliceLockGuard<'a, SenderName>) -> Self {
+        let ptr = lock_guard.as_ptr();
+        //TODO: I'm assuming we will never get a slice with an insane length.
+        let end = unsafe { lock_guard.as_ptr().add(lock_guard.len()) };
+        Self {
+            _lock_guard: lock_guard,
+            ptr,
+            end,
+        }
+    }
+}
+
+impl<'a> Iterator for SenderRegistryIterator<'a> {
+    type Item = &'a CStr;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ptr < self.end {
+            // SAFETY: We just bounds-checked the pointer
+            // SAFETY: The pointer comes from a valid Rust slice
+            // SAFETY: The pointer is valid for as long as we hold the lock
+            // guard
+            let next = unsafe { self.ptr.add(1) };
+            let cur_ref = unsafe { &*self.ptr };
+
+            self.ptr = next;
+
+            Some(cur_ref.as_cstr()?)
+        } else {
+            None
+        }
     }
 }
