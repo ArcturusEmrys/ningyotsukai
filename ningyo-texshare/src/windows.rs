@@ -1,19 +1,21 @@
 use windows::Win32::Foundation::{GENERIC_ALL, HANDLE};
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, ID3D11Device, ID3D11DeviceContext, ID3D11Resource,
+    D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    D3D11_RESOURCE_MISC_SHARED, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11Device,
+    ID3D11DeviceContext, ID3D11Resource, ID3D11Texture1D, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Direct3D11on12::{
     D3D11_RESOURCE_FLAGS, D3D11On12CreateDevice, ID3D11On12Device,
 };
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT, D3D12GetDebugInterface,
-    ID3D12Debug, ID3D12Resource,
+    D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT, ID3D12Resource,
 };
+use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
 use windows::core::Interface;
 
 use wgpu_hal::dx12::Api as Dx12Api;
 
-use crate::dx12::DeviceExt as Dx12DeviceExt;
+use crate::dx12::{DeviceExt as Dx12DeviceExt, map_texture_format};
 use crate::error::Error as OurError;
 use crate::texture::ExportableTexture;
 use crate::wgpu::DeviceExt as WgpuDeviceExt;
@@ -24,6 +26,8 @@ use crate::wgpu::map_texture_usage_for_texture;
 pub struct ExtendedDevice {
     inner: wgpu::Device,
     d3d11on12_dev: ID3D11On12Device,
+    d3d11_dev: ID3D11Device,
+    d3d11_context: ID3D11DeviceContext,
 }
 
 impl ExtendedDevice {
@@ -51,12 +55,26 @@ impl ExtendedDevice {
 
         Self {
             inner: device,
-            d3d11on12_dev: dx11_device.unwrap().cast().unwrap(),
+            d3d11on12_dev: dx11_device.clone().unwrap().cast().unwrap(),
+            d3d11_dev: dx11_device.unwrap(),
+            d3d11_context: dx11_immediate_context.unwrap(),
         }
     }
 
     pub fn device(&self) -> &wgpu::Device {
         &self.inner
+    }
+
+    pub fn d3d11_device(&self) -> ID3D11Device {
+        self.d3d11_dev.clone()
+    }
+
+    pub fn d3d11_context(&self) -> ID3D11DeviceContext {
+        self.d3d11_context.clone()
+    }
+
+    pub fn d3d11on12_device(&self) -> ID3D11On12Device {
+        self.d3d11on12_dev.clone()
     }
 
     pub fn create_texture_exportable(
@@ -99,10 +117,42 @@ impl ExtendedDevice {
                 .create_texture_exportable(adapter, queue, texture)
         }
     }
+
+    pub fn create_dx11_texture(
+        &self,
+        texture: &wgpu::TextureDescriptor<'_>,
+    ) -> Option<ID3D11Texture2D> {
+        let inner_desc = D3D11_TEXTURE2D_DESC {
+            Width: texture.size.width,
+            Height: texture.size.height,
+            MipLevels: texture.mip_level_count,
+            ArraySize: texture.array_layer_count(),
+            Format: map_texture_format(texture.format),
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: texture.sample_count,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+
+            //TODO: What's the bind flags for copying a texture?
+            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32 | D3D11_BIND_RENDER_TARGET.0 as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: D3D11_RESOURCE_MISC_SHARED.0 as u32,
+        };
+
+        let mut texture = None;
+        unsafe {
+            self.d3d11_dev
+                .CreateTexture2D(&inner_desc, None, Some(&mut texture))
+                .unwrap();
+        }
+
+        texture
+    }
 }
 
 /// A texture that has been exported as a D3D12 resource handle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ExportedTexture {
     texture: wgpu::Texture,
 }
@@ -139,6 +189,9 @@ impl ExportedTexture {
 
         // NOTE: I'm told we have to force a resource state transition and this
         // is the easiest way to do that in WGPU.
+        // NOTE: Commented out as wgpu doesn't like the self-copy, and doing so
+        // forces us to have COPY_SRC usages
+        /*
         let mut encoder = device
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -161,7 +214,7 @@ impl ExportedTexture {
             wgpu::Extent3d {
                 width: 0,
                 height: 0,
-                depth_or_array_layers: 1,
+                depth_or_array_layers: 0,
             },
         );
 
@@ -172,7 +225,7 @@ impl ExportedTexture {
                 submission_index: Some(index),
                 timeout: None,
             })
-            .unwrap();
+            .unwrap(); */
 
         let flags11 = D3D11_RESOURCE_FLAGS::default();
         let mut resource11 = None;
@@ -193,9 +246,11 @@ impl ExportedTexture {
         Ok(resource11.unwrap())
     }
 
-    pub fn as_share_handle(&self, device: &ExtendedDevice) -> Result<HANDLE, OurError> {
-        //TODO: We're checking to see if D3D12 resources can be sent directly.
-        //If this doesn't work, try converting with into_id3d12_resource first
+    pub fn as_nt_share_handle(
+        &self,
+        device: &ExtendedDevice,
+        queue: &wgpu::Queue,
+    ) -> Result<HANDLE, OurError> {
         let dx12_hal = unsafe { device.inner.as_hal::<wgpu_hal::api::Dx12>() }.unwrap();
         let dx12_device = dx12_hal.raw_device();
         let d3dresource = self.as_id3d12_resource();

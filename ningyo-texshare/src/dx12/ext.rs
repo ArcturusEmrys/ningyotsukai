@@ -7,8 +7,8 @@ use crate::dx12::conv;
 use crate::error::Error as OurError;
 
 pub trait DeviceExt {
-    /// Create an exportable Vulkan texture with all of the extensions
-    /// necessary to be exported from a Vulkan context.
+    /// Create an exportable texture with all of the extensions necessary to be
+    /// exported from this device's context.
     fn create_texture_exportable(
         &self,
         texture: &TextureDescriptor<'_>,
@@ -91,8 +91,6 @@ impl DeviceExt for Device {
                 &mut resource,
             )?
         }
-
-        eprintln!("I got it");
 
         let resource = resource.ok_or(DeviceError::Unexpected)?;
 
