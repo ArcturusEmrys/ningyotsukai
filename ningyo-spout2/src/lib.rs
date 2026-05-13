@@ -1,6 +1,7 @@
 mod error;
 mod event;
 mod name;
+mod receiver;
 mod registry;
 mod semaphore;
 mod sender;

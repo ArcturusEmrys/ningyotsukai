@@ -8,6 +8,7 @@ use windows_strings::PCSTR;
 
 use crate::error::RegisterError;
 use crate::name::SenderName;
+use crate::receiver::Receiver;
 use crate::sender::Registration;
 use crate::shm::{SharedCell, SharedSliceCell, SliceLockGuard};
 
@@ -135,8 +136,16 @@ impl SenderRegistry {
         })
     }
 
+    pub fn open(&self, name: &CStr) -> Result<Receiver, RegisterError> {
+        Receiver::new(self.senders.clone(), self.active.clone(), name.into())
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &CStr> {
         SenderRegistryIterator::new(self.senders.lock().unwrap())
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.senders.lock().unwrap().len()
     }
 }
 

@@ -34,8 +34,8 @@ pub struct SharedTextureInfo {
     /// and cross-process texture sharing. For the equivalent code in Rust, see
     /// the `ningyo-texshare` crate.
     share_handle: i32,
-    width: u32,
-    height: u32,
+    pub width: u32,
+    pub height: u32,
 
     /// A DirectX 11 format enum value.
     ///
@@ -54,7 +54,7 @@ pub struct SharedTextureInfo {
     ///  * DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
     ///  * DXGI_FORMAT_R16G16B16A16_FLOAT
     ///  * DXGI_FORMAT_R32G32B32A32_FLOAT
-    format: u32,
+    pub format: u32,
 
     /// Unused as per Spout2 source.
     _usage: u32,
@@ -80,6 +80,18 @@ impl SharedTextureInfo {
 
     pub fn set_share_handle(&mut self, handle: HANDLE) {
         self.share_handle = handle.0 as isize as i32;
+    }
+
+    pub fn description(&self) -> Option<&CStr> {
+        self.description.as_cstr()
+    }
+
+    pub fn is_cpu_sharing(&self) -> bool {
+        self.partner_id & 0x80000000 != 0
+    }
+
+    pub fn is_gldx_sharing(&self) -> bool {
+        self.partner_id & 0x40000000 != 0
     }
 }
 
@@ -123,7 +135,7 @@ impl Registration {
         Ok(())
     }
 
-    const EVENT_SUFFIX: &'static CStr = c"_Sync_Event";
+    pub(crate) const EVENT_SUFFIX: &'static CStr = c"_Sync_Event";
 
     pub fn with_event(mut self) -> Result<Self, RegisterError> {
         if self.event.is_none() {
@@ -137,7 +149,7 @@ impl Registration {
         Ok(self)
     }
 
-    const SEMAPHORE_SUFFIX: &'static CStr = c"_Count_Semaphore";
+    pub(crate) const SEMAPHORE_SUFFIX: &'static CStr = c"_Count_Semaphore";
 
     pub fn with_frame_count(mut self) -> Result<Self, RegisterError> {
         if self.frame_count.is_none() {
@@ -145,7 +157,7 @@ impl Registration {
             count_name.extend_from_slice(Self::SEMAPHORE_SUFFIX.to_bytes_with_nul());
             let count_name = CString::from_vec_with_nul(count_name).unwrap();
 
-            self.frame_count = Some(BareSemaphore::with_name(&count_name)?)
+            self.frame_count = Some(BareSemaphore::create(&count_name)?)
         }
 
         Ok(self)
