@@ -137,7 +137,9 @@ impl SenderRegistry {
     }
 
     pub fn open(&self, name: &CStr) -> Result<Receiver, RegisterError> {
-        Receiver::new(self.senders.clone(), self.active.clone(), name.into())
+        //TODO: This should check if the name is still in the receiver set and
+        //error out if not
+        Receiver::new(name.into())
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &CStr> {

@@ -100,17 +100,7 @@ pub fn create_image_without_memory(
     desc: &TextureDescriptor,
     tiling: vk::ImageTiling,
     external_memory_image_create_info: Option<&mut vk::ExternalMemoryImageCreateInfo>,
-) -> Result<
-    (
-        vk::Image,
-        vk::MemoryRequirements,
-        vk::Format,
-        vk::ImageType,
-        vk::ImageUsageFlags,
-        vk::ImageCreateFlags,
-    ),
-    OurError,
-> {
+) -> Result<(vk::Image, vk::MemoryRequirements), OurError> {
     let copy_size = desc.copy_extent();
 
     let mut raw_flags = vk::ImageCreateFlags::empty();
@@ -220,12 +210,5 @@ pub fn create_image_without_memory(
         }
     }
 
-    Ok((
-        raw,
-        req,
-        vk_info.format,
-        vk_info.image_type,
-        vk_info.usage,
-        vk_info.flags,
-    ))
+    Ok((raw, req))
 }

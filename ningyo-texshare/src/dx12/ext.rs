@@ -24,7 +24,7 @@ impl DeviceExt for Device {
         // D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS
         // D3D12_HEAP_FLAG_SHARED
 
-        let mut raw_desc = Direct3D12::D3D12_RESOURCE_DESC {
+        let raw_desc = Direct3D12::D3D12_RESOURCE_DESC {
             Dimension: conv::map_texture_dimension(desc.dimension),
             Alignment: 0,
             Width: desc.size.width as u64,

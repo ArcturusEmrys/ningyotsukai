@@ -48,7 +48,7 @@ impl SinkPlugin for SpoutPlugin {
 
     fn update_stream_image(
         &mut self,
-        document: crate::document::Document,
+        _document: crate::document::Document,
         adapter: &wgpu::Adapter,
         device: &ExtendedDevice,
         queue: &wgpu::Queue,
@@ -84,7 +84,7 @@ impl SinkPlugin for SpoutPlugin {
                 self.d3d12_buffer_texture
                     .as_ref()
                     .unwrap()
-                    .as_d3d_resource(device.device())
+                    .as_d3d_resource()
                     .unwrap()
                     .into_d3d11_resource(device, queue)
                     .unwrap(),

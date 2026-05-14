@@ -1,29 +1,21 @@
 use std::ffi::CString;
 
 use crate::event::BareEvent;
-use crate::name::SenderName;
 use crate::semaphore::BareSemaphore;
 use crate::sender::SharedTextureInfo;
-use crate::shm::{SharedCell, SharedSliceCell};
+use crate::shm::SharedCell;
 use crate::{RegisterError, Registration};
 
 /// An object that represents a connection to an existing Spout2 sender in
 /// another process.
 pub struct Receiver {
-    senders: SharedSliceCell<SenderName>,
-    active: SharedCell<SenderName>,
     data: SharedCell<SharedTextureInfo>,
-    name: CString,
     event: Option<BareEvent>,
     frame_count: Option<BareSemaphore>,
 }
 
 impl Receiver {
-    pub fn new(
-        senders: SharedSliceCell<SenderName>,
-        active: SharedCell<SenderName>,
-        name: CString,
-    ) -> Result<Self, RegisterError> {
+    pub fn new(name: CString) -> Result<Self, RegisterError> {
         let data = SharedCell::open(&name)?;
 
         let mut event_name = name.clone().into_bytes();
@@ -38,10 +30,7 @@ impl Receiver {
         let frame_count = BareSemaphore::open(&count_name_utf).ok();
 
         Ok(Self {
-            senders,
-            active,
             data,
-            name,
             event,
             frame_count,
         })

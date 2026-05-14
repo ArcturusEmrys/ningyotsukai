@@ -1,6 +1,4 @@
 use crate::error::Error as OurError;
-use crate::vulkan::conv;
-use crate::vulkan::ext;
 use crate::vulkan::image;
 use ash::vk;
 use std::ptr::null;
@@ -96,6 +94,7 @@ impl DeviceExt for Device {
         texture: &TextureDescriptor<'_>,
     ) -> Result<(Texture, vk::MemoryRequirements, vk::SubresourceLayout), OurError> {
         let mut handle_types = vk::ExternalMemoryHandleTypeFlags::default();
+        #[allow(unused_mut)]
         let mut tiling = vk::ImageTiling::OPTIMAL;
 
         #[cfg(target_os = "linux")]
@@ -113,13 +112,12 @@ impl DeviceExt for Device {
         let external_memory_image_create_info =
             vk::ExternalMemoryImageCreateInfo::default().handle_types(handle_types);
 
-        let (image, mem_req, format, image_type, usage_flags, create_flags) =
-            image::create_image_without_memory(
-                self,
-                texture,
-                tiling,
-                Some(&mut external_memory_image_create_info.clone()),
-            )?;
+        let (image, mem_req) = image::create_image_without_memory(
+            self,
+            texture,
+            tiling,
+            Some(&mut external_memory_image_create_info.clone()),
+        )?;
 
         #[cfg(feature = "chatty_debug")]
         {

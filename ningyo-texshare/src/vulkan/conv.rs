@@ -1,9 +1,8 @@
 //! A bunch of conversion functions I copy-pasted from wgpu_hal::vulkan::conv
 
-use crate::error::Error as OurError;
 use ash::vk;
+use wgpu_hal::CopyExtent;
 use wgpu_hal::vulkan::Device;
-use wgpu_hal::{CopyExtent, DeviceError};
 
 // TODO: check all these map_functions for every major wgpu version
 

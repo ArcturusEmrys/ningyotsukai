@@ -7,30 +7,19 @@ use gdk4_win32::ffi;
 use glib::translate::{ToGlibPtr, from_glib_full};
 use ningyo_texshare::ExportableTexture;
 
-use windows::Win32::Graphics::Direct3D12::ID3D12Resource;
-
 unsafe extern "C" fn ng_gtk_wgpu_into_gdk_texture_destroy(data: glib::ffi::gpointer) {
     let _ = unsafe { Box::from_raw(data as *mut ExportableTexture) };
-}
-
-fn get_d3d_texture(
-    me: &ExportableTexture,
-    device: &wgpu::Device,
-) -> Result<ID3D12Resource, Box<dyn std::error::Error>> {
-    let d3d_tex = me.as_d3d_resource(device)?;
-    let d3d_resource = d3d_tex.as_id3d12_resource();
-
-    Ok(d3d_resource)
 }
 
 impl TryIntoGdkTexture for ExportableTexture {
     fn into_gdk_texture(
         self,
-        device: &wgpu::Device,
+        _device: &wgpu::Device,
         _display: &gdk4::Display,
         old_texture: Option<gdk4::Texture>,
     ) -> Result<gdk4::Texture, Box<dyn std::error::Error>> {
-        let d3d_resource = get_d3d_texture(&self, device)?;
+        let d3d_tex = self.as_d3d_resource()?;
+        let d3d_resource = d3d_tex.as_id3d12_resource();
         let builder = D3D12TextureBuilder::new();
 
         unsafe {

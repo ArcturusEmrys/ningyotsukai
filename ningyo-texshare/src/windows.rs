@@ -2,7 +2,7 @@ use windows::Win32::Foundation::{GENERIC_ALL, HANDLE};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_RENDER_TARGET, D3D11_BIND_SHADER_RESOURCE, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
     D3D11_RESOURCE_MISC_SHARED, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, ID3D11Device,
-    ID3D11DeviceContext, ID3D11Resource, ID3D11Texture1D, ID3D11Texture2D,
+    ID3D11DeviceContext, ID3D11Resource, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Direct3D11on12::{
     D3D11_RESOURCE_FLAGS, D3D11On12CreateDevice, ID3D11On12Device,
@@ -183,49 +183,9 @@ impl ExportedTexture {
     pub fn into_d3d11_resource(
         self,
         device: &ExtendedDevice,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
     ) -> Result<ID3D11Resource, OurError> {
         let resource = self.as_id3d12_resource();
-
-        // NOTE: I'm told we have to force a resource state transition and this
-        // is the easiest way to do that in WGPU.
-        // NOTE: Commented out as wgpu doesn't like the self-copy, and doing so
-        // forces us to have COPY_SRC usages
-        /*
-        let mut encoder = device
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Bogus copy to force D3D12 state transition for D3D11 resource"),
-            });
-
-        encoder.copy_texture_to_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::Extent3d {
-                width: 0,
-                height: 0,
-                depth_or_array_layers: 0,
-            },
-        );
-
-        let index = queue.submit(std::iter::once(encoder.finish()));
-        device
-            .device()
-            .poll(wgpu::PollType::Wait {
-                submission_index: Some(index),
-                timeout: None,
-            })
-            .unwrap(); */
 
         let flags11 = D3D11_RESOURCE_FLAGS::default();
         let mut resource11 = None;
@@ -246,11 +206,7 @@ impl ExportedTexture {
         Ok(resource11.unwrap())
     }
 
-    pub fn as_nt_share_handle(
-        &self,
-        device: &ExtendedDevice,
-        queue: &wgpu::Queue,
-    ) -> Result<HANDLE, OurError> {
+    pub fn as_nt_share_handle(&self, device: &ExtendedDevice) -> Result<HANDLE, OurError> {
         let dx12_hal = unsafe { device.inner.as_hal::<wgpu_hal::api::Dx12>() }.unwrap();
         let dx12_device = dx12_hal.raw_device();
         let d3dresource = self.as_id3d12_resource();
