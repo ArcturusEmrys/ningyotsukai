@@ -148,6 +148,16 @@ impl WidgetImpl for WgpuAreaImp {
                         height: self.obj().height() as u32 * self.obj().scale_factor() as u32,
                         depth_or_array_layers: 1,
                     };
+
+                    let format = if cfg!(target_os = "windows") {
+                        // NOTE: This specifically matches GDK requirements.
+                        // If this is not BGRA8, GDK-Win32 does CPU-side
+                        // texture conversions!!
+                        wgpu::TextureFormat::Bgra8Unorm
+                    } else {
+                        wgpu::TextureFormat::Rgba8Unorm
+                    };
+
                     let backing_texture = device
                         .create_texture_exportable(
                             adapter,
@@ -157,11 +167,7 @@ impl WidgetImpl for WgpuAreaImp {
                                 mip_level_count: 1,
                                 sample_count: 1,
                                 dimension: wgpu::TextureDimension::D2,
-
-                                //NOTE: Selected to match GDK's requirements.
-                                //If this is not BGRA8, GDK will do a CPU side
-                                //texture conversion!!
-                                format: wgpu::TextureFormat::Bgra8Unorm,
+                                format,
                                 usage: self.obj().preferred_texture_usages()
                                     | wgpu::TextureUsages::COPY_DST,
                                 label: Some("NGWgpuArea backing texture"),
@@ -174,10 +180,7 @@ impl WidgetImpl for WgpuAreaImp {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
-
-                        //NOTE: Likewise, this needs to match the backing
-                        //texture or the copy fails
-                        format: wgpu::TextureFormat::Bgra8Unorm,
+                        format,
                         usage: self.obj().preferred_texture_usages()
                             | wgpu::TextureUsages::COPY_SRC,
                         label: Some("NGWgpuArea buffer texture"),

@@ -88,7 +88,7 @@ impl AdapterExt for Adapter {
         };
 
         #[cfg(target_os = "linux")]
-        return Ok((device, queue));
+        return Ok((ExtendedDevice::wrap(device), queue));
 
         #[cfg(target_os = "windows")]
         return Ok((ExtendedDevice::wrap(device), queue));

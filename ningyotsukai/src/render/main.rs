@@ -84,7 +84,7 @@ impl RenderThread {
                         self.plugins
                             .push(crate::render::pipewire::PipewirePlugin::new(
                                 adapter,
-                                resources.device.clone(),
+                                self.extended_device.clone().unwrap(),
                                 resources.queue.clone(),
                             ));
                     }

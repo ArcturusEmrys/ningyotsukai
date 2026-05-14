@@ -8,7 +8,10 @@ pub mod linux;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+#[cfg(target_os = "windows")]
 pub mod dx12;
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 pub mod vulkan;
 
 pub use error::Error;

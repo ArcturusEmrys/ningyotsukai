@@ -260,7 +260,7 @@ struct PipewireThreadInner {
     streams: HashMap<Document, PipewireStream>,
     sender: Sender<PipewireResponse>,
     adapter: wgpu::Adapter,
-    device: wgpu::Device,
+    device: ExtendedDevice,
     queue: wgpu::Queue,
 }
 
@@ -269,7 +269,7 @@ impl PipewireThread {
         receiver: Receiver<PipewireMessage>,
         sender: Sender<PipewireResponse>,
         adapter: wgpu::Adapter,
-        device: wgpu::Device,
+        device: ExtendedDevice,
         queue: wgpu::Queue,
     ) {
         let mainloop = MainLoopRc::new(None).expect("Pipewire Mainloop");
@@ -345,11 +345,13 @@ impl PipewireThread {
             )
             .unwrap();
 
-        let mut encoder = state
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Pipewire internal buffer clear"),
-            });
+        let mut encoder =
+            state
+                .device
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Pipewire internal buffer clear"),
+                });
 
         let view = texture.texture().create_view(&wgpu::TextureViewDescriptor {
             label: Some("Annoying view descriptor for internal clear pass"),
@@ -386,7 +388,7 @@ impl PipewireThread {
             row_stride = datasize / size.y as u64;
         }
 
-        let dmabuf = texture.as_dmabuf(&state.device).unwrap();
+        let dmabuf = texture.as_dmabuf(state.device.device()).unwrap();
         let modifier = dmabuf.modifier();
         let (texture, fd) = dmabuf.into_fd();
 
@@ -529,7 +531,7 @@ impl PipewireThread {
                     }
                 } else { //Assume MemPtr
                     if stream.copy_buffer.is_none() {
-                        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                        let buffer = device.device().create_buffer(&wgpu::BufferDescriptor {
                             label: Some("Pipewire SHM Download Buffer"),
                             size: download_row_stride * size.y as u64,
                             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
@@ -577,7 +579,7 @@ impl PipewireThread {
                 let data = unsafe { &mut *(*spa_buffer).datas };
 
                 if let Some(last_tex) = stream_data.last_tex.take() {
-                    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    let mut encoder = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("Pipewire Texture Copy")
                     });
 
@@ -621,7 +623,7 @@ impl PipewireThread {
                     }
 
                     let index = queue.submit(std::iter::once(encoder.finish()));
-                    device.poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None }).unwrap();
+                    device.device().poll(wgpu::PollType::Wait { submission_index: Some(index), timeout: None }).unwrap();
 
                     if data.type_ == sys::SPA_DATA_DmaBuf {
                         unsafe {
@@ -639,7 +641,7 @@ impl PipewireThread {
                         let buffer = stream_data.copy_buffer.as_ref().unwrap();
 
                         buffer.map_async(wgpu::MapMode::Read, .., |_| {});
-                        device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+                        device.device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
                         let view = buffer.get_mapped_range(..);
                         let cpu_stride = size.x as usize * 4;
@@ -705,14 +707,7 @@ impl PipewireThread {
         );
     }
 
-    fn update_stream_image(
-        &self,
-        document: Document,
-        adapter: &wgpu::Adapter,
-        device: &ExtendedDevice,
-        queue: &wgpu::Queue,
-        texture: wgpu::Texture,
-    ) {
+    fn update_stream_image(&self, document: Document, texture: wgpu::Texture) {
         let mut state = self.0.borrow_mut();
         let stream = state.streams.get_mut(&document);
 
@@ -745,7 +740,14 @@ impl SinkPlugin for PipewirePlugin {
             .unwrap_or_else(|_| panic!("Poisoned"));
     }
 
-    fn update_stream_image(&mut self, document: Document, texture: wgpu::Texture) {
+    fn update_stream_image(
+        &mut self,
+        document: Document,
+        adapter: &wgpu::Adapter,
+        device: &ExtendedDevice,
+        queue: &wgpu::Queue,
+        texture: wgpu::Texture,
+    ) {
         self.msg_send
             .send(PipewireMessage::UpdateStreamImage { document, texture })
             .unwrap_or_else(|_| panic!("Poisoned"));
@@ -756,7 +758,7 @@ impl PipewirePlugin {
     /// Spawn a Pipewire thread.
     pub fn new(
         adapter: wgpu::Adapter,
-        device: wgpu::Device,
+        device: ExtendedDevice,
         queue: wgpu::Queue,
     ) -> Box<dyn SinkPlugin> {
         let (msg_send, msg_recv) = channel();
