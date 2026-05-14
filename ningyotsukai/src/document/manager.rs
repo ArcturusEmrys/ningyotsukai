@@ -30,6 +30,12 @@ impl DocumentManager {
         })))
     }
 
+    fn clear_messages(&mut self) {
+        let state = &mut *self.0.borrow_mut();
+
+        while let Ok(e) = state.recv.try_recv() {}
+    }
+
     pub fn register_document(&mut self, document: Document) {
         let state = &mut *self.0.borrow_mut();
 
@@ -79,6 +85,8 @@ impl DocumentManager {
     }
 
     pub fn update(&mut self, dt: f32) {
+        self.clear_messages();
+
         let state = &mut *self.0.borrow_mut();
         let mut garbage = vec![];
 
@@ -90,6 +98,6 @@ impl DocumentManager {
             }
         }
 
-        state.send.send(RenderMessage::DidFrameUpdate(()));
+        state.send.send(RenderMessage::DidFrameUpdate(())).unwrap();
     }
 }
