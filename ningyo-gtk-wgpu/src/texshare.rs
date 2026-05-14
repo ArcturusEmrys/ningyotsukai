@@ -9,5 +9,6 @@ pub trait TryIntoGdkTexture {
         self,
         device: &wgpu::Device,
         display: &gdk4::Display,
+        old_texture: Option<gdk4::Texture>,
     ) -> Result<gdk4::Texture, Box<dyn std::error::Error>>;
 }

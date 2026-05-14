@@ -28,6 +28,7 @@ impl TryIntoGdkTexture for ExportableTexture {
         self,
         device: &wgpu::Device,
         _display: &gdk4::Display,
+        old_texture: Option<gdk4::Texture>,
     ) -> Result<gdk4::Texture, Box<dyn std::error::Error>> {
         let d3d_resource = get_d3d_texture(&self, device)?;
         let builder = D3D12TextureBuilder::new();
@@ -41,6 +42,15 @@ impl TryIntoGdkTexture for ExportableTexture {
 
         let boxed_self = Box::into_raw(Box::new(self));
         let mut error = null_mut();
+
+        if let Some(old_texture) = old_texture {
+            unsafe {
+                ffi::gdk_d3d12_texture_builder_set_update_texture(
+                    ToGlibPtr::to_glib_none(&builder).0,
+                    ToGlibPtr::to_glib_none(&old_texture).0,
+                );
+            }
+        }
 
         let maybe_builder = unsafe {
             ffi::gdk_d3d12_texture_builder_build(

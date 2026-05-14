@@ -6,6 +6,7 @@ impl TryIntoGdkTexture for ExportableTexture {
         self,
         device: &wgpu::Device,
         _display: &gdk4::Display,
+        _old_texture: Option<gdk4::Texture>,
     ) -> Result<gdk4::Texture, Box<dyn std::error::Error>> {
         let dmabuf =
             ningyo_texshare::linux::ExportedTexture::export_to_dmabuf(&device, &self).unwrap();

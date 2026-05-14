@@ -185,21 +185,6 @@ impl WidgetImpl for WgpuAreaImp {
                 self.obj()
                     .emit_resize(self.wgpu_texture.borrow().as_ref().unwrap().0.clone());
                 self.state.borrow_mut().needs_resize = false;
-
-                let texture = self
-                    .wgpu_texture
-                    .borrow()
-                    .as_ref()
-                    .unwrap()
-                    .1
-                    .clone()
-                    .into_gdk_texture(
-                        &self.wgpu_device.borrow().as_ref().unwrap().device(),
-                        &self.obj().display(),
-                    )
-                    .expect("working gdk4 import");
-
-                *self.texture.borrow_mut() = Some(texture);
             }
 
             // TODO: Add option to disable the implicit clear.
@@ -293,6 +278,23 @@ impl WidgetImpl for WgpuAreaImp {
                     })
                     .unwrap();
             }
+
+            let old_texture = self.texture.borrow().clone();
+            let texture = self
+                .wgpu_texture
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .1
+                .clone()
+                .into_gdk_texture(
+                    &self.wgpu_device.borrow().as_ref().unwrap().device(),
+                    &self.obj().display(),
+                    old_texture,
+                )
+                .expect("working gdk4 import");
+
+            *self.texture.borrow_mut() = Some(texture);
         }
 
         if let Some(ref texture) = *self.texture.borrow() {
