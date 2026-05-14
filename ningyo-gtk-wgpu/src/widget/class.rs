@@ -157,7 +157,11 @@ impl WidgetImpl for WgpuAreaImp {
                                 mip_level_count: 1,
                                 sample_count: 1,
                                 dimension: wgpu::TextureDimension::D2,
-                                format: wgpu::TextureFormat::Rgba8Unorm, //TODO: can I also make this pluggable?
+
+                                //NOTE: Selected to match GDK's requirements.
+                                //If this is not BGRA8, GDK will do a CPU side
+                                //texture conversion!!
+                                format: wgpu::TextureFormat::Bgra8Unorm,
                                 usage: self.obj().preferred_texture_usages()
                                     | wgpu::TextureUsages::COPY_DST,
                                 label: Some("NGWgpuArea backing texture"),
@@ -170,7 +174,10 @@ impl WidgetImpl for WgpuAreaImp {
                         mip_level_count: 1,
                         sample_count: 1,
                         dimension: wgpu::TextureDimension::D2,
-                        format: wgpu::TextureFormat::Rgba8Unorm, //TODO: can I also make this pluggable?
+
+                        //NOTE: Likewise, this needs to match the backing
+                        //texture or the copy fails
+                        format: wgpu::TextureFormat::Bgra8Unorm,
                         usage: self.obj().preferred_texture_usages()
                             | wgpu::TextureUsages::COPY_SRC,
                         label: Some("NGWgpuArea buffer texture"),
