@@ -136,7 +136,17 @@ impl WgpuAreaImpl for StageRendererImp {
 
             //TODO: Can I get native window handles out of GTK?
             if doc.is_some() {
-                doc.as_mut().unwrap().start_frame_capture(null(), null());
+                let device = resources.as_ref().unwrap().lock().unwrap().device.clone();
+                if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() } {
+                    use windows::core::Interface;
+
+                    let dx12_context = dx12_device.raw_device();
+                    doc.as_mut()
+                        .unwrap()
+                        .start_frame_capture(dx12_context.as_raw(), null());
+                } else {
+                    doc.as_mut().unwrap().start_frame_capture(null(), null());
+                }
             }
         }
 
@@ -170,11 +180,30 @@ impl WgpuAreaImpl for StageRendererImp {
             let mut state = self.state.borrow_mut();
 
             if state.doc.is_some() {
-                state
-                    .doc
-                    .as_mut()
+                let device = state
+                    .resources
+                    .as_ref()
                     .unwrap()
-                    .end_frame_capture(null(), null());
+                    .lock()
+                    .unwrap()
+                    .device
+                    .clone();
+                if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() } {
+                    use windows::core::Interface;
+
+                    let dx12_context = dx12_device.raw_device();
+                    state
+                        .doc
+                        .as_mut()
+                        .unwrap()
+                        .end_frame_capture(dx12_context.as_raw(), null());
+                } else {
+                    state
+                        .doc
+                        .as_mut()
+                        .unwrap()
+                        .end_frame_capture(null(), null());
+                }
             }
         }
 
