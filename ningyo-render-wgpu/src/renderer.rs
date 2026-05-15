@@ -570,9 +570,11 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     &self.device,
                     albedo.view(),
                     &self.render.uploads.model_sampler,
-                    &uni_in_frag,
+                    uni_in_frag.as_entire_buffer_binding(),
                 );
-                let vert_binding = resources.part_shader_vert.bind(&self.device, &uni_in_vert);
+                let vert_binding = resources
+                    .part_shader_vert
+                    .bind(&self.device, uni_in_vert.as_entire_buffer_binding());
                 let pipeline = resources.part_mask_pipeline.with_configuration(
                     &self.device,
                     [color_attachments[0]
@@ -616,9 +618,11 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     bumpmap.view(),
                     emissive.view(),
                     &self.render.uploads.model_sampler,
-                    &uni_in_frag,
+                    uni_in_frag.as_entire_buffer_binding(),
                 );
-                let vert_binding = resources.part_shader_vert.bind(&self.device, &uni_in_vert);
+                let vert_binding = resources
+                    .part_shader_vert
+                    .bind(&self.device, uni_in_vert.as_entire_buffer_binding());
 
                 let pipeline = if self.is_in_mask {
                     resources.part_pipeline.with_configuration(
@@ -779,7 +783,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     composite.emissive().view(),
                     composite.bump().view(),
                     &self.render.uploads.model_sampler,
-                    &uni_in_frag,
+                    uni_in_frag.as_entire_buffer_binding(),
                 );
                 let vert_binding = resources.composite_shader_vert.bind(&self.device);
 

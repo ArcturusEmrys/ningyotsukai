@@ -415,11 +415,17 @@ fn gen_shader_bind(
     entrypoint: &ReflectEntryPoint,
 ) -> Result<(), Box<dyn Error>> {
     let mut bind_params = String::new();
+    let mut has_lifetime_parameter = false;
     for descriptor_set in &entrypoint.descriptor_sets {
         for binding in &descriptor_set.bindings {
             match binding.descriptor_type {
                 ReflectDescriptorType::UniformBuffer => {
-                    write!(&mut bind_params, ", {}: &wgpu::Buffer", binding.name)?;
+                    has_lifetime_parameter = true;
+                    write!(
+                        &mut bind_params,
+                        ", {}: impl Into<wgpu::BufferBinding<'a>>",
+                        binding.name
+                    )?;
                 }
 
                 ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
@@ -447,7 +453,8 @@ fn gen_shader_bind(
 
     writeln!(
         out,
-        "    pub fn bind(&self, device: &wgpu::Device{}) -> wgpu::BindGroup {{",
+        "    pub fn bind{}(&self, device: &wgpu::Device{}) -> wgpu::BindGroup {{",
+        if has_lifetime_parameter { "<'a>" } else { "" },
         bind_params
     )?;
     writeln!(
@@ -479,7 +486,7 @@ fn gen_shader_bind(
                 ReflectDescriptorType::UniformBuffer => {
                     writeln!(
                         out,
-                        "                    resource: {}.as_entire_binding()",
+                        "                    resource: wgpu::BindingResource::Buffer({}.into())",
                         binding.name
                     )?;
                 }
