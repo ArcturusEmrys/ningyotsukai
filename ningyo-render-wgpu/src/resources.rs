@@ -3,13 +3,17 @@
 //! This type enables having multiple renderers share resources such as shaders,
 //! and pipelines.
 
+use glam::Vec2;
 use wgpu;
+use wgpu::util::DeviceExt;
 
 use crate::error::WgpuRendererError;
 use crate::pipeline;
 use crate::shaders::basic::{
     basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_mask_frag, composite_vert,
 };
+use crate::shaders::{mipmap_gen_frag, mipmap_gen_vert};
+use crate::uploads::cast_vec2;
 
 /// WGPU resources that are invariant to the current puppet being rendered.
 ///
@@ -21,6 +25,14 @@ use crate::shaders::basic::{
 pub struct WgpuResources {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+
+    pub(crate) model_sampler: wgpu::Sampler,
+
+    pub(crate) mipmap_gen_vert: mipmap_gen_vert::Shader,
+    pub(crate) mipmap_gen_frag: mipmap_gen_frag::Shader,
+    pub(crate) mipmap_gen_triangles: wgpu::Buffer,
+    pub(crate) mipmap_gen_pipeline:
+        pipeline::PipelineGroup<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader>,
 
     pub(crate) part_shader_vert: basic_vert::Shader,
     pub(crate) part_shader_frag: basic_frag::Shader,
@@ -149,6 +161,33 @@ impl WgpuResources {
             composite_shader_mask_frag.clone(),
         );
 
+        let mipmap_gen_vert = mipmap_gen_vert::Shader::new(&device);
+        let mipmap_gen_frag = mipmap_gen_frag::Shader::new(&device);
+        let mipmap_gen_triangles = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mipmap Generator Quad"),
+            usage: wgpu::BufferUsages::VERTEX,
+            contents: cast_vec2(&[
+                Vec2::new(-1.0, -1.0),
+                Vec2::new(1.0, -1.0),
+                Vec2::new(-1.0, 1.0),
+                Vec2::new(-1.0, 1.0),
+                Vec2::new(1.0, -1.0),
+                Vec2::new(1.0, 1.0),
+            ]),
+        });
+        let mipmap_gen_pipeline =
+            pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), mipmap_gen_frag.clone());
+
+        let model_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToBorder,
+            address_mode_v: wgpu::AddressMode::ClampToBorder,
+            address_mode_w: wgpu::AddressMode::ClampToBorder,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            ..Default::default()
+        });
+
         // Flush all pending work.
         // In wgpu, texture uploads etc will only execute at submit time
         queue.submit([]);
@@ -156,6 +195,11 @@ impl WgpuResources {
         WgpuResources {
             device,
             queue,
+            model_sampler,
+            mipmap_gen_vert,
+            mipmap_gen_frag,
+            mipmap_gen_triangles,
+            mipmap_gen_pipeline,
             part_shader_vert,
             part_shader_frag,
             part_shader_mask_frag,

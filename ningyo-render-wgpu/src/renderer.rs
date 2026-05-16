@@ -162,10 +162,8 @@ impl<'window> WgpuRenderer<'window> {
         resources_arc: Arc<Mutex<WgpuResources>>,
         model: &Model,
     ) -> Result<Self, WgpuRendererError> {
-        let resources = resources_arc.lock().unwrap();
-        let device = &resources.device;
-        let queue = &resources.queue;
-        let uploads = WgpuUploads::new(model, device, queue)?;
+        let mut resources = resources_arc.lock().unwrap();
+        let uploads = WgpuUploads::new(model, &mut *resources)?;
         drop(resources);
 
         Ok(WgpuRenderer {
@@ -762,7 +760,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                 let frag_binding = resources.part_shader_mask_frag.bind(
                     &self.device,
                     albedo.view(),
-                    &self.render.uploads.model_sampler,
+                    &resources.model_sampler,
                     uni_in_frag,
                 );
                 let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
@@ -811,7 +809,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     albedo.view(),
                     bumpmap.view(),
                     emissive.view(),
-                    &self.render.uploads.model_sampler,
+                    &resources.model_sampler,
                     uni_in_frag,
                 );
                 let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
@@ -969,7 +967,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     composite.albedo().view(),
                     composite.emissive().view(),
                     composite.bump().view(),
-                    &self.render.uploads.model_sampler,
+                    &resources.model_sampler,
                     uni_in_frag,
                 );
                 let vert_binding = resources.composite_shader_vert.bind(&self.device);

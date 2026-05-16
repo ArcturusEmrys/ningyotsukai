@@ -1,5 +1,5 @@
-use crate::error::WgpuRendererError;
 use crate::texture::DeviceTexture;
+use crate::{WgpuResources, error::WgpuRendererError};
 use inox2d::model::Model;
 use inox2d::texture::decode_model_textures;
 
@@ -37,15 +37,10 @@ pub struct WgpuUploads {
     pub(crate) indices: wgpu::Buffer,
 
     pub(crate) model_textures: Vec<DeviceTexture>,
-    pub(crate) model_sampler: wgpu::Sampler,
 }
 
 impl WgpuUploads {
-    pub fn new(
-        model: &Model,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-    ) -> Result<Self, WgpuRendererError> {
+    pub fn new(model: &Model, resources: &mut WgpuResources) -> Result<Self, WgpuRendererError> {
         let inox_buffers = model
             .puppet
             .render_ctx
@@ -53,7 +48,7 @@ impl WgpuUploads {
             .ok_or(WgpuRendererError::ModelRenderingNotInitialized)?;
 
         //TODO: Change inox2d upstream to use a bytemuck-able array
-        let verts = device.create_buffer_init(&BufferInitDescriptor {
+        let verts = resources.device.create_buffer_init(&BufferInitDescriptor {
             label: Some(&format!(
                 "Inox2D {}::Verts",
                 model
@@ -66,7 +61,7 @@ impl WgpuUploads {
             contents: cast_vec2(inox_buffers.vertex_buffers.verts.as_slice()),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
-        let uvs = device.create_buffer_init(&BufferInitDescriptor {
+        let uvs = resources.device.create_buffer_init(&BufferInitDescriptor {
             label: Some(&format!(
                 "Inox2D {}::UVs",
                 model
@@ -79,7 +74,7 @@ impl WgpuUploads {
             contents: cast_vec2(inox_buffers.vertex_buffers.uvs.as_slice()),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
-        let deforms = device.create_buffer_init(&BufferInitDescriptor {
+        let deforms = resources.device.create_buffer_init(&BufferInitDescriptor {
             label: Some(&format!(
                 "Inox2D {}::Deforms",
                 model
@@ -92,7 +87,7 @@ impl WgpuUploads {
             contents: cast_vec2(inox_buffers.vertex_buffers.deforms.as_slice()),
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
-        let indices = device.create_buffer_init(&BufferInitDescriptor {
+        let indices = resources.device.create_buffer_init(&BufferInitDescriptor {
             label: Some(&format!(
                 "Inox2D {}::Indices",
                 model
@@ -110,18 +105,9 @@ impl WgpuUploads {
         let mut texture_handles = vec![];
         for (index, texture) in decoded_textures.iter().enumerate() {
             texture_handles.push(DeviceTexture::new_from_model(
-                &device, &queue, model, index, texture,
+                resources, model, index, texture,
             ));
         }
-
-        let model_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::ClampToBorder,
-            address_mode_v: wgpu::AddressMode::ClampToBorder,
-            address_mode_w: wgpu::AddressMode::ClampToBorder,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
 
         Ok(WgpuUploads {
             verts,
@@ -129,7 +115,6 @@ impl WgpuUploads {
             deforms,
             indices,
             model_textures: texture_handles,
-            model_sampler,
         })
     }
 }
