@@ -30,17 +30,25 @@ pub trait FragmentShader: Shader {
     ) -> wgpu::FragmentState<'a>;
 }
 
-pub trait UniformBlock<const SIZE: usize> {
-    fn write_buffer(&self, out: &mut [u8; SIZE]);
+/// Stupid workaround for the fact that Rust STILL doesn't support Default on
+/// large array types
+pub trait DefaultArray {
+    fn new() -> Self;
+}
 
-    fn into_buffer(&self, device: &wgpu::Device) -> wgpu::Buffer {
-        let mut contents = [0; SIZE];
-        self.write_buffer(&mut contents);
-
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&format!("{}::into_buffer", type_name::<Self>())), //TODO: Can we get a type name in here?
-            contents: &contents,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        })
+impl<const N: usize> DefaultArray for [u8; N] {
+    fn new() -> Self {
+        [0; N]
     }
+}
+
+pub trait UniformBlock {
+    type Buffer: DefaultArray
+        + AsRef<[u8]>
+        + AsMut<[u8]>
+        + for<'a> TryFrom<&'a [u8]>
+        + for<'a> TryFrom<&'a mut [u8]>
+        + std::fmt::Debug;
+
+    fn write_buffer(&self, out: &mut Self::Buffer);
 }

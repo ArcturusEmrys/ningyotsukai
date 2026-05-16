@@ -1,3 +1,4 @@
+mod buffer_builder;
 mod error;
 mod pipeline;
 mod renderer;

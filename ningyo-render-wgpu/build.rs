@@ -127,9 +127,10 @@ fn describe_block_struct(
 
     writeln!(
         out,
-        "impl shader::UniformBlock<{}> for {} {{",
-        blockvar.size, typevar.type_name
+        "impl shader::UniformBlock for {} {{",
+        typevar.type_name
     )?;
+    writeln!(out, "    type Buffer = [u8; {}];", blockvar.size)?;
     writeln!(
         out,
         "    fn write_buffer(&self, out: &mut [u8; {}]) {{",

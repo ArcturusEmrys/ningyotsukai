@@ -2,13 +2,19 @@ use glam::Mat4;
 use glam::UVec2;
 use inox2d::math::camera::Camera;
 use inox2d::model::Model;
-use inox2d::node::{InoxNodeUuid, components, drawables}; //hey wait a second that's just a u32 newtype! UUIDs are four of those!
+use inox2d::node::drawables::DrawableKind;
+use inox2d::node::{InoxNodeUuid, components, drawables};
+use inox2d::render::CompositeRenderCtx;
+//hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession, InoxRenderer};
 use ningyo_extensions::CurrentSurfaceTextureExt;
+use std::collections::BTreeMap;
 use std::error::Error;
+use std::num::NonZero;
 use std::sync::{Arc, Mutex};
 use wgpu;
 
+use crate::buffer_builder::BufferBuilder;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
 use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
@@ -18,6 +24,27 @@ use std::collections::HashMap;
 use crate::error::WgpuRendererError;
 use crate::resources::WgpuResources;
 use crate::uploads::WgpuUploads;
+
+/// Buffer offsets for all four of our main shaders.
+///
+/// Whenever a node is prepassed, we set all of the relevant buffer offsets
+/// here. There is one of this struct for each node in the puppet.
+#[derive(Default)]
+pub struct BufferIndices {
+    pub(crate) basic_vert: Option<usize>,
+    pub(crate) basic_frag: Option<usize>,
+    pub(crate) basic_mask_frag: Option<usize>,
+    pub(crate) composite_frag: Option<usize>,
+}
+
+impl BufferIndices {
+    pub fn clear(&mut self) {
+        self.basic_vert = None;
+        self.basic_frag = None;
+        self.basic_mask_frag = None;
+        self.composite_frag = None;
+    }
+}
 
 pub struct WgpuRenderer<'window> {
     surface: Option<(wgpu::Surface<'window>, wgpu::SurfaceConfiguration)>,
@@ -33,6 +60,21 @@ pub struct WgpuRenderer<'window> {
     /// Where to draw the puppet relative to the current target surface or
     /// texture.
     pub camera: Camera,
+
+    /// Builder for basic part vertex uniforms
+    builder_basic_vert: BufferBuilder<basic_vert::Input>,
+
+    /// Builder for basic part frag uniforms
+    builder_basic_frag: BufferBuilder<basic_frag::Input>,
+
+    /// Builder for basic mask frag uniforms
+    builder_basic_mask_frag: BufferBuilder<basic_mask_frag::Input>,
+
+    /// Builder for composite frag uniforms
+    builder_composite_frag: BufferBuilder<composite_frag::Input>,
+
+    /// An index into the buffers for each node.
+    buffer_indices: BTreeMap<u32, BufferIndices>,
 
     uploads: WgpuUploads,
     resources: Arc<Mutex<WgpuResources>>,
@@ -135,6 +177,11 @@ impl<'window> WgpuRenderer<'window> {
             render_targets: None,
             uploads,
             resources: resources_arc,
+            builder_basic_frag: BufferBuilder::new(wgpu::Limits::default()),
+            builder_basic_mask_frag: BufferBuilder::new(wgpu::Limits::default()),
+            builder_basic_vert: BufferBuilder::new(wgpu::Limits::default()),
+            builder_composite_frag: BufferBuilder::new(wgpu::Limits::default()),
+            buffer_indices: Default::default(),
         })
     }
 
@@ -354,7 +401,7 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
 
         let device = self.resources.lock().unwrap().device.clone();
 
-        Ok(WgpuDrawSession {
+        let mut session = WgpuDrawSession {
             render: self,
             device,
             encoder,
@@ -365,7 +412,15 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
             is_in_mask: false,
             is_in_composite: false,
             stencil_reference_value: 1,
-        })
+            basic_vert_buffer: None,
+            basic_frag_buffer: None,
+            basic_mask_frag_buffer: None,
+            composite_frag_buffer: None,
+        };
+
+        session.buffer_prepass(puppet);
+
+        Ok(session)
     }
 }
 
@@ -387,6 +442,18 @@ pub struct WgpuDrawSession<'a, 'window> {
 
     /// All of the node names (for debugging purposes).
     node_names: HashMap<InoxNodeUuid, String>,
+
+    /// The currently active set of vert shader uniforms.
+    basic_vert_buffer: Option<wgpu::Buffer>,
+
+    /// The currently active set of frag shader uniforms (for non-mask usage)
+    basic_frag_buffer: Option<wgpu::Buffer>,
+
+    /// The currently active set of frag shader uniforms (for mask usage)
+    basic_mask_frag_buffer: Option<wgpu::Buffer>,
+
+    /// The currently active set of composite deferred pass uniforms
+    composite_frag_buffer: Option<wgpu::Buffer>,
 
     last_mask_threshold: f32,
     is_in_mask: bool,
@@ -437,6 +504,122 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
         wgpu::BlendState {
             color: component,
             alpha: component,
+        }
+    }
+
+    /// Fill our uniform buffers with all the data we will need during
+    /// rendering.
+    ///
+    /// This prepass is necessary as individual per-frame buffer uploads can
+    /// occupy up to 3ms of render time (tested on Arcturus Emrys himself)
+    fn buffer_prepass(&mut self, puppet: &inox2d::puppet::Puppet) {
+        for (_, indices) in self.render.buffer_indices.iter_mut() {
+            indices.clear();
+        }
+
+        for uuid in puppet
+            .render_ctx
+            .as_ref()
+            .expect("RenderCtx of puppet must be initialized before calling draw().")
+            .root_drawables_zsorted()
+            .iter()
+        {
+            self.buffer_prepass_drawable(puppet, *uuid, false);
+        }
+
+        self.basic_vert_buffer = Some(self.render.builder_basic_vert.commit(&self.device));
+        self.basic_frag_buffer = Some(self.render.builder_basic_frag.commit(&self.device));
+        self.basic_mask_frag_buffer =
+            Some(self.render.builder_basic_mask_frag.commit(&self.device));
+        self.composite_frag_buffer = Some(self.render.builder_composite_frag.commit(&self.device));
+    }
+
+    fn buffer_prepass_drawable(
+        &mut self,
+        puppet: &inox2d::puppet::Puppet,
+        uuid: InoxNodeUuid,
+        render_mask: bool,
+    ) {
+        let comps = puppet.world();
+        let drawable = DrawableKind::new(uuid, comps, false);
+
+        let masks = match &drawable {
+            Some(DrawableKind::Composite(components)) => &components.drawable.masks,
+            Some(DrawableKind::TexturedMesh(components)) => &components.drawable.masks,
+            None => &None,
+        };
+
+        if let Some(masks) = masks {
+            self.last_mask_threshold = masks.threshold;
+            for mask in &masks.masks {
+                self.buffer_prepass_drawable(puppet, mask.source, true);
+            }
+        }
+
+        if matches!(drawable, Some(DrawableKind::Composite(_))) {
+            let render_ctx = comps.get::<CompositeRenderCtx>(uuid).unwrap();
+
+            for child_uuid in &render_ctx.zsorted_children_list {
+                self.buffer_prepass_drawable(puppet, *child_uuid, false);
+            }
+        }
+
+        let index = self.render.buffer_indices.entry(uuid.into()).or_default();
+
+        match &drawable {
+            Some(DrawableKind::Composite(components)) => {
+                if index.composite_frag.is_none() {
+                    index.composite_frag = Some(
+                        self.render
+                            .builder_composite_frag
+                            .insert(composite_frag::Input {
+                                opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
+                                multColor: components
+                                    .drawable
+                                    .blending
+                                    .tint
+                                    .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                                    .into(),
+                                screenColor: components
+                                    .drawable
+                                    .blending
+                                    .screen_tint
+                                    .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                                    .into(),
+                            }),
+                    );
+                }
+            }
+            Some(DrawableKind::TexturedMesh(components)) => {
+                if index.basic_vert.is_none() {
+                    index.basic_vert =
+                        Some(self.render.builder_basic_vert.insert(basic_vert::Input {
+                            mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
+                            offset: [0.0; 2],
+                        }));
+                }
+
+                if render_mask {
+                    if index.basic_mask_frag.is_none() {
+                        index.basic_mask_frag = Some(self.render.builder_basic_mask_frag.insert(
+                            basic_mask_frag::Input {
+                                threshold: self.last_mask_threshold,
+                            },
+                        ));
+                    }
+                } else {
+                    if index.basic_frag.is_none() {
+                        index.basic_frag =
+                            Some(self.render.builder_basic_frag.insert(basic_frag::Input {
+                                opacity: components.drawable.blending.opacity,
+                                multColor: components.drawable.blending.tint.into(),
+                                screenColor: components.drawable.blending.screen_tint.into(),
+                                emissionStrength: 1.0, //NOTE: OpenGL never sets this.
+                            }));
+                    }
+                }
+            }
+            None => {}
         }
     }
 }
@@ -534,12 +717,16 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
             let (albedo, bumpmap, emissive) = self.render.textures_for_part(components.texture);
             let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
 
-            //TODO: set blend mode
-            let uni_in_vert = basic_vert::Input {
-                mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
-                offset: [0.0; 2],
-            }
-            .into_buffer(&self.render.resources.lock().unwrap().device);
+            let index = self.render.buffer_indices.get(&id.into()).unwrap();
+
+            let uni_in_vert = wgpu::BufferBinding {
+                buffer: self.basic_vert_buffer.as_ref().unwrap(),
+                offset: index.basic_vert.unwrap() as u64,
+                size: Some(
+                    NonZero::new(size_of::<<basic_vert::Input as UniformBlock>::Buffer>() as u64)
+                        .unwrap(),
+                ),
+            };
 
             render_pass.set_vertex_buffer(
                 basic_vert::INPUT_INDEX_VERTS,
@@ -562,19 +749,23 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
             if render_mask {
                 let mask_depthstencil = resources.mask_depthstencil.clone();
                 //TODO: What happens if a mask is also masked?
-                let uni_in_frag = basic_mask_frag::Input {
-                    threshold: self.last_mask_threshold,
-                }
-                .into_buffer(&self.device);
+                let uni_in_frag = wgpu::BufferBinding {
+                    buffer: self.basic_mask_frag_buffer.as_ref().unwrap(),
+                    offset: index.basic_mask_frag.unwrap() as u64,
+                    size: Some(
+                        NonZero::new(
+                            size_of::<<basic_mask_frag::Input as UniformBlock>::Buffer>() as u64,
+                        )
+                        .unwrap(),
+                    ),
+                };
                 let frag_binding = resources.part_shader_mask_frag.bind(
                     &self.device,
                     albedo.view(),
                     &self.render.uploads.model_sampler,
-                    uni_in_frag.as_entire_buffer_binding(),
+                    uni_in_frag,
                 );
-                let vert_binding = resources
-                    .part_shader_vert
-                    .bind(&self.device, uni_in_vert.as_entire_buffer_binding());
+                let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
                 let pipeline = resources.part_mask_pipeline.with_configuration(
                     &self.device,
                     [color_attachments[0]
@@ -605,24 +796,25 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                         .map(|ca| ca.view.texture().format()),
                 ];
 
-                let uni_in_frag = basic_frag::Input {
-                    opacity: components.drawable.blending.opacity,
-                    multColor: components.drawable.blending.tint.into(),
-                    screenColor: components.drawable.blending.screen_tint.into(),
-                    emissionStrength: 1.0, //NOTE: OpenGL never sets this.
-                }
-                .into_buffer(&self.device);
+                let uni_in_frag = wgpu::BufferBinding {
+                    buffer: self.basic_frag_buffer.as_ref().unwrap(),
+                    offset: index.basic_frag.unwrap() as u64,
+                    size: Some(
+                        NonZero::new(
+                            size_of::<<basic_frag::Input as UniformBlock>::Buffer>() as u64
+                        )
+                        .unwrap(),
+                    ),
+                };
                 let frag_binding = resources.part_shader_frag.bind(
                     &self.device,
                     albedo.view(),
                     bumpmap.view(),
                     emissive.view(),
                     &self.render.uploads.model_sampler,
-                    uni_in_frag.as_entire_buffer_binding(),
+                    uni_in_frag,
                 );
-                let vert_binding = resources
-                    .part_shader_vert
-                    .bind(&self.device, uni_in_vert.as_entire_buffer_binding());
+                let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
 
                 let pipeline = if self.is_in_mask {
                     resources.part_pipeline.with_configuration(
@@ -761,29 +953,24 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     None,
                 ];
 
-                let uni_in_frag = composite_frag::Input {
-                    opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
-                    multColor: components
-                        .drawable
-                        .blending
-                        .tint
-                        .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-                        .into(),
-                    screenColor: components
-                        .drawable
-                        .blending
-                        .screen_tint
-                        .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-                        .into(),
-                }
-                .into_buffer(&self.device);
+                let index = self.render.buffer_indices.get(&id.into()).unwrap();
+                let uni_in_frag = wgpu::BufferBinding {
+                    buffer: self.composite_frag_buffer.as_ref().unwrap(),
+                    offset: index.composite_frag.unwrap() as u64,
+                    size: Some(
+                        NonZero::new(
+                            size_of::<<composite_frag::Input as UniformBlock>::Buffer>() as u64
+                        )
+                        .unwrap(),
+                    ),
+                };
                 let frag_binding = resources.composite_shader_frag.bind(
                     &self.device,
                     composite.albedo().view(),
                     composite.emissive().view(),
                     composite.bump().view(),
                     &self.render.uploads.model_sampler,
-                    uni_in_frag.as_entire_buffer_binding(),
+                    uni_in_frag,
                 );
                 let vert_binding = resources.composite_shader_vert.bind(&self.device);
 
