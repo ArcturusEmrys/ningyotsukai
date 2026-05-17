@@ -8,7 +8,6 @@ use inox2d::render::CompositeRenderCtx;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession, InoxRenderer};
 use ningyo_extensions::CurrentSurfaceTextureExt;
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::num::NonZero;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -74,7 +73,7 @@ pub struct WgpuRenderer<'window> {
     builder_composite_frag: BufferBuilder<composite_frag::Input>,
 
     /// An index into the buffers for each node.
-    buffer_indices: BTreeMap<u32, BufferIndices>,
+    buffer_indices: HashMap<u32, BufferIndices>,
 
     uploads: WgpuUploads,
     resources: Arc<Mutex<WgpuResources>>,
@@ -431,7 +430,7 @@ pub struct WgpuDrawSession<'a> {
     /// are used for a deferred shading pass.
     render_targets: &'a mut Option<(GBuffer, DepthStencilTexture)>,
 
-    buffer_indices: &'a mut BTreeMap<u32, BufferIndices>,
+    buffer_indices: &'a mut HashMap<u32, BufferIndices>,
     builder_basic_vert: &'a mut BufferBuilder<basic_vert::Input>,
     builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
     builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
