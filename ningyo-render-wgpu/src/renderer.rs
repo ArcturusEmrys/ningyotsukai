@@ -11,7 +11,7 @@ use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::num::NonZero;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use wgpu;
 
 use crate::buffer_builder::BufferBuilder;
@@ -259,17 +259,6 @@ impl<'window> WgpuRenderer<'window> {
         self.resize(width, height)
     }
 
-    fn textures_for_part(
-        &self,
-        part: &components::TexturedMesh,
-    ) -> (&DeviceTexture, &DeviceTexture, &DeviceTexture) {
-        (
-            &self.uploads.model_textures[part.tex_albedo.raw()],
-            &self.uploads.model_textures[part.tex_bumpmap.raw()],
-            &self.uploads.model_textures[part.tex_emissive.raw()],
-        )
-    }
-
     /// Convenience method for presenting the rendered surface.
     ///
     /// Does nothing if this renderer is not directly rendering to a surface.
@@ -336,7 +325,7 @@ impl<'window> WgpuRenderer<'window> {
 
 impl<'window> InoxRenderer for WgpuRenderer<'window> {
     type Draw<'a>
-        = WgpuDrawSession<'a, 'window>
+        = WgpuDrawSession<'a>
     where
         Self: 'a;
 
@@ -348,10 +337,9 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
             panic!("Buffer is not yet set up.");
         }
 
-        let encoder = self
-            .resources
-            .lock()
-            .unwrap()
+        let resources = self.resources.lock().unwrap();
+
+        let encoder = resources
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Inox2DWGPU"),
@@ -397,10 +385,17 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
             .collect::<HashMap<_, _>>();
         let viewmatrix = self.camera.matrix(viewport.as_vec2());
 
-        let device = self.resources.lock().unwrap().device.clone();
+        let device = resources.device.clone();
 
         let mut session = WgpuDrawSession {
-            render: self,
+            resources,
+            uploads: &self.uploads,
+            render_targets: &mut self.render_targets,
+            buffer_indices: &mut self.buffer_indices,
+            builder_basic_vert: &mut self.builder_basic_vert,
+            builder_basic_frag: &mut self.builder_basic_frag,
+            builder_basic_mask_frag: &mut self.builder_basic_mask_frag,
+            builder_composite_frag: &mut self.builder_composite_frag,
             device,
             encoder,
             view,
@@ -422,9 +417,28 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
     }
 }
 
-pub struct WgpuDrawSession<'a, 'window> {
-    /// The renderer that owns this draw session.
-    render: &'a mut WgpuRenderer<'window>,
+pub struct WgpuDrawSession<'a> {
+    /// The rendering resources for this draw session.
+    ///
+    /// We keep the resources locked throughout the draw session to avoid
+    /// contention between multiple renderers.
+    resources: MutexGuard<'a, WgpuResources>,
+
+    /// The uploads for the particular model that we will be drawing.
+    uploads: &'a WgpuUploads,
+
+    /// All textures used as render targets, excluding the surface color
+    /// buffer.
+    ///
+    /// GBuffer is used solely for composite rendering, where rendered pixels
+    /// are used for a deferred shading pass.
+    render_targets: &'a mut Option<(GBuffer, DepthStencilTexture)>,
+
+    buffer_indices: &'a mut BTreeMap<u32, BufferIndices>,
+    builder_basic_vert: &'a mut BufferBuilder<basic_vert::Input>,
+    builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
+    builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
+    builder_composite_frag: &'a mut BufferBuilder<composite_frag::Input>,
 
     /// Local clone of the device (to avoid overlapping borrows.)
     device: wgpu::Device,
@@ -459,7 +473,18 @@ pub struct WgpuDrawSession<'a, 'window> {
     stencil_reference_value: u32,
 }
 
-impl<'a, 'window> WgpuDrawSession<'a, 'window> {
+impl<'a> WgpuDrawSession<'a> {
+    fn textures_for_part(
+        &self,
+        part: &components::TexturedMesh,
+    ) -> (&DeviceTexture, &DeviceTexture, &DeviceTexture) {
+        (
+            &self.uploads.model_textures[part.tex_albedo.raw()],
+            &self.uploads.model_textures[part.tex_bumpmap.raw()],
+            &self.uploads.model_textures[part.tex_emissive.raw()],
+        )
+    }
+
     fn blend_mode_to_state(state: components::BlendMode) -> wgpu::BlendState {
         let component = match state {
             components::BlendMode::Normal => wgpu::BlendComponent {
@@ -511,7 +536,7 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
     /// This prepass is necessary as individual per-frame buffer uploads can
     /// occupy up to 3ms of render time (tested on Arcturus Emrys himself)
     fn buffer_prepass(&mut self, puppet: &inox2d::puppet::Puppet) {
-        for (_, indices) in self.render.buffer_indices.iter_mut() {
+        for (_, indices) in self.buffer_indices.iter_mut() {
             indices.clear();
         }
 
@@ -525,11 +550,10 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             self.buffer_prepass_drawable(puppet, *uuid, false);
         }
 
-        self.basic_vert_buffer = Some(self.render.builder_basic_vert.commit(&self.device));
-        self.basic_frag_buffer = Some(self.render.builder_basic_frag.commit(&self.device));
-        self.basic_mask_frag_buffer =
-            Some(self.render.builder_basic_mask_frag.commit(&self.device));
-        self.composite_frag_buffer = Some(self.render.builder_composite_frag.commit(&self.device));
+        self.basic_vert_buffer = Some(self.builder_basic_vert.commit(&self.device));
+        self.basic_frag_buffer = Some(self.builder_basic_frag.commit(&self.device));
+        self.basic_mask_frag_buffer = Some(self.builder_basic_mask_frag.commit(&self.device));
+        self.composite_frag_buffer = Some(self.builder_composite_frag.commit(&self.device));
     }
 
     fn buffer_prepass_drawable(
@@ -562,53 +586,49 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             }
         }
 
-        let index = self.render.buffer_indices.entry(uuid.into()).or_default();
+        let index = self.buffer_indices.entry(uuid.into()).or_default();
 
         match &drawable {
             Some(DrawableKind::Composite(components)) => {
                 if index.composite_frag.is_none() {
                     index.composite_frag = Some(
-                        self.render
-                            .builder_composite_frag
-                            .insert(composite_frag::Input {
-                                opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
-                                multColor: components
-                                    .drawable
-                                    .blending
-                                    .tint
-                                    .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-                                    .into(),
-                                screenColor: components
-                                    .drawable
-                                    .blending
-                                    .screen_tint
-                                    .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
-                                    .into(),
-                            }),
+                        self.builder_composite_frag.insert(composite_frag::Input {
+                            opacity: components.drawable.blending.opacity.clamp(0.0, 1.0),
+                            multColor: components
+                                .drawable
+                                .blending
+                                .tint
+                                .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                                .into(),
+                            screenColor: components
+                                .drawable
+                                .blending
+                                .screen_tint
+                                .clamp(glam::Vec3::ZERO, glam::Vec3::ONE)
+                                .into(),
+                        }),
                     );
                 }
             }
             Some(DrawableKind::TexturedMesh(components)) => {
                 if index.basic_vert.is_none() {
-                    index.basic_vert =
-                        Some(self.render.builder_basic_vert.insert(basic_vert::Input {
-                            mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
-                            offset: [0.0; 2],
-                        }));
+                    index.basic_vert = Some(self.builder_basic_vert.insert(basic_vert::Input {
+                        mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
+                        offset: [0.0; 2],
+                    }));
                 }
 
                 if render_mask {
                     if index.basic_mask_frag.is_none() {
-                        index.basic_mask_frag = Some(self.render.builder_basic_mask_frag.insert(
-                            basic_mask_frag::Input {
+                        index.basic_mask_frag =
+                            Some(self.builder_basic_mask_frag.insert(basic_mask_frag::Input {
                                 threshold: self.last_mask_threshold,
-                            },
-                        ));
+                            }));
                     }
                 } else {
                     if index.basic_frag.is_none() {
                         index.basic_frag =
-                            Some(self.render.builder_basic_frag.insert(basic_frag::Input {
+                            Some(self.builder_basic_frag.insert(basic_frag::Input {
                                 opacity: components.drawable.blending.opacity,
                                 multColor: components.drawable.blending.tint.into(),
                                 screenColor: components.drawable.blending.screen_tint.into(),
@@ -622,12 +642,12 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
     }
 }
 
-impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
+impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
     fn on_begin_masks(&mut self, masks: &components::Masks) {
         self.last_mask_threshold = masks.threshold.clamp(0.0, 1.0);
         //TODO: Enable stencilling on the render target.
 
-        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+        if let Some((composite, surface_stencil)) = self.render_targets.as_ref() {
             composite.stencil().clear(&mut self.encoder);
             surface_stencil.clear(&mut self.encoder);
         }
@@ -652,7 +672,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
         render_ctx: &render::TexturedMeshRenderCtx,
         id: InoxNodeUuid,
     ) {
-        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+        if let Some((composite, surface_stencil)) = self.render_targets.as_ref() {
             let gbuffer_color = composite.as_color_attachments();
             let surface_color_view = &self.view;
             let surface_color_attach = Some(wgpu::RenderPassColorAttachment {
@@ -697,6 +717,9 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
             //TODO: Do we even want blending on in Normal mode?
             let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
 
+            let (albedo, bumpmap, emissive) = self.textures_for_part(components.texture);
+            let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
+
             let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(&format!(
                     "WgpuRenderer::draw_textured_mesh_content - {}",
@@ -712,10 +735,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                 multiview_mask: None,
             });
 
-            let (albedo, bumpmap, emissive) = self.render.textures_for_part(components.texture);
-            let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
-
-            let index = self.render.buffer_indices.get(&id.into()).unwrap();
+            let index = self.buffer_indices.get(&id.into()).unwrap();
 
             let uni_in_vert = wgpu::BufferBinding {
                 buffer: self.basic_vert_buffer.as_ref().unwrap(),
@@ -726,26 +746,17 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                 ),
             };
 
-            render_pass.set_vertex_buffer(
-                basic_vert::INPUT_INDEX_VERTS,
-                self.render.uploads.verts.slice(..),
-            );
-            render_pass.set_vertex_buffer(
-                basic_vert::INPUT_INDEX_UVS,
-                self.render.uploads.uvs.slice(..),
-            );
+            render_pass
+                .set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.uploads.verts.slice(..));
+            render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.uploads.uvs.slice(..));
             render_pass.set_vertex_buffer(
                 basic_vert::INPUT_INDEX_DEFORM,
-                self.render.uploads.deforms.slice(..),
+                self.uploads.deforms.slice(..),
             );
-            render_pass.set_index_buffer(
-                self.render.uploads.indices.slice(..),
-                wgpu::IndexFormat::Uint32,
-            );
+            render_pass.set_index_buffer(self.uploads.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-            let mut resources = self.render.resources.lock().unwrap();
             if render_mask {
-                let mask_depthstencil = resources.mask_depthstencil.clone();
+                let mask_depthstencil = self.resources.mask_depthstencil.clone();
                 //TODO: What happens if a mask is also masked?
                 let uni_in_frag = wgpu::BufferBinding {
                     buffer: self.basic_mask_frag_buffer.as_ref().unwrap(),
@@ -757,14 +768,17 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                         .unwrap(),
                     ),
                 };
-                let frag_binding = resources.part_shader_mask_frag.bind(
+                let frag_binding = self.resources.part_shader_mask_frag.bind(
                     &self.device,
                     albedo.view(),
-                    &resources.model_sampler,
+                    &self.resources.model_sampler,
                     uni_in_frag,
                 );
-                let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
-                let pipeline = resources.part_mask_pipeline.with_configuration(
+                let vert_binding = self
+                    .resources
+                    .part_shader_vert
+                    .bind(&self.device, uni_in_vert);
+                let pipeline = self.resources.part_mask_pipeline.with_configuration(
                     &self.device,
                     [color_attachments[0]
                         .as_ref()
@@ -779,7 +793,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 
                 render_pass.set_stencil_reference(self.stencil_reference_value);
             } else {
-                let masked_depthstencil = resources.masked_depthstencil.clone();
+                let masked_depthstencil = self.resources.masked_depthstencil.clone();
                 let all = wgpu::ColorWrites::ALL;
                 //Regular parts
                 let formats = [
@@ -804,18 +818,21 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                         .unwrap(),
                     ),
                 };
-                let frag_binding = resources.part_shader_frag.bind(
+                let frag_binding = self.resources.part_shader_frag.bind(
                     &self.device,
                     albedo.view(),
                     bumpmap.view(),
                     emissive.view(),
-                    &resources.model_sampler,
+                    &self.resources.model_sampler,
                     uni_in_frag,
                 );
-                let vert_binding = resources.part_shader_vert.bind(&self.device, uni_in_vert);
+                let vert_binding = self
+                    .resources
+                    .part_shader_vert
+                    .bind(&self.device, uni_in_vert);
 
                 let pipeline = if self.is_in_mask {
-                    resources.part_pipeline.with_configuration(
+                    self.resources.part_pipeline.with_configuration(
                         &self.device,
                         formats,
                         [blend, blend, blend],
@@ -823,7 +840,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                         Some(masked_depthstencil),
                     )
                 } else {
-                    resources.part_pipeline.with_configuration(
+                    self.resources.part_pipeline.with_configuration(
                         &self.device,
                         formats,
                         [blend, blend, blend],
@@ -858,7 +875,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
     ) {
         self.is_in_composite = true;
 
-        if let Some((composite, _surface_stencil)) = self.render.render_targets.as_ref() {
+        if let Some((composite, _surface_stencil)) = self.render_targets.as_ref() {
             composite.clear(&mut self.encoder);
         }
     }
@@ -873,7 +890,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
         assert!(self.is_in_composite);
         self.is_in_composite = false;
 
-        if let Some((composite, surface_stencil)) = self.render.render_targets.as_ref() {
+        if let Some((composite, surface_stencil)) = self.render_targets.as_ref() {
             let surface_color_view = &self.view;
             let depth_stencil_attachment = if render_mask {
                 Some(surface_stencil.as_depth_stencil_attachment_rw())
@@ -914,24 +931,15 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                 multiview_mask: None,
             });
 
-            render_pass.set_vertex_buffer(
-                basic_vert::INPUT_INDEX_VERTS,
-                self.render.uploads.verts.slice(..),
-            );
-            render_pass.set_vertex_buffer(
-                basic_vert::INPUT_INDEX_UVS,
-                self.render.uploads.uvs.slice(..),
-            );
+            render_pass
+                .set_vertex_buffer(basic_vert::INPUT_INDEX_VERTS, self.uploads.verts.slice(..));
+            render_pass.set_vertex_buffer(basic_vert::INPUT_INDEX_UVS, self.uploads.uvs.slice(..));
             render_pass.set_vertex_buffer(
                 basic_vert::INPUT_INDEX_DEFORM,
-                self.render.uploads.deforms.slice(..),
+                self.uploads.deforms.slice(..),
             );
-            render_pass.set_index_buffer(
-                self.render.uploads.indices.slice(..),
-                wgpu::IndexFormat::Uint32,
-            );
+            render_pass.set_index_buffer(self.uploads.indices.slice(..), wgpu::IndexFormat::Uint32);
 
-            let mut resources = self.render.resources.lock().unwrap();
             if render_mask {
                 // LOL, the OpenGL renderer didn't handle the "mask by composite" case.
                 // I may want to see what Inochi2D's D library does.
@@ -939,7 +947,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
             } else {
                 let all = wgpu::ColorWrites::ALL;
                 let depth_stencil = if self.is_in_mask {
-                    Some(resources.masked_depthstencil.clone())
+                    Some(self.resources.masked_depthstencil.clone())
                 } else {
                     None
                 };
@@ -951,7 +959,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                     None,
                 ];
 
-                let index = self.render.buffer_indices.get(&id.into()).unwrap();
+                let index = self.buffer_indices.get(&id.into()).unwrap();
                 let uni_in_frag = wgpu::BufferBinding {
                     buffer: self.composite_frag_buffer.as_ref().unwrap(),
                     offset: index.composite_frag.unwrap() as u64,
@@ -962,17 +970,17 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                         .unwrap(),
                     ),
                 };
-                let frag_binding = resources.composite_shader_frag.bind(
+                let frag_binding = self.resources.composite_shader_frag.bind(
                     &self.device,
                     composite.albedo().view(),
                     composite.emissive().view(),
                     composite.bump().view(),
-                    &resources.model_sampler,
+                    &self.resources.model_sampler,
                     uni_in_frag,
                 );
-                let vert_binding = resources.composite_shader_vert.bind(&self.device);
+                let vert_binding = self.resources.composite_shader_vert.bind(&self.device);
 
-                let pipeline = resources.composite_pipeline.with_configuration(
+                let pipeline = self.resources.composite_pipeline.with_configuration(
                     &self.device,
                     formats,
                     [blend, blend, blend],
@@ -990,11 +998,6 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
 
     fn on_end_draw(self, _puppet: &inox2d::puppet::Puppet) {
         let end = self.encoder.finish();
-        self.render
-            .resources
-            .lock()
-            .unwrap()
-            .queue
-            .submit(std::iter::once(end));
+        self.resources.queue.submit(std::iter::once(end));
     }
 }
