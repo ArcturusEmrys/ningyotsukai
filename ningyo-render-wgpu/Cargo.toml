@@ -29,5 +29,7 @@ tracy = [
     "dep:tracy-client",
     "wgpu-profiler/tracy",
     "tracy-client/enable",
-    "tracy-client/callstack-inlines"
+    "tracy-client/callstack-inlines",
+    "tracy-client/sampling",
+    "tracy-client/system-tracing"
 ]

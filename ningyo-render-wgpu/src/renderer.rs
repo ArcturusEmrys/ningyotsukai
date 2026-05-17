@@ -72,6 +72,18 @@ pub struct WgpuRenderer<'window> {
 
     pub(crate) uploads: WgpuUploads,
     pub(crate) resources: Arc<Mutex<WgpuResources>>,
+
+    /// The device to render to.
+    ///
+    /// Must match the device in WgpuResources (this is a cache to avoid lock
+    /// contention)
+    device: wgpu::Device,
+
+    /// The queue to render to.
+    ///
+    /// Must match the device in WgpuResources (this is a cache to avoid lock
+    /// contention)
+    queue: wgpu::Queue,
 }
 
 impl<'window> WgpuRenderer<'window> {
@@ -157,6 +169,9 @@ impl<'window> WgpuRenderer<'window> {
         model: &Model,
     ) -> Result<Self, WgpuRendererError> {
         let mut resources = resources_arc.lock().unwrap();
+        let device = resources.device.clone();
+        let queue = resources.queue.clone();
+
         let uploads = WgpuUploads::new(model, &mut *resources)?;
         drop(resources);
 
@@ -174,6 +189,9 @@ impl<'window> WgpuRenderer<'window> {
             builder_basic_vert: BufferBuilder::new(wgpu::Limits::default()),
             builder_composite_frag: BufferBuilder::new(wgpu::Limits::default()),
             buffer_indices: Default::default(),
+
+            device,
+            queue,
         })
     }
 
@@ -187,25 +205,23 @@ impl<'window> WgpuRenderer<'window> {
     /// function. Instead, call `resize_with_texture`.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
-            let resources = self.resources.lock().unwrap();
-            let mut encoder =
-                resources
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Inox2D texture resizes"),
-                    });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Inox2D texture resizes"),
+                });
 
             if let Some((surface, config)) = &mut self.surface {
                 config.width = width;
                 config.height = height;
-                surface.configure(&resources.device, config);
+                surface.configure(&self.device, config);
             } else if self.target.0.is_none() {
                 panic!("Render target texture must have been set before resize!!!")
             }
 
             self.render_targets = Some((
                 GBuffer::new(
-                    &resources.device,
+                    &self.device,
                     &mut encoder,
                     width,
                     height,
@@ -215,7 +231,7 @@ impl<'window> WgpuRenderer<'window> {
                     wgpu::TextureFormat::Depth24PlusStencil8,
                 ),
                 DepthStencilTexture::empty_render_target(
-                    &resources.device,
+                    &self.device,
                     &mut encoder,
                     width,
                     height,
@@ -223,7 +239,7 @@ impl<'window> WgpuRenderer<'window> {
                 ),
             ));
 
-            resources.queue.submit(std::iter::once(encoder.finish()));
+            self.queue.submit(std::iter::once(encoder.finish()));
             Ok(())
         } else {
             Err(WgpuRendererError::SizeCannotBeZero)
@@ -267,13 +283,11 @@ impl<'window> WgpuRenderer<'window> {
 
     /// Convenience method for clearing the target texture or surface.
     pub fn clear(&self) -> Result<(), ningyo_extensions::SurfaceError> {
-        let resources = self.resources.lock().unwrap();
-        let mut encoder =
-            resources
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("WGPURenderer::clear"),
-                });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("WGPURenderer::clear"),
+            });
 
         match (&self.surface, &self.target) {
             (Some((surface, _)), (None, _)) => {
@@ -296,13 +310,13 @@ impl<'window> WgpuRenderer<'window> {
             _ => {}
         }
 
-        resources.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
     }
 
     pub fn device(&self) -> wgpu::Device {
-        self.resources.lock().unwrap().device.clone()
+        self.device.clone()
     }
 
     pub fn target_texture(&self) -> Option<wgpu::Texture> {
