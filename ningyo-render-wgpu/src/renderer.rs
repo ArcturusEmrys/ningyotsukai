@@ -48,7 +48,7 @@ impl BufferIndices {
 
 pub struct WgpuRenderer<'window> {
     surface: Option<(wgpu::Surface<'window>, wgpu::SurfaceConfiguration)>,
-    target: Arc<Mutex<(Option<DeviceTexture>, UVec2)>>,
+    target: (Option<DeviceTexture>, UVec2),
 
     /// All textures used as render targets, excluding the surface color
     /// buffer.
@@ -170,7 +170,7 @@ impl<'window> WgpuRenderer<'window> {
             surface: None,
 
             // The 640x480 size is a placeholder, we're waiting for a resize.
-            target: Arc::new(Mutex::new((None, UVec2::new(640, 480)))),
+            target: (None, UVec2::new(640, 480)),
             camera: Camera::default(),
             render_targets: None,
             uploads,
@@ -205,7 +205,7 @@ impl<'window> WgpuRenderer<'window> {
                 config.width = width;
                 config.height = height;
                 surface.configure(&resources.device, config);
-            } else if self.target.lock().unwrap().0.is_none() {
+            } else if self.target.0.is_none() {
                 panic!("Render target texture must have been set before resize!!!")
             }
 
@@ -250,11 +250,8 @@ impl<'window> WgpuRenderer<'window> {
         let height = target.height();
         let new_target = DeviceTexture::user_render_target(target)?;
 
-        {
-            let mut target = self.target.lock().unwrap();
-            target.1 = UVec2::new(new_target.texture().width(), new_target.texture().height());
-            target.0 = Some(new_target);
-        }
+        self.target.1 = UVec2::new(new_target.texture().width(), new_target.texture().height());
+        self.target.0 = Some(new_target);
 
         self.resize(width, height)
     }
@@ -284,7 +281,7 @@ impl<'window> WgpuRenderer<'window> {
                     label: Some("WGPURenderer::clear"),
                 });
 
-        match (&self.surface, &*self.target.lock().unwrap()) {
+        match (&self.surface, &self.target) {
             (Some((surface, _)), (None, _)) => {
                 encoder.clear_texture(
                     &surface
@@ -315,7 +312,7 @@ impl<'window> WgpuRenderer<'window> {
     }
 
     pub fn target_texture(&self) -> Option<wgpu::Texture> {
-        if let (Some(targ), _) = &*self.target.lock().unwrap() {
+        if let (Some(targ), _) = &self.target {
             return Some(targ.texture().clone());
         }
 
@@ -370,7 +367,7 @@ impl<'window> InoxRenderer for WgpuRenderer<'window> {
                     .create_view(&wgpu::TextureViewDescriptor::default()),
                 *viewport,
             )
-        } else if let (Some(device_texture), viewport) = &*self.target.lock().unwrap() {
+        } else if let (Some(device_texture), viewport) = &self.target {
             (device_texture.view().clone(), *viewport)
         } else {
             return Err("Please resize the renderer before drawing.".into());
