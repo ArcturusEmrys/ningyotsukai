@@ -77,6 +77,12 @@ pub struct WgpuDrawSession<'a> {
     is_in_mask: bool,
     is_in_composite: bool,
     stencil_reference_value: u32,
+
+    #[cfg(feature = "timing")]
+    start_time: std::time::Instant,
+
+    #[cfg(feature = "timing")]
+    last_segment_time: std::time::Instant,
 }
 
 impl<'a> WgpuDrawSession<'a> {
@@ -84,6 +90,9 @@ impl<'a> WgpuDrawSession<'a> {
         renderer: &'a mut WgpuRenderer<'_>,
         puppet: &inox2d::puppet::Puppet,
     ) -> Result<Self, Box<dyn Error>> {
+        #[cfg(feature = "timing")]
+        let start_time = std::time::Instant::now();
+
         if renderer.render_targets.is_none() {
             panic!("Buffer is not yet set up.");
         }
@@ -160,11 +169,40 @@ impl<'a> WgpuDrawSession<'a> {
             basic_frag_buffer: None,
             basic_mask_frag_buffer: None,
             composite_frag_buffer: None,
+
+            #[cfg(feature = "timing")]
+            last_segment_time: start_time.clone(),
+
+            #[cfg(feature = "timing")]
+            start_time,
         };
 
         session.buffer_prepass(puppet);
 
+        #[cfg(feature = "timing")]
+        {
+            eprintln!(
+                "BEGIN FRAME for {}",
+                puppet.meta.name.as_deref().unwrap_or("")
+            );
+            session.lap("Uniform buffers");
+        }
+
         Ok(session)
+    }
+
+    #[cfg(feature = "timing")]
+    fn lap(&mut self, segment_name: &str) {
+        let cur_segment_time = std::time::Instant::now();
+        let last_segment_dur = cur_segment_time - self.last_segment_time;
+
+        self.last_segment_time = cur_segment_time;
+
+        eprintln!(
+            "  {}: {}ms",
+            segment_name,
+            last_segment_dur.as_micros() as f64 / 1000.0
+        );
     }
 
     fn textures_for_part(
@@ -689,8 +727,30 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         }
     }
 
-    fn on_end_draw(self, _puppet: &inox2d::puppet::Puppet) {
+    fn on_end_draw(mut self, _puppet: &inox2d::puppet::Puppet) {
+        #[cfg(feature = "timing")]
+        self.lap("Drawing");
+
         let end = self.encoder.finish();
         self.resources.queue.submit(std::iter::once(end));
+
+        #[cfg(feature = "timing")]
+        {
+            let end_time = std::time::Instant::now();
+
+            let time_elapsed = end_time - self.start_time;
+            let submission_time = end_time - self.last_segment_time;
+
+            eprintln!(
+                "  Submission: {}ms",
+                submission_time.as_micros() as f64 / 1000.0
+            );
+
+            eprintln!(
+                "{}ms / {} FPS",
+                time_elapsed.as_micros() as f64 / 1000.0,
+                1_000_000.0 / time_elapsed.as_micros() as f64
+            );
+        }
     }
 }
