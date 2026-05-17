@@ -26,6 +26,9 @@ pub struct WgpuResources {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
 
+    #[cfg(feature = "tracy")]
+    pub profiler: wgpu_profiler::GpuProfiler,
+
     pub(crate) model_sampler: wgpu::Sampler,
 
     pub(crate) mipmap_gen_vert: mipmap_gen_vert::Shader,
@@ -61,7 +64,8 @@ impl WgpuResources {
     /// Externally-created devices must have, at minimum, all of the features
     /// listed in this device descriptor.
     pub fn preferred_device_descriptor() -> wgpu::DeviceDescriptor<'static> {
-        wgpu::DeviceDescriptor {
+        #[allow(unused_mut)]
+        let mut dd = wgpu::DeviceDescriptor {
             required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
                 | wgpu::Features::CLEAR_TEXTURE
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
@@ -71,7 +75,14 @@ impl WgpuResources {
                 ..Default::default()
             },
             ..Default::default()
+        };
+
+        #[cfg(feature = "tracy")]
+        {
+            dd.required_features |= wgpu_profiler::GpuProfiler::ALL_WGPU_TIMER_FEATURES;
         }
+
+        dd
     }
 
     /// Obtain a device and queue with the given adapter and load our resources
@@ -89,6 +100,15 @@ impl WgpuResources {
     /// You must ensure that the given device and queue were acquired using the
     /// `preferred_device_descriptor` or a superset of its capabilities.
     pub fn new_with_user_device(device: wgpu::Device, queue: wgpu::Queue) -> Self {
+        #[cfg(feature = "tracy")]
+        let profiler = wgpu_profiler::GpuProfiler::new_with_tracy_client(
+            wgpu_profiler::GpuProfilerSettings::default(),
+            device.adapter_info().backend,
+            &device,
+            &queue,
+        )
+        .unwrap();
+
         // Compile all our shaders now.
         let part_shader_vert = basic_vert::Shader::new(&device);
         let part_shader_frag = basic_frag::Shader::new(&device);
@@ -195,6 +215,10 @@ impl WgpuResources {
         WgpuResources {
             device,
             queue,
+
+            #[cfg(feature = "tracy")]
+            profiler,
+
             model_sampler,
             mipmap_gen_vert,
             mipmap_gen_frag,
@@ -213,5 +237,29 @@ impl WgpuResources {
             composite_pipeline,
             _composite_mask_pipeline: composite_mask_pipeline,
         }
+    }
+
+    /// End the current profiler frame.
+    ///
+    /// This is responsible for cleaning up the profiler frame and is intended
+    /// to be called after all renderers for the frame have run.
+    #[cfg(feature = "tracy")]
+    pub fn end_frame(&mut self) -> Result<(), wgpu_profiler::EndFrameError> {
+        let mut command_encoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("WgpuResources::end_frame"),
+                });
+
+        self.profiler.resolve_queries(&mut command_encoder);
+        self.queue.submit(std::iter::once(command_encoder.finish()));
+
+        self.profiler.end_frame()?;
+
+        let _ = self
+            .profiler
+            .process_finished_frame(self.queue.get_timestamp_period());
+
+        Ok(())
     }
 }

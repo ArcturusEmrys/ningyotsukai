@@ -11,10 +11,12 @@ categories = ["graphics", "rendering"]
 [dependencies]
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "460be0bac4b050bad9a323416ecacfebf5c3b557" }
 glam = "0.29.0"
-wgpu-hal = { version = "28.0.0" }
+wgpu-hal = { version = "29.0.0" }
 wgpu = { version = "29.0.0", features=["spirv"] }
 thiserror = "1.0.39"
 ningyo-extensions = { path="../ningyo-extensions" }
+wgpu-profiler = { version = "0.27.0", optional=true }
+tracy-client = { version = "0.18.4", optional=true }
 
 [build-dependencies]
 shaderc = { version = "0.10", features=["build-from-source"] }
@@ -22,3 +24,10 @@ spirv-reflect = { git = "https://github.com/gwihlidal/spirv-reflect-rs.git", rev
 
 [features]
 timing = []
+tracy = [
+    "dep:wgpu-profiler",
+    "dep:tracy-client",
+    "wgpu-profiler/tracy",
+    "tracy-client/enable",
+    "tracy-client/callstack-inlines"
+]

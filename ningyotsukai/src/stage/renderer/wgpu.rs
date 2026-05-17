@@ -178,6 +178,21 @@ impl WgpuAreaImpl for StageRendererImp {
 
         self.collect_garbage();
 
+        #[cfg(feature = "tracy")]
+        {
+            let state = self.state.borrow_mut();
+            if state.resources.is_some() {
+                state
+                    .resources
+                    .as_ref()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .end_frame()
+                    .unwrap();
+            }
+        }
+
         #[cfg(feature = "renderdoc")]
         {
             use std::ptr::null;

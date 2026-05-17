@@ -40,6 +40,7 @@ libspa-sys = { version = "0.9.2", optional=true }
 drm-fourcc = { version = "2.2.0", optional=true }
 
 ningyo-spout2 = { path = "../ningyo-spout2", optional=true }
+tracy-client = { version = "0.18.4", optional=true }
 
 [target.'cfg(target_os="linux")'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_10"] }
@@ -66,3 +67,8 @@ glib-build-tools = "0.22.0"
 pipewire = ["dep:pipewire", "dep:libspa", "dep:libspa-sys", "dep:drm-fourcc"]
 spout = ["dep:ningyo-spout2"]
 timing = ["ningyo-render-wgpu/timing"]
+tracy = [
+    "ningyo-render-wgpu/tracy",
+    "tracy-client/sampling",
+    "tracy-client/system-tracing"
+]

@@ -14,3 +14,10 @@ members = [
 
 [profile.dev.package.inox2d]
 opt-level = 3
+
+[profile.debug-opt]
+inherits = "release"
+debug = "full"
+strip = "none"
+#debug-assertions = true
+overflow-checks = true

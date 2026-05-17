@@ -83,6 +83,9 @@ pub struct WgpuDrawSession<'a> {
 
     #[cfg(feature = "timing")]
     last_segment_time: std::time::Instant,
+
+    #[cfg(feature = "tracy")]
+    encoder_query: wgpu_profiler::GpuProfilerQuery,
 }
 
 impl<'a> WgpuDrawSession<'a> {
@@ -99,11 +102,18 @@ impl<'a> WgpuDrawSession<'a> {
 
         let resources = renderer.resources.lock().unwrap();
 
-        let encoder = resources
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Inox2DWGPU"),
-            });
+        #[allow(unused_mut)]
+        let mut encoder =
+            resources
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Inox2DWGPU"),
+                });
+
+        #[cfg(feature = "tracy")]
+        let encoder_query = resources
+            .profiler
+            .begin_query("WgpuDrawSession::begin", &mut encoder);
 
         let surface_texture = renderer.surface.as_ref().map(|(surface, config)| {
             (
@@ -175,6 +185,9 @@ impl<'a> WgpuDrawSession<'a> {
 
             #[cfg(feature = "timing")]
             start_time,
+
+            #[cfg(feature = "tracy")]
+            encoder_query,
         };
 
         session.buffer_prepass(puppet);
@@ -730,6 +743,13 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
     fn on_end_draw(mut self, _puppet: &inox2d::puppet::Puppet) {
         #[cfg(feature = "timing")]
         self.lap("Drawing");
+
+        #[cfg(feature = "tracy")]
+        {
+            self.resources
+                .profiler
+                .end_query(&mut self.encoder, self.encoder_query);
+        }
 
         let end = self.encoder.finish();
         self.resources.queue.submit(std::iter::once(end));
