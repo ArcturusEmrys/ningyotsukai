@@ -86,6 +86,7 @@ impl WidgetImpl for StageRendererImp {
                 self.obj().adapter().unwrap(),
                 resources.clone(),
                 self.obj().extended_device().unwrap(),
+                self.obj().queue().unwrap(),
             );
         }
 
@@ -361,6 +362,7 @@ impl StageRenderer {
                 self.adapter().unwrap(),
                 resources.clone(),
                 self.extended_device().unwrap(),
+                self.queue().unwrap(),
             );
         }
 

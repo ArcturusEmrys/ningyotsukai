@@ -71,6 +71,7 @@ impl DocumentManager {
         adapter: wgpu::Adapter,
         resources: Arc<Mutex<WgpuResources>>,
         extended_device: ExtendedDevice,
+        queue: wgpu::Queue,
     ) {
         self.0
             .borrow()
@@ -80,6 +81,7 @@ impl DocumentManager {
                 adapter,
                 resources,
                 extended_device,
+                queue,
             ))
             .unwrap();
     }

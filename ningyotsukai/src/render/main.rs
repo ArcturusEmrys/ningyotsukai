@@ -14,6 +14,7 @@ struct RenderThread {
     wgpu_resources: Option<Arc<Mutex<WgpuResources>>>,
     wgpu_adapter: Option<wgpu::Adapter>,
     extended_device: Option<ExtendedDevice>,
+    wgpu_queue: Option<wgpu::Queue>,
 
     renderers: Vec<OffscreenRender>,
     unregistered_documents: Vec<WeakDocument>,
@@ -39,6 +40,7 @@ impl RenderThread {
             wgpu_resources,
             wgpu_adapter,
             extended_device: None,
+            wgpu_queue: None,
             renderers,
             unregistered_documents,
             plugins,
@@ -70,22 +72,21 @@ impl RenderThread {
     fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
         loop {
             match recv.recv() {
-                Ok(RenderMessage::UseResources(c, adapter, resources, extended_device)) => {
+                Ok(RenderMessage::UseResources(c, adapter, resources, extended_device, queue)) => {
                     self.wgpu_resources = Some(resources);
                     self.wgpu_adapter = Some(adapter);
                     self.extended_device = Some(extended_device);
+                    self.wgpu_queue = Some(queue);
 
                     #[cfg(feature = "pipewire")]
                     {
-                        let resources = self.wgpu_resources.as_ref().unwrap();
-                        let resources = resources.lock().unwrap();
                         let adapter = self.wgpu_adapter.clone().unwrap();
+                        let device = self.extended_device.clone().unwrap();
+                        let queue = self.wgpu_queue.clone().unwrap();
 
                         self.plugins
                             .push(crate::render::pipewire::PipewirePlugin::new(
-                                adapter,
-                                self.extended_device.clone().unwrap(),
-                                resources.queue.clone(),
+                                adapter, device, queue,
                             ));
                     }
 
@@ -142,25 +143,16 @@ impl RenderThread {
                         renderer.render();
                     }
 
-                    if let Some(resources) = self.wgpu_resources.as_ref() {
-                        resources
-                            .lock()
-                            .unwrap()
-                            .device
+                    if let (Some(device), Some(queue)) =
+                        (self.extended_device.as_ref(), self.wgpu_queue.as_ref())
+                    {
+                        device
+                            .device()
                             .poll(wgpu::PollType::Wait {
                                 submission_index: None,
                                 timeout: None,
                             })
                             .unwrap();
-
-                        let queue = self
-                            .wgpu_resources
-                            .as_ref()
-                            .unwrap()
-                            .lock()
-                            .unwrap()
-                            .queue
-                            .clone();
 
                         for plugin in &mut self.plugins {
                             for renderer in &mut self.renderers {
@@ -168,7 +160,7 @@ impl RenderThread {
                                     renderer.document().upgrade().unwrap(),
                                     self.wgpu_adapter.as_ref().unwrap(),
                                     self.extended_device.as_ref().unwrap(),
-                                    &queue,
+                                    queue,
                                     renderer.texture().clone(),
                                 );
                             }

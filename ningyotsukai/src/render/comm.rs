@@ -5,7 +5,13 @@ use ningyo_render_wgpu::WgpuResources;
 use ningyo_texshare::ExtendedDevice;
 
 pub enum RenderMessage<C> {
-    UseResources(C, wgpu::Adapter, Arc<Mutex<WgpuResources>>, ExtendedDevice),
+    UseResources(
+        C,
+        wgpu::Adapter,
+        Arc<Mutex<WgpuResources>>,
+        ExtendedDevice,
+        wgpu::Queue,
+    ),
     RegisterDocument(C, Document),
     DidFrameUpdate(C),
     UnregisterDocument(C, Document),
