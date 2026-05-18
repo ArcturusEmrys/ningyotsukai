@@ -137,7 +137,7 @@ impl WgpuAreaImpl for StageRendererImp {
 
             //TODO: Can I get native window handles out of GTK?
             if doc.is_some() {
-                let device = resources.as_ref().unwrap().lock().unwrap().device.clone();
+                let device = self.obj().device().unwrap();
                 #[cfg(target_os = "windows")]
                 {
                     use windows::core::Interface;
@@ -200,14 +200,7 @@ impl WgpuAreaImpl for StageRendererImp {
             let mut state = self.state.borrow_mut();
 
             if state.doc.is_some() {
-                let device = state
-                    .resources
-                    .as_ref()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .device
-                    .clone();
+                let device = self.obj().device().unwrap();
 
                 #[cfg(target_os = "windows")]
                 {

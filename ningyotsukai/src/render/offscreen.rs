@@ -18,6 +18,10 @@ pub struct OffscreenRender {
     /// All loaded WGPU resources.
     resources: Arc<Mutex<WgpuResources>>,
 
+    device: wgpu::Device,
+
+    queue: wgpu::Queue,
+
     /// All renderers for the puppets on this document's stage.
     puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
 
@@ -26,10 +30,17 @@ pub struct OffscreenRender {
 }
 
 impl OffscreenRender {
-    pub fn new(document: Document, resources: Arc<Mutex<WgpuResources>>) -> Self {
+    pub fn new(
+        document: Document,
+        resources: Arc<Mutex<WgpuResources>>,
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+    ) -> Self {
         OffscreenRender {
             document: document.downgrade(),
             resources,
+            device,
+            queue,
             puppet_renderers: HashMap::new(),
             texture: None,
         }
@@ -66,8 +77,7 @@ impl OffscreenRender {
     pub fn alloc_texture(&mut self) {
         if let Some(document) = self.document.upgrade() {
             let required_size = document.stage().size();
-            let resources = self.resources.lock().unwrap();
-            let texture = resources.device.create_texture(&wgpu::TextureDescriptor {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("Offscreen Texture Buffer"),
                 dimension: wgpu::TextureDimension::D2,
                 size: wgpu::Extent3d {
@@ -109,14 +119,11 @@ impl OffscreenRender {
                 self.alloc_texture();
             }
 
-            let resources = self.resources.lock().unwrap();
-
-            let mut encoder =
-                resources
-                    .device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("Offscreen Render internal buffer clear"),
-                    });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Offscreen Render internal buffer clear"),
+                });
 
             encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Offscreen Render Buffer clear"),
@@ -133,9 +140,7 @@ impl OffscreenRender {
                 ..Default::default()
             });
 
-            resources.queue.submit(std::iter::once(encoder.finish()));
-
-            drop(resources);
+            self.queue.submit(std::iter::once(encoder.finish()));
 
             let texture = self.texture().clone();
 

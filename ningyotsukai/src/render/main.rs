@@ -56,6 +56,8 @@ impl RenderThread {
         self.renderers.push(OffscreenRender::new(
             document.clone(),
             self.wgpu_resources.clone().unwrap(),
+            self.extended_device.as_ref().unwrap().device().clone(),
+            self.wgpu_queue.clone().unwrap(),
         ));
 
         for plugin in &mut self.plugins {
