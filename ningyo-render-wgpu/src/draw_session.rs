@@ -190,14 +190,19 @@ impl<'a> WgpuDrawSession<'a> {
             encoder_query,
         };
 
-        session.buffer_prepass(puppet);
-
         #[cfg(feature = "timing")]
         {
             eprintln!(
                 "BEGIN FRAME for {}",
                 puppet.meta.name.as_deref().unwrap_or("")
             );
+            session.lap("Overhead");
+        }
+
+        session.buffer_prepass(puppet);
+
+        #[cfg(feature = "timing")]
+        {
             session.lap("Uniform buffers");
         }
 
