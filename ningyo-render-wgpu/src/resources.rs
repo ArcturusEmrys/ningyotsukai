@@ -43,6 +43,7 @@ pub struct WgpuResources {
 
     pub(crate) masked_depthstencil: wgpu::DepthStencilState,
     pub(crate) mask_depthstencil: wgpu::DepthStencilState,
+    pub(crate) ignore_depthstencil: wgpu::DepthStencilState,
 
     pub(crate) part_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_frag::Shader>,
     pub(crate) part_mask_pipeline:
@@ -160,6 +161,29 @@ impl WgpuResources {
             bias: wgpu::DepthBiasState::default(),
         };
 
+        let ignore_depthstencil = wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Replace,
+                    depth_fail_op: wgpu::StencilOperation::Replace,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Replace,
+                    depth_fail_op: wgpu::StencilOperation::Replace,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                read_mask: 0x00,
+                write_mask: 0x00,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
         //TODO: We need a pipeline per Inochi blending mode
         //(or some kind of ubershader blending)
 
@@ -229,6 +253,7 @@ impl WgpuResources {
             part_shader_mask_frag,
             mask_depthstencil,
             masked_depthstencil,
+            ignore_depthstencil,
             part_pipeline,
             part_mask_pipeline,
             composite_shader_vert,

@@ -135,6 +135,10 @@ impl DrawCommandList {
         let (composite, surface_stencil) = draw_session.render_targets.as_ref().unwrap();
         let surface_color_view = &draw_session.view;
 
+        let masked_depthstencil = draw_session.resources.masked_depthstencil.clone();
+        let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
+        let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
+
         for command in me.commands.drain(..) {
             match command {
                 DrawCommand::ClearCurrentStencil if is_in_composite => {
@@ -190,13 +194,8 @@ impl DrawCommandList {
                         surface_stencil
                     };
 
-                    let depth_stencil_attachment = if render_mask {
-                        Some(stencil_texture.as_depth_stencil_attachment_rw())
-                    } else if using_mask {
-                        Some(stencil_texture.as_depth_stencil_attachment_ro())
-                    } else {
-                        None
-                    };
+                    let depth_stencil_attachment =
+                        Some(stencil_texture.as_depth_stencil_attachment_rw());
 
                     //TODO: Do we even want blending on in Normal mode?
                     let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
@@ -256,7 +255,6 @@ impl DrawCommandList {
                     );
 
                     if render_mask {
-                        let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
                         //TODO: What happens if a mask is also masked?
                         let uni_in_frag = wgpu::BufferBinding {
                             buffer: draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
@@ -288,7 +286,7 @@ impl DrawCommandList {
                                     .map(|ca| ca.view.texture().format())],
                                 [blend],
                                 [wgpu::ColorWrites::empty()],
-                                Some(mask_depthstencil),
+                                Some(mask_depthstencil.clone()),
                             );
                         render_pass.set_pipeline(pipeline.pipeline());
                         pipeline.bind_frag(&mut render_pass, Some(&frag_binding));
@@ -296,8 +294,6 @@ impl DrawCommandList {
 
                         render_pass.set_stencil_reference(stencil_reference);
                     } else {
-                        let masked_depthstencil =
-                            draw_session.resources.masked_depthstencil.clone();
                         let all = wgpu::ColorWrites::ALL;
                         //Regular parts
                         let formats = [
@@ -341,7 +337,7 @@ impl DrawCommandList {
                                 formats,
                                 [blend, blend, blend],
                                 [all, all, all],
-                                Some(masked_depthstencil),
+                                Some(masked_depthstencil.clone()),
                             )
                         } else {
                             draw_session.resources.part_pipeline.with_configuration(
@@ -349,7 +345,7 @@ impl DrawCommandList {
                                 formats,
                                 [blend, blend, blend],
                                 [all, all, all],
-                                None,
+                                Some(ignore_depthstencil.clone()),
                             )
                         };
 
@@ -388,13 +384,8 @@ impl DrawCommandList {
                     is_in_composite = false;
 
                     let surface_color_view = &draw_session.view;
-                    let depth_stencil_attachment = if render_mask {
-                        Some(surface_stencil.as_depth_stencil_attachment_rw())
-                    } else if using_mask {
-                        Some(surface_stencil.as_depth_stencil_attachment_ro())
-                    } else {
-                        None
-                    };
+                    let depth_stencil_attachment =
+                        Some(surface_stencil.as_depth_stencil_attachment_rw());
 
                     //TODO: Do we even want blending on in Normal mode?
                     let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
@@ -458,9 +449,9 @@ impl DrawCommandList {
                     } else {
                         let all = wgpu::ColorWrites::ALL;
                         let depth_stencil = if using_mask {
-                            Some(draw_session.resources.masked_depthstencil.clone())
+                            Some(masked_depthstencil.clone())
                         } else {
-                            None
+                            Some(ignore_depthstencil.clone())
                         };
                         let formats = [
                             color_attachments[0]
