@@ -8,6 +8,7 @@ use inox2d::render;
 use crate::draw_session::WgpuDrawSession;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
+use crate::shaders::mipmap_gen_vert;
 use crate::texture::DeviceTexture;
 use crate::uploads::WgpuUploads;
 
@@ -139,18 +140,50 @@ impl DrawCommandList {
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
         let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
 
-        let mut render_pass = None;
+        let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
 
         for command in me.commands.drain(..) {
             match command {
                 DrawCommand::ClearCurrentStencil if is_in_composite => {
-                    render_pass = None;
-                    composite.stencil().clear(&mut draw_session.encoder);
+                    if render_pass.is_none() {
+                        render_pass = None; //Borrowck can't tell otherwise
+                        composite.stencil().clear(&mut draw_session.encoder);
+                    } else {
+                        let render_pass = render_pass.as_mut().unwrap();
+                        composite.stencil().clear_with_render_pass(
+                            &draw_session.device,
+                            render_pass,
+                            &mut draw_session.resources,
+                            &composite.as_color_attachments(),
+                        );
+                    }
                 }
                 DrawCommand::ClearCurrentStencil => {
                     // !is_in_composite
-                    render_pass = None;
-                    surface_stencil.clear(&mut draw_session.encoder);
+                    if render_pass.is_none() {
+                        render_pass = None;
+                        surface_stencil.clear(&mut draw_session.encoder);
+                    } else {
+                        let render_pass = render_pass.as_mut().unwrap();
+                        surface_stencil.clear_with_render_pass(
+                            &draw_session.device,
+                            render_pass,
+                            &mut draw_session.resources,
+                            &[
+                                Some(wgpu::RenderPassColorAttachment {
+                                    view: &surface_color_view,
+                                    depth_slice: None,
+                                    resolve_target: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                }),
+                                None,
+                                None,
+                            ],
+                        );
+                    }
                 }
                 DrawCommand::DrawPart {
                     render_mask,

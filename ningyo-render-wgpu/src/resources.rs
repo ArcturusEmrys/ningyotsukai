@@ -12,7 +12,7 @@ use crate::pipeline;
 use crate::shaders::basic::{
     basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_mask_frag, composite_vert,
 };
-use crate::shaders::{mipmap_gen_frag, mipmap_gen_vert};
+use crate::shaders::{mipmap_gen_frag, mipmap_gen_vert, null_frag};
 use crate::uploads::cast_vec2;
 
 /// WGPU resources that are invariant to the current puppet being rendered.
@@ -37,12 +37,16 @@ pub struct WgpuResources {
     pub(crate) mipmap_gen_pipeline:
         pipeline::PipelineGroup<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader>,
 
+    pub(crate) null_frag: null_frag::Shader,
+    pub(crate) clear_pipeline: pipeline::PipelineGroup<mipmap_gen_vert::Shader, null_frag::Shader>,
+
     pub(crate) part_shader_vert: basic_vert::Shader,
     pub(crate) part_shader_frag: basic_frag::Shader,
     pub(crate) part_shader_mask_frag: basic_mask_frag::Shader,
 
     pub(crate) masked_depthstencil: wgpu::DepthStencilState,
     pub(crate) mask_depthstencil: wgpu::DepthStencilState,
+    pub(crate) clear_depthstencil: wgpu::DepthStencilState,
     pub(crate) ignore_depthstencil: wgpu::DepthStencilState,
 
     pub(crate) part_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_frag::Shader>,
@@ -161,6 +165,29 @@ impl WgpuResources {
             bias: wgpu::DepthBiasState::default(),
         };
 
+        let clear_depthstencil = wgpu::DepthStencilState {
+            format: wgpu::TextureFormat::Depth24PlusStencil8,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Always),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Replace,
+                    depth_fail_op: wgpu::StencilOperation::Replace,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                back: wgpu::StencilFaceState {
+                    compare: wgpu::CompareFunction::Always,
+                    fail_op: wgpu::StencilOperation::Replace,
+                    depth_fail_op: wgpu::StencilOperation::Replace,
+                    pass_op: wgpu::StencilOperation::Replace,
+                },
+                read_mask: 0xFF,
+                write_mask: 0xFF,
+            },
+            bias: wgpu::DepthBiasState::default(),
+        };
+
         let ignore_depthstencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
             depth_write_enabled: Some(false),
@@ -232,6 +259,10 @@ impl WgpuResources {
             ..Default::default()
         });
 
+        let null_frag = null_frag::Shader::new(&device);
+        let clear_pipeline =
+            pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), null_frag.clone());
+
         // Flush all pending work.
         // In wgpu, texture uploads etc will only execute at submit time
         queue.submit([]);
@@ -253,6 +284,7 @@ impl WgpuResources {
             part_shader_mask_frag,
             mask_depthstencil,
             masked_depthstencil,
+            clear_depthstencil,
             ignore_depthstencil,
             part_pipeline,
             part_mask_pipeline,
@@ -261,6 +293,8 @@ impl WgpuResources {
             _composite_shader_mask_frag: composite_shader_mask_frag,
             composite_pipeline,
             _composite_mask_pipeline: composite_mask_pipeline,
+            null_frag,
+            clear_pipeline,
         }
     }
 

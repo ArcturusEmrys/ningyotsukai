@@ -317,7 +317,7 @@ impl DepthStencilTexture {
         empty
     }
 
-    // Clear the texture.
+    /// Clear the texture.
     pub fn clear(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.clear_texture(
             self.texture(),
@@ -329,6 +329,59 @@ impl DepthStencilTexture {
                 array_layer_count: None,
             },
         );
+    }
+
+    /// Clear the texture using an existing render pass.
+    ///
+    /// For performance reasons, if you do a lot of texture clears, it may be
+    /// more performant to clear the texture with a screen-filling quad rather
+    /// than ending the current render pass and starting a new one.
+    ///
+    /// This code uses a pipeline that assumes 3 color attachments in your
+    /// render pass.
+    pub fn clear_with_render_pass(
+        &self,
+        device: &wgpu::Device,
+        render_pass: &mut wgpu::RenderPass<'_>,
+        resources: &mut WgpuResources,
+        color_attachments: &[Option<wgpu::RenderPassColorAttachment>],
+    ) {
+        let formats = [
+            color_attachments[0]
+                .as_ref()
+                .map(|ca| ca.view.texture().format()),
+            color_attachments[1]
+                .as_ref()
+                .map(|ca| ca.view.texture().format()),
+            color_attachments[2]
+                .as_ref()
+                .map(|ca| ca.view.texture().format()),
+        ];
+        let replace = Some(wgpu::BlendState::REPLACE);
+        let none = wgpu::ColorWrites::empty();
+        let clear = resources.clear_depthstencil.clone();
+        let vbind = resources.mipmap_gen_vert.bind(&device);
+        let fbind = resources.null_frag.bind(&device);
+        let pipeline = resources.clear_pipeline.with_configuration(
+            &device,
+            formats,
+            [replace, replace, replace],
+            [none, none, none],
+            Some(clear),
+        );
+
+        render_pass.set_pipeline(pipeline.pipeline());
+        pipeline.bind_vertex(render_pass, Some(&vbind));
+        pipeline.bind_frag(render_pass, Some(&fbind));
+
+        render_pass.set_vertex_buffer(
+            mipmap_gen_vert::INPUT_INDEX_VERTS,
+            resources.mipmap_gen_triangles.slice(..),
+        );
+
+        render_pass.set_stencil_reference(0);
+
+        render_pass.draw(0..6, 0..1);
     }
 
     pub fn texture(&self) -> &wgpu::Texture {
