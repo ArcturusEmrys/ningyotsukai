@@ -205,6 +205,21 @@ impl<'window> WgpuRenderer<'window> {
     /// function. Instead, call `resize_with_texture`.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
+            let old_size = if let Some((_, config)) = &self.surface {
+                Some((config.width, config.height))
+            } else if let Some(target) = &self.target.0 {
+                Some((target.texture().width(), target.texture().height()))
+            } else {
+                None
+            };
+
+            if let Some((old_width, old_height)) = old_size {
+                if old_width == width && old_height == height && self.render_targets.is_some() {
+                    //We don't need to do anything.
+                    return Ok(())
+                }
+            }
+
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
