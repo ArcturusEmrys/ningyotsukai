@@ -139,13 +139,17 @@ impl DrawCommandList {
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
         let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
 
+        let mut render_pass = None;
+
         for command in me.commands.drain(..) {
             match command {
                 DrawCommand::ClearCurrentStencil if is_in_composite => {
+                    render_pass = None;
                     composite.stencil().clear(&mut draw_session.encoder);
                 }
                 DrawCommand::ClearCurrentStencil => {
                     // !is_in_composite
+                    render_pass = None;
                     surface_stencil.clear(&mut draw_session.encoder);
                 }
                 DrawCommand::DrawPart {
@@ -161,7 +165,6 @@ impl DrawCommandList {
                         DrawableKind::Composite(_) => unreachable!(),
                         DrawableKind::TexturedMesh(components) => components,
                     };
-                    let gbuffer_color = composite.as_color_attachments();
 
                     let surface_color_attach = Some(wgpu::RenderPassColorAttachment {
                         view: &surface_color_view,
@@ -172,48 +175,50 @@ impl DrawCommandList {
                             store: wgpu::StoreOp::Store,
                         },
                     });
+                    let gbuffer_color = composite.as_color_attachments();
                     let unmasked_attach = [surface_color_attach, None, None];
-
                     let color_attachments = if is_in_composite {
                         gbuffer_color.as_slice()
                     } else {
                         unmasked_attach.as_slice()
                     };
-                    let stencil_texture = if is_in_composite {
-                        composite.stencil()
-                    } else {
-                        surface_stencil
-                    };
 
-                    let depth_stencil_attachment =
-                        Some(stencil_texture.as_depth_stencil_attachment_rw());
+                    if render_pass.is_none() {
+                        let depth_stencil_attachment = if is_in_composite {
+                            Some(composite.stencil().as_depth_stencil_attachment_rw())
+                        } else {
+                            Some(surface_stencil.as_depth_stencil_attachment_rw())
+                        };
 
-                    //TODO: Do we even want blending on in Normal mode?
+                        drop(render_pass);
+
+                        render_pass = Some(draw_session.encoder.begin_render_pass(
+                            &wgpu::RenderPassDescriptor {
+                                label: Some(&format!(
+                                        "WgpuRenderer::draw_textured_mesh_content - {}",
+                                        draw_session
+                                            .node_names
+                                            .get(&id)
+                                            .map(|s| s.as_str())
+                                            .unwrap_or("<NODE UNKNOWN>")
+                                    )),
+                                color_attachments,
+                                depth_stencil_attachment,
+                                occlusion_query_set: None,
+                                timestamp_writes: None,
+                                multiview_mask: None,
+                            },
+                        ));
+                    }
+
+                    let render_pass = render_pass.as_mut().unwrap();
+
                     let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));
 
                     let (albedo, bumpmap, emissive) =
                         Self::textures_for_part(draw_session.uploads, components.texture);
                     let (albedo, bumpmap, emissive) =
                         (albedo.clone(), bumpmap.clone(), emissive.clone());
-
-                    let mut render_pass =
-                        draw_session
-                            .encoder
-                            .begin_render_pass(&wgpu::RenderPassDescriptor {
-                                label: Some(&format!(
-                                    "WgpuRenderer::draw_textured_mesh_content - {}",
-                                    draw_session
-                                        .node_names
-                                        .get(&id)
-                                        .map(|s| s.as_str())
-                                        .unwrap_or("<NODE UNKNOWN>")
-                                )),
-                                color_attachments,
-                                depth_stencil_attachment,
-                                occlusion_query_set: None,
-                                timestamp_writes: None,
-                                multiview_mask: None,
-                            });
 
                     let index = draw_session.buffer_indices.get(&id.into()).unwrap();
 
@@ -294,8 +299,8 @@ impl DrawCommandList {
                                 Some(mask_depthstencil.clone()),
                             );
                         render_pass.set_pipeline(pipeline.pipeline());
-                        pipeline.bind_frag(&mut render_pass, Some(&frag_binding));
-                        pipeline.bind_vertex(&mut render_pass, Some(&vert_binding));
+                        pipeline.bind_frag(render_pass, Some(&frag_binding));
+                        pipeline.bind_vertex(render_pass, Some(&vert_binding));
 
                         render_pass.set_stencil_reference(stencil_reference);
                     } else {
@@ -344,8 +349,8 @@ impl DrawCommandList {
                         };
 
                         render_pass.set_pipeline(pipeline.pipeline());
-                        pipeline.bind_frag(&mut render_pass, Some(&frag_binding));
-                        pipeline.bind_vertex(&mut render_pass, Some(&vert_binding));
+                        pipeline.bind_frag(render_pass, Some(&frag_binding));
+                        pipeline.bind_vertex(render_pass, Some(&vert_binding));
 
                         render_pass.set_stencil_reference(1);
                         render_pass.set_pipeline(pipeline.pipeline());
@@ -359,6 +364,7 @@ impl DrawCommandList {
                     );
                 }
                 DrawCommand::BeginComposite => {
+                    render_pass = None;
                     composite.clear(&mut draw_session.encoder);
                     is_in_composite = true;
                 }
@@ -400,6 +406,7 @@ impl DrawCommandList {
 
                     // Strictly speaking, we will never be able to batch the end of a
                     // composite operation. (Or so I think?!)
+                    render_pass = None;
                     let mut render_pass =
                         draw_session
                             .encoder
