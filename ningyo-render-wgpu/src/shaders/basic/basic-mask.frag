@@ -8,6 +8,8 @@
 
 layout(location = 0) in vec2 texUVs;
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outEmissive;
+layout(location = 2) out vec4 outBump;
 
 layout(set = 1, binding = 0) uniform texture2D tex;
 layout(set = 1, binding = 1) uniform sampler samp;
@@ -20,4 +22,7 @@ void main() {
   if (color.a <= uni_in.threshold)
     discard;
   outColor = vec4(1, 1, 1, 1);
+
+  //We do not touch outEmissive or outBump; they exist here solely for render
+  //pass batching compatibility with the other fragment shaders.
 }

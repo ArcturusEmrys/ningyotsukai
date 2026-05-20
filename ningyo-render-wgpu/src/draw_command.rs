@@ -172,21 +172,12 @@ impl DrawCommandList {
                             store: wgpu::StoreOp::Store,
                         },
                     });
-                    let masked_attach = [surface_color_attach.clone()];
                     let unmasked_attach = [surface_color_attach, None, None];
 
                     let color_attachments = if is_in_composite {
-                        if render_mask {
-                            &[gbuffer_color[0].clone()]
-                        } else {
-                            gbuffer_color.as_slice()
-                        }
+                        gbuffer_color.as_slice()
                     } else {
-                        if render_mask {
-                            masked_attach.as_slice()
-                        } else {
-                            unmasked_attach.as_slice()
-                        }
+                        unmasked_attach.as_slice()
                     };
                     let stencil_texture = if is_in_composite {
                         composite.stencil()
@@ -254,6 +245,18 @@ impl DrawCommandList {
                         wgpu::IndexFormat::Uint32,
                     );
 
+                    let formats = [
+                        color_attachments[0]
+                            .as_ref()
+                            .map(|ca| ca.view.texture().format()),
+                        color_attachments[1]
+                            .as_ref()
+                            .map(|ca| ca.view.texture().format()),
+                        color_attachments[2]
+                            .as_ref()
+                            .map(|ca| ca.view.texture().format()),
+                    ];
+
                     if render_mask {
                         //TODO: What happens if a mask is also masked?
                         let uni_in_frag = wgpu::BufferBinding {
@@ -281,11 +284,13 @@ impl DrawCommandList {
                             .part_mask_pipeline
                             .with_configuration(
                                 &draw_session.device,
-                                [color_attachments[0]
-                                    .as_ref()
-                                    .map(|ca| ca.view.texture().format())],
-                                [blend],
-                                [wgpu::ColorWrites::empty()],
+                                formats,
+                                [blend, blend, blend],
+                                [
+                                    wgpu::ColorWrites::empty(),
+                                    wgpu::ColorWrites::empty(),
+                                    wgpu::ColorWrites::empty(),
+                                ],
                                 Some(mask_depthstencil.clone()),
                             );
                         render_pass.set_pipeline(pipeline.pipeline());
@@ -296,17 +301,6 @@ impl DrawCommandList {
                     } else {
                         let all = wgpu::ColorWrites::ALL;
                         //Regular parts
-                        let formats = [
-                            color_attachments[0]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                            color_attachments[1]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                            color_attachments[2]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                        ];
 
                         let uni_in_frag = wgpu::BufferBinding {
                             buffer: draw_session.basic_frag_buffer.as_ref().unwrap(),
