@@ -13,6 +13,7 @@ use wgpu;
 
 use crate::WgpuRenderer;
 use crate::buffer_builder::BufferBuilder;
+use crate::render_pass_cache::RenderPassCache;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
 use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
@@ -72,6 +73,9 @@ pub struct WgpuDrawSession<'a> {
 
     /// The currently active set of composite deferred pass uniforms
     composite_frag_buffer: Option<wgpu::Buffer>,
+
+    /// Renderpass-batching cache.
+    pass_cache: RenderPassCache<(bool, bool, bool)>,
 
     last_mask_threshold: f32,
     is_in_mask: bool,
@@ -179,6 +183,7 @@ impl<'a> WgpuDrawSession<'a> {
             basic_frag_buffer: None,
             basic_mask_frag_buffer: None,
             composite_frag_buffer: None,
+            pass_cache: Default::default(),
 
             #[cfg(feature = "timing")]
             last_segment_time: start_time.clone(),
@@ -393,6 +398,7 @@ impl<'a> WgpuDrawSession<'a> {
 
 impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
     fn on_begin_masks(&mut self, masks: &components::Masks) {
+        self.pass_cache.invalidate(); //TODO: Why are we doing this?
         self.last_mask_threshold = masks.threshold.clamp(0.0, 1.0);
         //TODO: Enable stencilling on the render target.
 
@@ -469,20 +475,24 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
             let (albedo, bumpmap, emissive) = self.textures_for_part(components.texture);
             let (albedo, bumpmap, emissive) = (albedo.clone(), bumpmap.clone(), emissive.clone());
 
-            let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&format!(
-                    "WgpuRenderer::draw_textured_mesh_content - {}",
-                    self.node_names
-                        .get(&id)
-                        .map(|s| s.as_str())
-                        .unwrap_or("<NODE UNKNOWN>")
-                )),
-                color_attachments,
-                depth_stencil_attachment,
-                occlusion_query_set: None,
-                timestamp_writes: None,
-                multiview_mask: None,
-            });
+            let mut render_pass = self.pass_cache.render_pass_for_state(
+                &mut self.encoder,
+                (self.is_in_composite, render_mask, self.is_in_mask),
+                &wgpu::RenderPassDescriptor {
+                    label: Some(&format!(
+                        "WgpuRenderer::draw_textured_mesh_content - {}",
+                        self.node_names
+                            .get(&id)
+                            .map(|s| s.as_str())
+                            .unwrap_or("<NODE UNKNOWN>")
+                    )),
+                    color_attachments,
+                    depth_stencil_attachment,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                    multiview_mask: None,
+                },
+            );
 
             let index = self.buffer_indices.get(&id.into()).unwrap();
 
@@ -625,6 +635,7 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         self.is_in_composite = true;
 
         if let Some((composite, _surface_stencil)) = self.render_targets.as_ref() {
+            self.pass_cache.invalidate(); //TODO: Again. Why? We already have a check for this!
             composite.clear(&mut self.encoder);
         }
     }
@@ -665,6 +676,10 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
                 None,
                 None,
             ];
+
+            // Strictly speaking, we will never be able to batch the end of a
+            // composite operation. (Or so I think?!)
+            self.pass_cache.invalidate();
             let mut render_pass = self.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some(&format!(
                     "WgpuRenderer::finish_composite_content - {}",
@@ -756,6 +771,7 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
                 .end_query(&mut self.encoder, self.encoder_query);
         }
 
+        self.pass_cache.invalidate();
         let end = self.encoder.finish();
         self.resources.queue.submit(std::iter::once(end));
 

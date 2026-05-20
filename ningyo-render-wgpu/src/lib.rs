@@ -2,6 +2,7 @@ mod buffer_builder;
 mod draw_session;
 mod error;
 mod pipeline;
+mod render_pass_cache;
 mod renderer;
 mod resources;
 mod shader;

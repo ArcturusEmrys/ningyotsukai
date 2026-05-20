@@ -216,7 +216,7 @@ impl<'window> WgpuRenderer<'window> {
             if let Some((old_width, old_height)) = old_size {
                 if old_width == width && old_height == height && self.render_targets.is_some() {
                     //We don't need to do anything.
-                    return Ok(())
+                    return Ok(());
                 }
             }
 

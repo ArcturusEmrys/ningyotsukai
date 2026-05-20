@@ -28,7 +28,7 @@ where
                 return self.render_pass.as_mut().unwrap();
             }
         }
-        
+
         self.state = None;
         self.render_pass = None;
 
@@ -41,7 +41,7 @@ where
     }
 
     /// Deliberately invalidate the render pass cache.
-    /// 
+    ///
     /// You must call this function before finishing your command encoder, else
     /// it will panic.
     pub fn invalidate(&mut self) {
