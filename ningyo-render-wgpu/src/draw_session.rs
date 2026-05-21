@@ -249,10 +249,22 @@ impl<'a> WgpuDrawSession<'a> {
             self.buffer_prepass_drawable(puppet, *uuid, false);
         }
 
-        self.basic_vert_buffer = Some(self.builder_basic_vert.commit(&self.device));
-        self.basic_frag_buffer = Some(self.builder_basic_frag.commit(&self.device));
-        self.basic_mask_frag_buffer = Some(self.builder_basic_mask_frag.commit(&self.device));
-        self.composite_frag_buffer = Some(self.builder_composite_frag.commit(&self.device));
+        self.basic_vert_buffer = Some(
+            self.builder_basic_vert
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.basic_frag_buffer = Some(
+            self.builder_basic_frag
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.basic_mask_frag_buffer = Some(
+            self.builder_basic_mask_frag
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.composite_frag_buffer = Some(
+            self.builder_composite_frag
+                .commit(&self.device, &self.resources.queue),
+        );
     }
 
     fn buffer_prepass_drawable(

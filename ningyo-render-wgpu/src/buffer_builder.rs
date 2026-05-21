@@ -4,6 +4,9 @@ use wgpu::util::DeviceExt;
 
 use crate::shader::{DefaultArray, UniformBlock};
 
+/// Builder object for creating arrays of aligned uniform blocks.
+///
+/// Also manages and re-uses GPU allocations wherever possible.
 #[derive(Debug)]
 pub struct BufferBuilder<B>
 where
@@ -12,6 +15,11 @@ where
     phantom: PhantomData<B>,
     data: Vec<u8>,
     alignment_requirement: u32,
+
+    /// The GPU buffer used for the last buffer upload.
+    ///
+    /// We attempt to reuse our buffer allocation whenever possible.
+    buffer: Option<wgpu::Buffer>,
 }
 
 impl<B> BufferBuilder<B>
@@ -25,6 +33,7 @@ where
             phantom: PhantomData::default(),
             data: Vec::new(),
             alignment_requirement: limits.min_uniform_buffer_offset_alignment,
+            buffer: None,
         }
     }
 
@@ -60,16 +69,26 @@ where
 
     /// Write the built buffer out to the GPU for rendering.
     ///
+    /// You may optionally provide a GPU-side buffer to write to, BufferBuilder
+    /// will attempt to reuse the allocation if possible.
+    ///
     /// This also clears the internal buffer for building the next one.
-    pub fn commit(&mut self, device: &wgpu::Device) -> wgpu::Buffer {
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&format!("BufferBuilder<{}>::commit", type_name::<B>())),
-            contents: self.data.as_ref(),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+    pub fn commit(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::Buffer {
+        let my_buffer_len = self.buffer.as_ref().map(|b| b.size()).unwrap_or(0);
+        if my_buffer_len >= self.data.len() as u64 && my_buffer_len > 0 {
+            queue.write_buffer(self.buffer.as_ref().unwrap(), 0, self.data.as_ref());
+        } else {
+            let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("BufferBuilder<{}>::commit", type_name::<B>())),
+                contents: self.data.as_ref(),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+
+            self.buffer = Some(new_buffer);
+        }
 
         self.clear();
 
-        buffer
+        self.buffer.clone().unwrap()
     }
 }
