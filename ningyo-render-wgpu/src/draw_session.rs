@@ -72,13 +72,7 @@ pub struct WgpuDrawSession<'a> {
     /// The currently active set of composite deferred pass uniforms
     pub(crate) composite_frag_buffer: Option<wgpu::Buffer>,
 
-    /// All the current drawing commands.
-    ///
-    /// We store them here because wgpu basically requires render passes to
-    /// live on one stack frame. No, `forget_lifetime()` doesn't work, that
-    /// runs into weird locking bugs where the command encoder is just
-    /// permenantly poisoned.
-    pub(crate) draw_commands: DrawCommandList,
+    pub(crate) draw_commands: &'a mut DrawCommandList,
 
     last_mask_threshold: f32,
     is_in_mask: bool,
@@ -186,7 +180,7 @@ impl<'a> WgpuDrawSession<'a> {
             basic_frag_buffer: None,
             basic_mask_frag_buffer: None,
             composite_frag_buffer: None,
-            draw_commands: Default::default(),
+            draw_commands: &mut renderer.draw_commands,
 
             #[cfg(feature = "timing")]
             last_segment_time: start_time.clone(),

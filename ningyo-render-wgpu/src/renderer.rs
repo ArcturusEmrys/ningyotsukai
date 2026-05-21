@@ -14,6 +14,7 @@ use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
 
 use std::collections::HashMap;
 
+use crate::draw_command::DrawCommandList;
 use crate::draw_session::WgpuDrawSession;
 use crate::error::WgpuRendererError;
 use crate::resources::WgpuResources;
@@ -72,6 +73,14 @@ pub struct WgpuRenderer<'window> {
 
     pub(crate) uploads: WgpuUploads,
     pub(crate) resources: Arc<Mutex<WgpuResources>>,
+
+    /// All the current drawing commands.
+    ///
+    /// We store them here because wgpu basically requires render passes to
+    /// live on one stack frame. No, `forget_lifetime()` doesn't work, that
+    /// runs into weird locking bugs where the command encoder is just
+    /// permenantly poisoned.
+    pub(crate) draw_commands: DrawCommandList,
 
     /// The device to render to.
     ///
@@ -189,6 +198,7 @@ impl<'window> WgpuRenderer<'window> {
             builder_basic_vert: BufferBuilder::new(wgpu::Limits::default()),
             builder_composite_frag: BufferBuilder::new(wgpu::Limits::default()),
             buffer_indices: Default::default(),
+            draw_commands: Default::default(),
 
             device,
             queue,
