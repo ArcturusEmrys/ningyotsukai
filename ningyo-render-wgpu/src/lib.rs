@@ -1,3 +1,4 @@
+mod binding_cache;
 mod buffer_builder;
 mod draw_command;
 mod draw_session;

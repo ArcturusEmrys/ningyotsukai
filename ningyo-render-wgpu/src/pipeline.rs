@@ -82,18 +82,26 @@ where
         }
     }
 
-    pub fn bind_vertex<'a, BG>(&self, render_pass: &mut wgpu::RenderPass, bind_group: BG)
-    where
+    pub fn bind_vertex<'a, BG>(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        bind_group: BG,
+        offsets: &[wgpu::DynamicOffset],
+    ) where
         Option<&'a wgpu::BindGroup>: From<BG>,
     {
-        render_pass.set_bind_group(0, bind_group, &[])
+        render_pass.set_bind_group(0, bind_group, offsets)
     }
 
-    pub fn bind_frag<'a, BG>(&self, render_pass: &mut wgpu::RenderPass, bind_group: BG)
-    where
+    pub fn bind_frag<'a, BG>(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        bind_group: BG,
+        offsets: &[wgpu::DynamicOffset],
+    ) where
         Option<&'a wgpu::BindGroup>: From<BG>,
     {
-        render_pass.set_bind_group(1, bind_group, &[])
+        render_pass.set_bind_group(1, bind_group, offsets)
     }
 
     pub fn pipeline(&self) -> &wgpu::RenderPipeline {

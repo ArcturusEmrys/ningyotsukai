@@ -14,6 +14,7 @@ use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
 
 use std::collections::HashMap;
 
+use crate::binding_cache::BindingCache;
 use crate::draw_command::DrawCommandList;
 use crate::draw_session::WgpuDrawSession;
 use crate::error::WgpuRendererError;
@@ -71,7 +72,12 @@ pub struct WgpuRenderer<'window> {
     /// An index into the buffers for each node.
     pub(crate) buffer_indices: HashMap<u32, BufferIndices>,
 
+    pub(crate) bind_cache: BindingCache,
+
+    /// Static resources common to all renderers rendering the same puppet.
     pub(crate) uploads: WgpuUploads,
+
+    /// Static resources common to all renderers regardless of puppet.
     pub(crate) resources: Arc<Mutex<WgpuResources>>,
 
     /// All the current drawing commands.
@@ -199,6 +205,7 @@ impl<'window> WgpuRenderer<'window> {
             builder_composite_frag: BufferBuilder::new(wgpu::Limits::default()),
             buffer_indices: Default::default(),
             draw_commands: Default::default(),
+            bind_cache: Default::default(),
 
             device,
             queue,

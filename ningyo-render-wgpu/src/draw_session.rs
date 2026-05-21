@@ -18,6 +18,7 @@ use crate::texture::{DepthStencilTexture, GBuffer};
 
 use std::collections::HashMap;
 
+use crate::binding_cache::BindingCache;
 use crate::renderer::BufferIndices;
 use crate::resources::WgpuResources;
 use crate::uploads::WgpuUploads;
@@ -44,6 +45,8 @@ pub struct WgpuDrawSession<'a> {
     pub(crate) builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
     pub(crate) builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
     pub(crate) builder_composite_frag: &'a mut BufferBuilder<composite_frag::Input>,
+
+    pub(crate) binding_cache: &'a mut BindingCache,
 
     /// Local clone of the device (to avoid overlapping borrows.)
     pub(crate) device: wgpu::Device,
@@ -181,6 +184,7 @@ impl<'a> WgpuDrawSession<'a> {
             basic_mask_frag_buffer: None,
             composite_frag_buffer: None,
             draw_commands: &mut renderer.draw_commands,
+            binding_cache: &mut renderer.bind_cache,
 
             #[cfg(feature = "timing")]
             last_segment_time: start_time.clone(),

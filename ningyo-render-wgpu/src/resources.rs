@@ -31,13 +31,15 @@ pub struct WgpuResources {
 
     pub(crate) model_sampler: wgpu::Sampler,
 
-    pub(crate) mipmap_gen_vert: mipmap_gen_vert::Shader,
+    pub(crate) _mipmap_gen_vert: mipmap_gen_vert::Shader,
+    pub(crate) mipmap_gen_vert_bind: wgpu::BindGroup,
     pub(crate) mipmap_gen_frag: mipmap_gen_frag::Shader,
     pub(crate) mipmap_gen_triangles: wgpu::Buffer,
     pub(crate) mipmap_gen_pipeline:
         pipeline::PipelineGroup<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader>,
 
-    pub(crate) null_frag: null_frag::Shader,
+    pub(crate) _null_frag: null_frag::Shader,
+    pub(crate) null_frag_bind: wgpu::BindGroup,
     pub(crate) clear_pipeline: pipeline::PipelineGroup<mipmap_gen_vert::Shader, null_frag::Shader>,
 
     pub(crate) part_shader_vert: basic_vert::Shader,
@@ -53,7 +55,8 @@ pub struct WgpuResources {
     pub(crate) part_mask_pipeline:
         pipeline::PipelineGroup<basic_vert::Shader, basic_mask_frag::Shader>,
 
-    pub(crate) composite_shader_vert: composite_vert::Shader,
+    pub(crate) _composite_shader_vert: composite_vert::Shader,
+    pub(crate) composite_shader_vert_bind: wgpu::BindGroup,
     pub(crate) composite_shader_frag: composite_frag::Shader,
     pub(crate) _composite_shader_mask_frag: composite_mask_frag::Shader,
 
@@ -115,9 +118,9 @@ impl WgpuResources {
         .unwrap();
 
         // Compile all our shaders now.
-        let part_shader_vert = basic_vert::Shader::new(&device);
-        let part_shader_frag = basic_frag::Shader::new(&device);
-        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device);
+        let part_shader_vert = basic_vert::Shader::new(&device, true);
+        let part_shader_frag = basic_frag::Shader::new(&device, true);
+        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true);
 
         let masked_depthstencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
@@ -220,8 +223,9 @@ impl WgpuResources {
             pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
 
         let composite_shader_vert = composite_vert::Shader::new(&device);
-        let composite_shader_frag = composite_frag::Shader::new(&device);
-        let composite_shader_mask_frag = composite_mask_frag::Shader::new(&device);
+        let composite_shader_vert_bind = composite_shader_vert.bind(&device);
+        let composite_shader_frag = composite_frag::Shader::new(&device, true);
+        let composite_shader_mask_frag = composite_mask_frag::Shader::new(&device, true);
 
         let composite_pipeline = pipeline::PipelineGroup::new(
             composite_shader_vert.clone(),
@@ -233,6 +237,7 @@ impl WgpuResources {
         );
 
         let mipmap_gen_vert = mipmap_gen_vert::Shader::new(&device);
+        let mipmap_gen_vert_bind = mipmap_gen_vert.bind(&device);
         let mipmap_gen_frag = mipmap_gen_frag::Shader::new(&device);
         let mipmap_gen_triangles = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Mipmap Generator Quad"),
@@ -260,6 +265,7 @@ impl WgpuResources {
         });
 
         let null_frag = null_frag::Shader::new(&device);
+        let null_frag_bind = null_frag.bind(&device);
         let clear_pipeline =
             pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), null_frag.clone());
 
@@ -275,7 +281,8 @@ impl WgpuResources {
             profiler,
 
             model_sampler,
-            mipmap_gen_vert,
+            _mipmap_gen_vert: mipmap_gen_vert,
+            mipmap_gen_vert_bind,
             mipmap_gen_frag,
             mipmap_gen_triangles,
             mipmap_gen_pipeline,
@@ -288,12 +295,14 @@ impl WgpuResources {
             ignore_depthstencil,
             part_pipeline,
             part_mask_pipeline,
-            composite_shader_vert,
+            _composite_shader_vert: composite_shader_vert,
+            composite_shader_vert_bind,
             composite_shader_frag,
             _composite_shader_mask_frag: composite_shader_mask_frag,
             composite_pipeline,
             _composite_mask_pipeline: composite_mask_pipeline,
-            null_frag,
+            _null_frag: null_frag,
+            null_frag_bind,
             clear_pipeline,
         }
     }

@@ -212,7 +212,27 @@ fn gen_shader_new(
         "wgpu::ShaderStages::NONE"
     };
 
-    writeln!(out, "    pub fn new(device: &wgpu::Device) -> Self {{")?;
+    let mut extra_parameters = String::new();
+    for descriptor_set in &entrypoint.descriptor_sets {
+        for binding in &descriptor_set.bindings {
+            match binding.descriptor_type {
+                ReflectDescriptorType::UniformBuffer => {
+                    write!(
+                        extra_parameters,
+                        ", has_dynamic_offset_{}_{}: bool",
+                        descriptor_set.set, binding.name
+                    )?;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    writeln!(
+        out,
+        "    pub fn new(device: &wgpu::Device{}) -> Self {{",
+        extra_parameters
+    )?;
     writeln!(out, "        Self {{")?;
     writeln!(
         out,
@@ -252,7 +272,8 @@ fn gen_shader_new(
                     )?;
                     writeln!(
                         out,
-                        "                            has_dynamic_offset: false,"
+                        "                            has_dynamic_offset: has_dynamic_offset_{}_{},",
+                        descriptor_set.set, binding.name
                     )?;
 
                     if binding.block.size > 0 {

@@ -1,7 +1,4 @@
 use wgpu;
-use wgpu::util::DeviceExt;
-
-use std::any::type_name;
 use std::hash::Hash;
 
 pub trait Shader: Clone {

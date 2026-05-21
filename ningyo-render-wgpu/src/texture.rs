@@ -150,6 +150,8 @@ impl DeviceTexture {
                 resources.mipmap_gen_triangles.slice(..),
             );
             render_pass.set_pipeline(pipeline.pipeline());
+            // NOTE: We cannot cache this bindgroup, becuase we need to source
+            // a different mipmap layer each loop through.
             pipeline.bind_frag(
                 &mut render_pass,
                 Some(&resources.mipmap_gen_frag.bind(
@@ -157,11 +159,9 @@ impl DeviceTexture {
                     &input_view,
                     &input_sampler,
                 )),
+                &[],
             );
-            pipeline.bind_vertex(
-                &mut render_pass,
-                Some(&resources.mipmap_gen_vert.bind(&resources.device)),
-            );
+            pipeline.bind_vertex(&mut render_pass, Some(&resources.mipmap_gen_vert_bind), &[]);
             render_pass.draw(0..6, 0..1);
 
             input_view = output_view;
@@ -360,8 +360,6 @@ impl DepthStencilTexture {
         let replace = Some(wgpu::BlendState::REPLACE);
         let none = wgpu::ColorWrites::empty();
         let clear = resources.clear_depthstencil.clone();
-        let vbind = resources.mipmap_gen_vert.bind(&device);
-        let fbind = resources.null_frag.bind(&device);
         let pipeline = resources.clear_pipeline.with_configuration(
             &device,
             formats,
@@ -371,8 +369,8 @@ impl DepthStencilTexture {
         );
 
         render_pass.set_pipeline(pipeline.pipeline());
-        pipeline.bind_vertex(render_pass, Some(&vbind));
-        pipeline.bind_frag(render_pass, Some(&fbind));
+        pipeline.bind_vertex(render_pass, Some(&resources.mipmap_gen_vert_bind), &[]);
+        pipeline.bind_frag(render_pass, Some(&resources.null_frag_bind), &[]);
 
         render_pass.set_vertex_buffer(
             mipmap_gen_vert::INPUT_INDEX_VERTS,

@@ -1,14 +1,10 @@
-use std::num::NonZero;
-
 use inox2d::node::InoxNodeUuid;
 use inox2d::node::components;
 use inox2d::node::drawables::DrawableKind;
 use inox2d::render;
 
 use crate::draw_session::WgpuDrawSession;
-use crate::shader::UniformBlock;
-use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
-use crate::shaders::mipmap_gen_vert;
+use crate::shaders::basic::basic_vert;
 use crate::texture::DeviceTexture;
 use crate::uploads::WgpuUploads;
 
@@ -254,17 +250,10 @@ impl DrawCommandList {
                         (albedo.clone(), bumpmap.clone(), emissive.clone());
 
                     let index = draw_session.buffer_indices.get(&id.into()).unwrap();
-
-                    let uni_in_vert = wgpu::BufferBinding {
-                        buffer: draw_session.basic_vert_buffer.as_ref().unwrap(),
-                        offset: index.basic_vert.unwrap() as u64,
-                        size: Some(
-                            NonZero::new(
-                                size_of::<<basic_vert::Input as UniformBlock>::Buffer>() as u64
-                            )
-                            .unwrap(),
-                        ),
-                    };
+                    let vert_binding = draw_session.binding_cache.bind_basic_vert(
+                        &*draw_session.resources,
+                        draw_session.basic_vert_buffer.as_ref().unwrap(),
+                    );
 
                     render_pass.set_vertex_buffer(
                         basic_vert::INPUT_INDEX_VERTS,
@@ -297,26 +286,11 @@ impl DrawCommandList {
 
                     if render_mask {
                         //TODO: What happens if a mask is also masked?
-                        let uni_in_frag = wgpu::BufferBinding {
-                            buffer: draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
-                            offset: index.basic_mask_frag.unwrap() as u64,
-                            size: Some(
-                                NonZero::new(size_of::<
-                                    <basic_mask_frag::Input as UniformBlock>::Buffer,
-                                >() as u64)
-                                .unwrap(),
-                            ),
-                        };
-                        let frag_binding = draw_session.resources.part_shader_mask_frag.bind(
-                            &draw_session.device,
+                        let frag_binding = draw_session.binding_cache.bind_basic_mask_frag(
+                            &draw_session.resources,
                             albedo.view(),
-                            &draw_session.resources.model_sampler,
-                            uni_in_frag,
+                            draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
                         );
-                        let vert_binding = draw_session
-                            .resources
-                            .part_shader_vert
-                            .bind(&draw_session.device, uni_in_vert);
                         let pipeline = draw_session
                             .resources
                             .part_mask_pipeline
@@ -332,36 +306,28 @@ impl DrawCommandList {
                                 Some(mask_depthstencil.clone()),
                             );
                         render_pass.set_pipeline(pipeline.pipeline());
-                        pipeline.bind_frag(render_pass, Some(&frag_binding));
-                        pipeline.bind_vertex(render_pass, Some(&vert_binding));
+                        pipeline.bind_frag(
+                            render_pass,
+                            Some(&frag_binding),
+                            &[index.basic_mask_frag.unwrap() as u32],
+                        );
+                        pipeline.bind_vertex(
+                            render_pass,
+                            Some(&vert_binding),
+                            &[index.basic_vert.unwrap() as u32],
+                        );
 
                         render_pass.set_stencil_reference(stencil_reference);
                     } else {
-                        let all = wgpu::ColorWrites::ALL;
                         //Regular parts
-
-                        let uni_in_frag = wgpu::BufferBinding {
-                            buffer: draw_session.basic_frag_buffer.as_ref().unwrap(),
-                            offset: index.basic_frag.unwrap() as u64,
-                            size: Some(
-                                NonZero::new(
-                                    size_of::<<basic_frag::Input as UniformBlock>::Buffer>() as u64,
-                                )
-                                .unwrap(),
-                            ),
-                        };
-                        let frag_binding = draw_session.resources.part_shader_frag.bind(
-                            &draw_session.device,
+                        let all = wgpu::ColorWrites::ALL;
+                        let frag_binding = draw_session.binding_cache.bind_basic_frag(
+                            &draw_session.resources,
                             albedo.view(),
-                            bumpmap.view(),
                             emissive.view(),
-                            &draw_session.resources.model_sampler,
-                            uni_in_frag,
+                            bumpmap.view(),
+                            draw_session.basic_frag_buffer.as_ref().unwrap(),
                         );
-                        let vert_binding = draw_session
-                            .resources
-                            .part_shader_vert
-                            .bind(&draw_session.device, uni_in_vert);
 
                         let pipeline = if using_mask {
                             draw_session.resources.part_pipeline.with_configuration(
@@ -382,8 +348,16 @@ impl DrawCommandList {
                         };
 
                         render_pass.set_pipeline(pipeline.pipeline());
-                        pipeline.bind_frag(render_pass, Some(&frag_binding));
-                        pipeline.bind_vertex(render_pass, Some(&vert_binding));
+                        pipeline.bind_frag(
+                            render_pass,
+                            Some(&frag_binding),
+                            &[index.basic_frag.unwrap() as u32],
+                        );
+                        pipeline.bind_vertex(
+                            render_pass,
+                            Some(&vert_binding),
+                            &[index.basic_vert.unwrap() as u32],
+                        );
 
                         render_pass.set_stencil_reference(1);
                         render_pass.set_pipeline(pipeline.pipeline());
@@ -496,28 +470,15 @@ impl DrawCommandList {
                         ];
 
                         let index = draw_session.buffer_indices.get(&id.into()).unwrap();
-                        let uni_in_frag = wgpu::BufferBinding {
-                            buffer: draw_session.composite_frag_buffer.as_ref().unwrap(),
-                            offset: index.composite_frag.unwrap() as u64,
-                            size: Some(
-                                NonZero::new(size_of::<
-                                    <composite_frag::Input as UniformBlock>::Buffer,
-                                >() as u64)
-                                .unwrap(),
-                            ),
-                        };
-                        let frag_binding = draw_session.resources.composite_shader_frag.bind(
-                            &draw_session.device,
+                        let vert_binding =
+                            draw_session.resources.composite_shader_vert_bind.clone();
+                        let frag_binding = draw_session.binding_cache.bind_composite_frag(
+                            &draw_session.resources,
                             composite.albedo().view(),
                             composite.emissive().view(),
                             composite.bump().view(),
-                            &draw_session.resources.model_sampler,
-                            uni_in_frag,
+                            draw_session.composite_frag_buffer.as_ref().unwrap(),
                         );
-                        let vert_binding = draw_session
-                            .resources
-                            .composite_shader_vert
-                            .bind(&draw_session.device);
 
                         let pipeline = draw_session
                             .resources
@@ -531,8 +492,12 @@ impl DrawCommandList {
                             );
 
                         render_pass.set_pipeline(pipeline.pipeline());
-                        pipeline.bind_frag(&mut render_pass, Some(&frag_binding));
-                        pipeline.bind_vertex(&mut render_pass, Some(&vert_binding));
+                        pipeline.bind_frag(
+                            &mut render_pass,
+                            Some(&frag_binding),
+                            &[index.composite_frag.unwrap() as u32],
+                        );
+                        pipeline.bind_vertex(&mut render_pass, Some(&vert_binding), &[]);
                         render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
                     }
                 }
