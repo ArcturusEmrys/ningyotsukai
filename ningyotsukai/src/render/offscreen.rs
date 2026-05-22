@@ -171,4 +171,10 @@ impl OffscreenRender {
             }
         }
     }
+
+    pub fn update(&mut self, dt: f32) {
+        if let Some(mut document) = self.document.upgrade() {
+            document.stage_mut().update(dt);
+        }
+    }
 }

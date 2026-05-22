@@ -13,11 +13,11 @@ pub enum RenderMessage<C> {
         wgpu::Queue,
     ),
     RegisterDocument(C, Document),
-    DidFrameUpdate(C),
     UnregisterDocument(C, Document),
     Shutdown,
 }
 
 pub enum RenderResponse<C> {
     Ack(C),
+    DidFrameUpdate,
 }

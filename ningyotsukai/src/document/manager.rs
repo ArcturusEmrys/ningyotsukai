@@ -9,10 +9,15 @@ use ningyo_texshare::ExtendedDevice;
 use crate::document::{Document, WeakDocument};
 use crate::render::{RenderMessage, RenderResponse, render_start};
 
+type Callback = Box<dyn Fn()>;
+
 #[derive(Clone)]
 pub struct DocumentManager(Rc<RefCell<DocumentManagerInner>>);
 struct DocumentManagerInner {
     documents: Vec<WeakDocument>,
+
+    /// Callbacks fired whenever the offcanvas thread has completed an update.
+    callbacks: Vec<Callback>,
 
     send: Sender<RenderMessage<()>>,
 
@@ -23,17 +28,26 @@ impl DocumentManager {
     pub fn new() -> Self {
         let (send, recv) = render_start();
 
-        DocumentManager(Rc::new(RefCell::new(DocumentManagerInner {
+        let me = DocumentManager(Rc::new(RefCell::new(DocumentManagerInner {
             send,
             recv,
             documents: vec![],
-        })))
-    }
+            callbacks: vec![],
+        })));
 
-    fn clear_messages(&mut self) {
-        let state = &mut *self.0.borrow_mut();
+        glib::idle_add_local({
+            let idle_me = Rc::downgrade(&me.0);
+            move || {
+                if let Some(me) = idle_me.upgrade() {
+                    DocumentManager(me).tick();
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            }
+        });
 
-        while let Ok(e) = state.recv.try_recv() {}
+        me
     }
 
     pub fn register_document(&mut self, document: Document) {
@@ -86,20 +100,40 @@ impl DocumentManager {
             .unwrap();
     }
 
-    pub fn update(&mut self, dt: f32) {
-        self.clear_messages();
+    pub fn add_update_callback<F>(&mut self, callback: F)
+    where
+        F: Fn() + 'static,
+    {
+        self.0.borrow_mut().callbacks.push(Box::new(callback));
+    }
 
+    pub fn tick(&mut self) {
         let state = &mut *self.0.borrow_mut();
         let mut garbage = vec![];
 
-        for (index, document) in state.documents.iter().enumerate() {
-            if let Some(mut document) = document.upgrade() {
-                document.stage_mut().update(dt);
-            } else {
+        for (index, document) in state.documents.iter().enumerate().rev() {
+            if document.upgrade().is_none() {
                 garbage.push(index);
             }
         }
 
-        state.send.send(RenderMessage::DidFrameUpdate(())).unwrap();
+        for index in garbage {
+            state.documents.remove(index);
+        }
+
+        while let Ok(e) = state.recv.try_recv() {
+            match e {
+                RenderResponse::DidFrameUpdate => {
+                    for callback in state.callbacks.iter() {
+                        callback();
+                    }
+                }
+                RenderResponse::Ack(_) => {}
+            }
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        self.0.borrow_mut().send.send(RenderMessage::Shutdown);
     }
 }

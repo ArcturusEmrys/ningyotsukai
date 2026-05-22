@@ -34,11 +34,13 @@ fn main() -> glib::ExitCode {
         .application_id("live.arcturus.ningyotsukai")
         .build();
 
+    let mut document_manager = document::DocumentManager::new();
+
     app.connect_activate({
+        let my_document_manager = document_manager.clone();
         move |app| {
             let tracker_manager: std::rc::Rc<tracker::TrackerManager> =
                 tracker::TrackerManager::new();
-            let document_manager = document::DocumentManager::new();
 
             panels::PanelDock::ensure_type();
             panels::PanelFrame::ensure_type();
@@ -49,11 +51,15 @@ fn main() -> glib::ExitCode {
             let window = window::WindowController::new(
                 app,
                 tracker_manager.clone(),
-                document_manager.clone(),
+                my_document_manager.clone(),
             );
 
             window.present();
         }
+    });
+
+    app.connect_shutdown(move |_| {
+        document_manager.clone().shutdown();
     });
 
     app.run()

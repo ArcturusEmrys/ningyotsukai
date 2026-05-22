@@ -54,10 +54,6 @@ pub struct StageWidgetState {
 
     /// Gizmo for the current selection.
     selection_gizmo: Option<PuppetSelectionGizmo>,
-
-    /// The last tick this widget processed, used to calculate timestamps to
-    /// feed to Inox2D.
-    last_mus: Option<i64>,
 }
 
 #[derive(glib::Properties)]
@@ -149,39 +145,6 @@ impl ObjectImpl for StageWidgetImp {
             Some(ZoomGesture::for_widget(&self.obj().clone().upcast()));
         self.state.borrow_mut().select_gesture =
             Some(SelectGesture::for_widget(&*self.obj(), &drag_sel_gizmo));
-
-        let tick = RefCell::new(Some(self.obj().add_tick_callback(move |me, clock| {
-            let mut state = me.imp().state.borrow_mut();
-
-            let mus = clock.frame_time();
-            let Some(last_mus) = state.last_mus else {
-                state.last_mus = Some(mus);
-                return glib::ControlFlow::Continue;
-            };
-
-            state.last_mus = Some(mus);
-
-            let del_mus = mus - last_mus;
-            let dt = del_mus as f32 / 1_000_000.0;
-
-            drop(state);
-
-            me.imp().update_puppets(dt);
-
-            glib::ControlFlow::Continue
-        })));
-
-        self.obj().connect_unrealize(move |_| {
-            // Rust's type system doesn't support destructors, because it's
-            // missing some kind of "owned reference" type, so Drop and
-            // destroy require you to pretend the object needs to still be
-            // logically valid just in case someone... grabs it out of the
-            // trash, somehow?
-            //
-            // Hence we have to store an option, just so we can .take() the
-            // callback and remove it.
-            tick.borrow_mut().take().map(|tick| tick.remove());
-        });
     }
 
     fn dispose(&self) {
@@ -413,17 +376,6 @@ impl StageWidgetImp {
 
         self.configure_adjustments();
     }
-
-    fn update_puppets(&self, dt: f32) {
-        self.state
-            .borrow_mut()
-            .document_manager
-            .as_mut()
-            .unwrap()
-            .update(dt);
-
-        self.obj().puppet_updated();
-    }
 }
 
 glib::wrapper! {
@@ -441,7 +393,7 @@ impl StageWidget {
         selfish
     }
 
-    pub fn set_document(&self, document: Document, document_manager: DocumentManager) {
+    pub fn set_document(&self, document: Document, mut document_manager: DocumentManager) {
         {
             let mut state = self.imp().state.borrow_mut();
 
@@ -451,7 +403,7 @@ impl StageWidget {
                 .render_area
                 .as_ref()
                 .unwrap()
-                .with_document(document.clone(), document_manager);
+                .with_document(document.clone(), document_manager.clone());
 
             for (_, gizmo) in &state.puppet_gizmos {
                 gizmo.unparent();
@@ -468,10 +420,18 @@ impl StageWidget {
 
                 state.selection_gizmo = Some(gizmo);
             }
+
+            document_manager.add_update_callback({
+                let manager_self = self.downgrade();
+                move || {
+                    if let Some(manager_self) = manager_self.upgrade() {
+                        manager_self.puppet_updated();
+                    }
+                }
+            })
         }
 
         self.imp().configure_adjustments();
-        self.imp().update_puppets(0.0);
     }
 
     fn bind(&self) {

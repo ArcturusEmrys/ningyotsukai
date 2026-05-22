@@ -1,6 +1,7 @@
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use std::thread::spawn;
+use std::time::Instant;
 
 use ningyo_render_wgpu::WgpuResources;
 use ningyo_texshare::ExtendedDevice;
@@ -15,6 +16,8 @@ struct RenderThread {
     wgpu_adapter: Option<wgpu::Adapter>,
     extended_device: Option<ExtendedDevice>,
     wgpu_queue: Option<wgpu::Queue>,
+
+    last_time: Instant,
 
     renderers: Vec<OffscreenRender>,
     unregistered_documents: Vec<WeakDocument>,
@@ -36,11 +39,14 @@ impl RenderThread {
 
         let plugins = vec![];
 
+        let last_time = Instant::now();
+
         RenderThread {
             wgpu_resources,
             wgpu_adapter,
             extended_device: None,
             wgpu_queue: None,
+            last_time,
             renderers,
             unregistered_documents,
             plugins,
@@ -73,7 +79,7 @@ impl RenderThread {
     /// Main loop for off-canvas rendering.
     fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
         loop {
-            match recv.recv() {
+            match recv.try_recv() {
                 Ok(RenderMessage::UseResources(c, adapter, resources, extended_device, queue)) => {
                     self.wgpu_resources = Some(resources);
                     self.wgpu_adapter = Some(adapter);
@@ -120,7 +126,12 @@ impl RenderThread {
 
                     send.send(RenderResponse::Ack(c)).unwrap();
                 }
-                Ok(RenderMessage::DidFrameUpdate(c)) => {
+                Err(TryRecvError::Empty) => {
+                    // The channel is empty. Run an update.
+                    let cur_time = Instant::now();
+                    let del_time = cur_time - self.last_time;
+                    let dt = del_time.as_micros() as f32 / 1_000_000.0;
+
                     #[cfg(feature = "renderdoc")]
                     {
                         use std::ptr::null;
@@ -137,7 +148,20 @@ impl RenderThread {
                         }
                     }
 
+                    let mut garbage = vec![];
+                    for (index, renderer) in self.renderers.iter().enumerate().rev() {
+                        if !renderer.is_valid() {
+                            garbage.push(index);
+                        }
+                    }
+
+                    for index in garbage {
+                        self.renderers.remove(index);
+                    }
+
                     for renderer in self.renderers.iter_mut() {
+                        renderer.update(dt);
+
                         //TODO: Force an allocation every frame so that plugins
                         //don't ever see intermediate results.
                         //Ideally, this should be a ring buffer.
@@ -177,7 +201,7 @@ impl RenderThread {
                         }
                     }
 
-                    send.send(RenderResponse::Ack(c)).unwrap();
+                    send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }
                 Ok(RenderMessage::UnregisterDocument(c, document)) => {
                     let index = self
