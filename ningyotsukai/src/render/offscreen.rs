@@ -23,10 +23,16 @@ pub struct OffscreenRender {
     queue: wgpu::Queue,
 
     /// All renderers for the puppets on this document's stage.
-    puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
+    artboard_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
 
-    /// The texture to render to.
-    texture: Option<(wgpu::Texture, wgpu::TextureView)>,
+    /// The stage texture to render to.
+    artboard_texture: Option<(wgpu::Texture, wgpu::TextureView)>,
+
+    /// All renderers for rendering the puppets in the user's viewport.
+    viewport_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
+
+    /// The last known viewport parameters.
+    viewport_parameters: Option<(wgpu::Texture, f32, f32, f32)>,
 }
 
 impl OffscreenRender {
@@ -41,8 +47,18 @@ impl OffscreenRender {
             resources,
             device,
             queue,
-            puppet_renderers: HashMap::new(),
-            texture: None,
+            artboard_puppet_renderers: HashMap::new(),
+            artboard_texture: None,
+            viewport_puppet_renderers: HashMap::new(),
+            viewport_parameters: None,
+        }
+    }
+
+    /// Remove renderers for puppets that are no longer in the document.
+    pub fn collect_garbage(&mut self) {
+        if let Some(document) = self.document.upgrade() {
+            document.collect_garbage(&mut self.artboard_puppet_renderers);
+            document.collect_garbage(&mut self.viewport_puppet_renderers);
         }
     }
 
@@ -63,11 +79,11 @@ impl OffscreenRender {
     }
 
     pub fn texture(&self) -> &wgpu::Texture {
-        &self.texture.as_ref().unwrap().0
+        &self.artboard_texture.as_ref().unwrap().0
     }
 
     pub fn view(&self) -> &wgpu::TextureView {
-        &self.texture.as_ref().unwrap().1
+        &self.artboard_texture.as_ref().unwrap().1
     }
 
     /// Allocate a new texture to render on.
@@ -105,20 +121,24 @@ impl OffscreenRender {
                 base_array_layer: 0,
                 array_layer_count: None,
             });
-            self.texture = Some((texture, view));
+            self.artboard_texture = Some((texture, view));
         }
     }
 
     pub fn render(&mut self) {
-        //TODO: Stage render target management
         if let Some(document) = self.document.upgrade() {
             let required_size = document.stage().size();
-            let current_size = self.texture.as_ref().map(|(t, _)| (t.width(), t.height()));
+            let current_size = self
+                .artboard_texture
+                .as_ref()
+                .map(|(t, _)| (t.width(), t.height()));
 
             if current_size != Some((required_size.x as u32, required_size.y as u32)) {
                 self.alloc_texture();
             }
 
+            //TODO: This probably should also clear the viewport.
+            //TODO: Are we sure we want to use a render pass here?
             let mut encoder = self
                 .device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -145,9 +165,9 @@ impl OffscreenRender {
             let texture = self.texture().clone();
 
             for (index, puppet) in document.stage().iter() {
-                let renderer_exists = self.puppet_renderers.contains_key(&index);
+                let renderer_exists = self.artboard_puppet_renderers.contains_key(&index);
                 if !renderer_exists {
-                    self.puppet_renderers.insert(
+                    self.artboard_puppet_renderers.insert(
                         index,
                         WgpuRenderer::new_headless_with_resources(
                             self.resources.clone(),
@@ -157,7 +177,7 @@ impl OffscreenRender {
                     );
                 }
 
-                let renderer = self.puppet_renderers.get_mut(&index).unwrap();
+                let renderer = self.artboard_puppet_renderers.get_mut(&index).unwrap();
                 renderer.set_render_target(texture.clone()).unwrap();
 
                 renderer.camera.position.x =
@@ -168,6 +188,25 @@ impl OffscreenRender {
                 renderer.camera.scale.y = puppet.scale();
 
                 renderer.draw(&puppet.model().puppet).unwrap();
+
+                let viewport_renderer_exists = self.viewport_puppet_renderers.contains_key(&index);
+                if !viewport_renderer_exists {
+                    self.viewport_puppet_renderers.insert(
+                        index,
+                        // TODO: This should share resources with any artboard
+                        // renderer that might exist for the puppet
+                        WgpuRenderer::new_headless_with_resources(
+                            self.resources.clone(),
+                            &puppet.model(),
+                        )
+                        .unwrap(),
+                    );
+                }
+
+                self.apply_viewport_to_renderer(index);
+
+                let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
+                renderer.draw(&puppet.model().puppet).unwrap();
             }
         }
     }
@@ -175,6 +214,60 @@ impl OffscreenRender {
     pub fn update(&mut self, dt: f32) {
         if let Some(mut document) = self.document.upgrade() {
             document.stage_mut().update(dt);
+        }
+
+        //TODO: Force an allocation every frame so that plugins
+        //don't ever see intermediate results.
+        //Ideally, this should be a ring buffer.
+        self.alloc_texture();
+        self.render();
+    }
+
+    pub fn apply_viewport_to_renderer(&mut self, index: Index) {
+        let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
+        if let Some((texture, center_x, center_y, zoom)) = &self.viewport_parameters {
+            renderer.set_render_target(texture.clone()).unwrap();
+
+            if let Some(document) = self.document.upgrade() {
+                if let Some(puppet) = document.stage().puppet(index) {
+                    let mut scale = puppet.scale();
+                    scale *= zoom;
+
+                    let mut x = 0.0;
+                    let mut y = 0.0;
+
+                    //Cancel out the center coordinate offset Inox uses
+                    x -= texture.width() as f32 / 2.0 / scale;
+                    y -= texture.height() as f32 / 2.0 / scale;
+
+                    // Apply the viewport scale and position
+                    x -= center_x / puppet.scale();
+                    y -= center_y / puppet.scale();
+
+                    x += puppet.position().x / puppet.scale();
+                    y += puppet.position().y / puppet.scale();
+
+                    renderer.camera.position.x = x;
+                    renderer.camera.position.y = y;
+                    renderer.camera.scale.x = scale;
+                    renderer.camera.scale.y = scale;
+                }
+            }
+        }
+    }
+
+    pub fn viewport_change(
+        &mut self,
+        texture: wgpu::Texture,
+        center_x: f32,
+        center_y: f32,
+        zoom: f32,
+    ) {
+        self.viewport_parameters = Some((texture.clone(), center_x, center_y, zoom));
+
+        let indexes: Vec<_> = self.viewport_puppet_renderers.keys().map(|i| *i).collect();
+        for index in indexes {
+            self.apply_viewport_to_renderer(index);
         }
     }
 }

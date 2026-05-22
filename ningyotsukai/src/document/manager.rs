@@ -9,7 +9,7 @@ use ningyo_texshare::ExtendedDevice;
 use crate::document::{Document, WeakDocument};
 use crate::render::{RenderMessage, RenderResponse, render_start};
 
-type Callback = Box<dyn Fn()>;
+type UpdateCallback = Box<dyn Fn()>;
 
 #[derive(Clone)]
 pub struct DocumentManager(Rc<RefCell<DocumentManagerInner>>);
@@ -17,7 +17,7 @@ struct DocumentManagerInner {
     documents: Vec<WeakDocument>,
 
     /// Callbacks fired whenever the offcanvas thread has completed an update.
-    callbacks: Vec<Callback>,
+    callbacks: Vec<UpdateCallback>,
 
     send: Sender<RenderMessage<()>>,
 
@@ -97,6 +97,28 @@ impl DocumentManager {
                 extended_device,
                 queue,
             ))
+            .unwrap();
+    }
+
+    pub fn viewport_change(
+        &self,
+        document: Document,
+        texture: wgpu::Texture,
+        center_x: f32,
+        center_y: f32,
+        scale: f32,
+    ) {
+        self.0
+            .borrow()
+            .send
+            .send(RenderMessage::ViewportChange {
+                cookie: (),
+                document,
+                texture,
+                center_x,
+                center_y,
+                scale,
+            })
             .unwrap();
     }
 

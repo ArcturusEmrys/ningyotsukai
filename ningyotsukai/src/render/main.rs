@@ -76,6 +76,21 @@ impl RenderThread {
         }
     }
 
+    fn viewport_change(
+        &mut self,
+        document: Document,
+        texture: wgpu::Texture,
+        center_x: f32,
+        center_y: f32,
+        scale: f32,
+    ) {
+        for renderer in &mut self.renderers {
+            if renderer.is_for_document(&document) {
+                renderer.viewport_change(texture.clone(), center_x, center_y, scale);
+            }
+        }
+    }
+
     /// Main loop for off-canvas rendering.
     fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
         loop {
@@ -126,6 +141,17 @@ impl RenderThread {
 
                     send.send(RenderResponse::Ack(c)).unwrap();
                 }
+                Ok(RenderMessage::ViewportChange {
+                    cookie,
+                    document,
+                    texture,
+                    center_x,
+                    center_y,
+                    scale,
+                }) => {
+                    self.viewport_change(document, texture, center_x, center_y, scale);
+                    send.send(RenderResponse::Ack(cookie)).unwrap();
+                }
                 Err(TryRecvError::Empty) => {
                     // The channel is empty. Run an update.
                     let cur_time = Instant::now();
@@ -141,6 +167,23 @@ impl RenderThread {
 
                         //TODO: Can I get native window handles out of GTK?
                         if self.doc.is_some() {
+                            let device = self.extended_device.as_ref().unwrap().device();
+                            #[cfg(target_os = "windows")]
+                            {
+                                use windows::core::Interface;
+
+                                if let Some(dx12_device) =
+                                    unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
+                                {
+                                    let dx12_context = dx12_device.raw_device();
+                                    self.doc
+                                        .as_mut()
+                                        .unwrap()
+                                        .start_frame_capture(dx12_context.as_raw(), null());
+                                }
+                            }
+
+                            #[cfg(not(target_os = "windows"))]
                             self.doc
                                 .as_mut()
                                 .unwrap()
@@ -160,13 +203,8 @@ impl RenderThread {
                     }
 
                     for renderer in self.renderers.iter_mut() {
+                        renderer.collect_garbage();
                         renderer.update(dt);
-
-                        //TODO: Force an allocation every frame so that plugins
-                        //don't ever see intermediate results.
-                        //Ideally, this should be a ring buffer.
-                        renderer.alloc_texture();
-                        renderer.render();
                     }
 
                     if let (Some(device), Some(queue)) =
@@ -193,14 +231,46 @@ impl RenderThread {
                         }
                     }
 
+                    #[cfg(feature = "tracy")]
+                    {
+                        if self.wgpu_resources.is_some() {
+                            self.wgpu_resources
+                                .as_ref()
+                                .unwrap()
+                                .lock()
+                                .unwrap()
+                                .end_frame()
+                                .unwrap();
+                        }
+                    }
+
                     #[cfg(feature = "renderdoc")]
                     {
                         use std::ptr::null;
                         if self.doc.is_some() {
+                            let device = self.extended_device.as_ref().unwrap().device();
+
+                            #[cfg(target_os = "windows")]
+                            {
+                                use windows::core::Interface;
+
+                                if let Some(dx12_device) =
+                                    unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
+                                {
+                                    let dx12_context = dx12_device.raw_device();
+                                    self.doc
+                                        .as_mut()
+                                        .unwrap()
+                                        .end_frame_capture(dx12_context.as_raw(), null());
+                                } else {
+                                    unreachable!();
+                                }
+                            }
+
+                            #[cfg(not(target_os = "windows"))]
                             self.doc.as_mut().unwrap().end_frame_capture(null(), null());
                         }
                     }
-
                     send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }
                 Ok(RenderMessage::UnregisterDocument(c, document)) => {

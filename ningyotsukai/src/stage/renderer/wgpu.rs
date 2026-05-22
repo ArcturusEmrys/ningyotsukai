@@ -7,16 +7,12 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use inox2d::render::InoxRendererExt;
 use ningyo_gtk_wgpu::WgpuArea;
 use ningyo_gtk_wgpu::prelude::*;
 use ningyo_gtk_wgpu::subclass::prelude::*;
 use ningyo_render_wgpu::{WgpuRenderer, WgpuResources};
-
-use generational_arena::Index;
 
 use crate::document::{Document, DocumentManager};
 use crate::stage::Puppet as StagePuppet;
@@ -28,13 +24,6 @@ pub struct StageRendererState {
     document_manager: Option<DocumentManager>,
 
     resources: Option<Arc<Mutex<WgpuResources>>>,
-
-    /// All the renderers that exist to render puppets on our stage.
-    renderers: HashMap<Index, WgpuRenderer<'static>>,
-
-    /// Renderdoc API
-    #[cfg(feature = "renderdoc")]
-    doc: Option<renderdoc::RenderDoc<renderdoc::V100>>,
 }
 
 #[derive(Default, glib::Properties)]
@@ -106,127 +95,13 @@ impl WgpuAreaImpl for StageRendererImp {
         WgpuRenderer::required_render_target_uses()
     }
 
-    fn resize(&self, texture: wgpu::Texture) -> glib::Propagation {
+    fn resize(&self, _texture: wgpu::Texture) -> glib::Propagation {
         self.viewport_changed();
-
-        for (_, renderer) in self.state.borrow_mut().renderers.iter_mut() {
-            renderer.set_render_target(texture.clone()).unwrap();
-        }
 
         glib::Propagation::Proceed
     }
 
     fn render(&self) -> glib::Propagation {
-        let mut state = self.state.borrow_mut();
-        let StageRendererState {
-            document,
-            document_manager: _,
-            resources,
-            renderers,
-            #[cfg(feature = "renderdoc")]
-            doc,
-        } = &mut *state;
-        let document = document.as_mut().unwrap();
-
-        #[cfg(feature = "renderdoc")]
-        {
-            use std::ptr::null;
-            if doc.is_none() {
-                *doc = renderdoc::RenderDoc::new().ok();
-            }
-
-            //TODO: Can I get native window handles out of GTK?
-            if doc.is_some() {
-                let device = self.obj().device().unwrap();
-                #[cfg(target_os = "windows")]
-                {
-                    use windows::core::Interface;
-
-                    if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() } {
-                        let dx12_context = dx12_device.raw_device();
-                        doc.as_mut()
-                            .unwrap()
-                            .start_frame_capture(dx12_context.as_raw(), null());
-                    }
-                }
-
-                #[cfg(not(target_os = "windows"))]
-                doc.as_mut().unwrap().start_frame_capture(null(), null());
-            }
-        }
-
-        // TODO: Issue a clear command on one of the renderers.
-        for (index, puppet) in document.stage().iter() {
-            let mut renderer = renderers.entry(index).or_insert_with(|| {
-                WgpuRenderer::new_headless_with_resources(
-                    resources.clone().unwrap(),
-                    &*puppet.model(),
-                )
-                .unwrap()
-            });
-
-            renderer
-                .set_render_target(self.obj().texture().unwrap())
-                .unwrap();
-
-            self.apply_viewport_to_renderer(&mut renderer, &puppet);
-
-            renderer
-                .draw(&puppet.model().puppet)
-                .expect("successful draw");
-        }
-        drop(state);
-
-        self.collect_garbage();
-
-        #[cfg(feature = "tracy")]
-        {
-            let state = self.state.borrow_mut();
-            if state.resources.is_some() {
-                state
-                    .resources
-                    .as_ref()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .end_frame()
-                    .unwrap();
-            }
-        }
-
-        #[cfg(feature = "renderdoc")]
-        {
-            use std::ptr::null;
-            let mut state = self.state.borrow_mut();
-
-            if state.doc.is_some() {
-                let device = self.obj().device().unwrap();
-
-                #[cfg(target_os = "windows")]
-                {
-                    use windows::core::Interface;
-
-                    if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() } {
-                        let dx12_context = dx12_device.raw_device();
-                        state
-                            .doc
-                            .as_mut()
-                            .unwrap()
-                            .end_frame_capture(dx12_context.as_raw(), null());
-                    } else {
-                        unreachable!();
-                    }
-                }
-
-                #[cfg(not(target_os = "windows"))]
-                state
-                    .doc
-                    .as_mut()
-                    .unwrap()
-                    .end_frame_capture(null(), null());
-            }
-        }
-
         glib::Propagation::Proceed
     }
 }
@@ -282,24 +157,25 @@ impl StageRendererImp {
         let mut state = self.state.borrow_mut();
         let document = state.document.clone().unwrap();
 
-        for (index, puppet) in document.stage().iter() {
-            if let Some(render) = state.renderers.get_mut(&index) {
-                self.apply_viewport_to_renderer(render, &puppet);
-            }
+        let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
+            10.0_f32.powf(zadjust.value() as f32)
+        } else {
+            1.0
+        };
+
+        let mut x = 0.0;
+        let mut y = 0.0;
+
+        if let Some(ref hadjust) = *self.hadjustment.borrow() {
+            x -= hadjust.value() as f32;
         }
-    }
+        if let Some(ref vadjust) = *self.vadjustment.borrow() {
+            y -= vadjust.value() as f32;
+        }
 
-    fn collect_garbage(&self) {
-        let mut state = self.state.borrow_mut();
-        let StageRendererState {
-            document,
-            renderers,
-            ..
-        } = &mut *state;
-
-        let document = document.as_ref().unwrap();
-
-        document.collect_garbage(renderers);
+        if let Some(dm) = &mut state.document_manager {
+            dm.viewport_change(document, self.obj().texture().unwrap(), x, y, zoom);
+        }
     }
 
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
@@ -361,7 +237,6 @@ impl StageRenderer {
 
         state.document = Some(document);
         state.document_manager = Some(document_manager);
-        state.renderers = HashMap::new();
 
         self
     }

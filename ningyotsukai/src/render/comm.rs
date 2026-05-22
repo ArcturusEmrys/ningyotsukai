@@ -14,6 +14,14 @@ pub enum RenderMessage<C> {
     ),
     RegisterDocument(C, Document),
     UnregisterDocument(C, Document),
+    ViewportChange {
+        cookie: C,
+        document: Document,
+        texture: wgpu::Texture,
+        center_x: f32,
+        center_y: f32,
+        scale: f32,
+    },
     Shutdown,
 }
 
