@@ -88,6 +88,9 @@ pub struct WgpuRenderer<'window> {
     /// permenantly poisoned.
     pub(crate) draw_commands: DrawCommandList,
 
+    /// The last submission index received when queueing our work.
+    pub(crate) last_submission_index: Option<wgpu::SubmissionIndex>,
+
     /// The device to render to.
     ///
     /// Must match the device in WgpuResources (this is a cache to avoid lock
@@ -206,6 +209,7 @@ impl<'window> WgpuRenderer<'window> {
             buffer_indices: Default::default(),
             draw_commands: Default::default(),
             bind_cache: Default::default(),
+            last_submission_index: None,
 
             device,
             queue,
@@ -357,6 +361,10 @@ impl<'window> WgpuRenderer<'window> {
         }
 
         None
+    }
+
+    pub fn last_submission_index(&self) -> Option<wgpu::SubmissionIndex> {
+        self.last_submission_index.clone()
     }
 }
 

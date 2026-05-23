@@ -33,7 +33,13 @@ pub trait WgpuAreaImpl:
     }
 
     /// Called to inform the WGPU area that it should render.
-    fn render(&self) -> glib::Propagation;
+    ///
+    /// The Propagation flag is used to signal if all work has been submitted
+    /// to the GPU or not. If you return `ControlFlow::Break`, then you are
+    /// signalling that your work will be submitted at a later time, possibly
+    /// on another thread. You must inform the WgpuArea that rendering has
+    /// completed in this case.
+    fn render(&self) -> glib::ControlFlow;
 
     /// Called to inform the WGPU area that the render target has resized.
     ///
@@ -162,9 +168,11 @@ pub trait WgpuAreaExt {
         f: F,
     ) -> glib::SignalHandlerId;
 
-    fn emit_render(&self);
+    fn emit_render(&self) -> glib::ControlFlow;
 
     fn queue_render(&self);
+
+    fn async_render_complete(&self);
 
     /// Retrieve the object's instance.
     ///
@@ -239,12 +247,18 @@ where
         })
     }
 
-    fn emit_render(&self) {
-        self.emit_by_name::<bool>("render", &[]);
+    fn emit_render(&self) -> glib::ControlFlow {
+        let bool_val = self.emit_by_name::<bool>("render", &[]);
+
+        glib::ControlFlow::from(bool_val)
     }
 
     fn queue_render(&self) {
         self.clone().upcast::<WgpuArea>().queue_render()
+    }
+
+    fn async_render_complete(&self) {
+        self.clone().upcast::<WgpuArea>().async_render_complete()
     }
 
     fn instance(&self) -> Option<wgpu::Instance> {

@@ -101,8 +101,14 @@ impl WgpuAreaImpl for StageRendererImp {
         glib::Propagation::Proceed
     }
 
-    fn render(&self) -> glib::Propagation {
-        glib::Propagation::Proceed
+    fn render(&self) -> glib::ControlFlow {
+        // We do no rendering in our render callback, since it's off-thread.
+        // We instead inform the WgpuArea to wait until we signal that rendering
+        // has completed, and inform the render thread that it is now time to
+        // draw.
+        self.viewport_changed();
+
+        glib::ControlFlow::Break
     }
 }
 
@@ -154,27 +160,29 @@ impl StageRendererImp {
     }
 
     fn viewport_changed(&self) {
-        let mut state = self.state.borrow_mut();
-        let document = state.document.clone().unwrap();
+        if let Some(texture) = self.obj().texture() {
+            let mut state = self.state.borrow_mut();
+            let document = state.document.clone().unwrap();
 
-        let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
-            10.0_f32.powf(zadjust.value() as f32)
-        } else {
-            1.0
-        };
+            let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
+                10.0_f32.powf(zadjust.value() as f32)
+            } else {
+                1.0
+            };
 
-        let mut x = 0.0;
-        let mut y = 0.0;
+            let mut x = 0.0;
+            let mut y = 0.0;
 
-        if let Some(ref hadjust) = *self.hadjustment.borrow() {
-            x -= hadjust.value() as f32;
-        }
-        if let Some(ref vadjust) = *self.vadjustment.borrow() {
-            y -= vadjust.value() as f32;
-        }
+            if let Some(ref hadjust) = *self.hadjustment.borrow() {
+                x -= hadjust.value() as f32;
+            }
+            if let Some(ref vadjust) = *self.vadjustment.borrow() {
+                y -= vadjust.value() as f32;
+            }
 
-        if let Some(dm) = &mut state.document_manager {
-            dm.viewport_change(document, self.obj().texture().unwrap(), x, y, zoom);
+            if let Some(dm) = &mut state.document_manager {
+                dm.viewport_change(document, texture, x, y, zoom);
+            }
         }
     }
 
@@ -223,7 +231,11 @@ impl StageRenderer {
         glib::Object::builder().build()
     }
 
-    pub fn with_document(&self, document: Document, document_manager: DocumentManager) -> &Self {
+    pub fn with_document(
+        &self,
+        document: Document,
+        mut document_manager: DocumentManager,
+    ) -> &Self {
         let mut state = self.imp().state.borrow_mut();
 
         if let Some(resources) = &state.resources {
@@ -234,6 +246,28 @@ impl StageRenderer {
                 self.queue().unwrap(),
             );
         }
+
+        document_manager.add_render_callback({
+            let callback_self = self.clone();
+            move |doc, index| {
+                callback_self.device().unwrap().poll(wgpu::PollType::Wait {
+                    submission_index: index,
+                    timeout: None,
+                });
+                if Some(doc) == callback_self.imp().state.borrow().document {
+                    callback_self.async_render_complete();
+                }
+            }
+        });
+
+        document_manager.add_update_callback({
+            let callback_self = self.downgrade();
+            move || {
+                if let Some(callback_self) = callback_self.upgrade() {
+                    callback_self.queue_render();
+                }
+            }
+        });
 
         state.document = Some(document);
         state.document_manager = Some(document_manager);

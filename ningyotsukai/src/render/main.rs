@@ -24,6 +24,12 @@ struct RenderThread {
 
     plugins: Vec<Box<dyn SinkPlugin>>,
 
+    /// The last recorded ViewportChanged message.
+    ///
+    /// We can't immediately process these as we may have multiples of them in
+    /// flight.
+    last_viewport_unlock: Option<(Document, wgpu::Texture, f32, f32, f32)>,
+
     /// Renderdoc API
     #[cfg(feature = "renderdoc")]
     doc: Option<renderdoc::RenderDoc<renderdoc::V100>>,
@@ -50,6 +56,7 @@ impl RenderThread {
             renderers,
             unregistered_documents,
             plugins,
+            last_viewport_unlock: None,
 
             #[cfg(feature = "renderdoc")]
             doc: None,
@@ -87,6 +94,97 @@ impl RenderThread {
         for renderer in &mut self.renderers {
             if renderer.is_for_document(&document) {
                 renderer.viewport_change(texture.clone(), center_x, center_y, scale);
+            }
+        }
+    }
+
+    fn start_frame(&mut self) {
+        #[cfg(feature = "renderdoc")]
+        {
+            use std::ptr::null;
+            if self.doc.is_none() {
+                self.doc = renderdoc::RenderDoc::new().ok();
+            }
+
+            //TODO: Can I get native window handles out of GTK?
+            if self.doc.is_some() {
+                if let Some(device) = self.extended_device.as_ref() {
+                    let device = device.device();
+                    #[cfg(target_os = "windows")]
+                    {
+                        use windows::core::Interface;
+
+                        if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
+                        {
+                            let dx12_context = dx12_device.raw_device();
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .start_frame_capture(dx12_context.as_raw(), null());
+                        }
+                    }
+
+                    #[cfg(not(target_os = "windows"))]
+                    self.doc
+                        .as_mut()
+                        .unwrap()
+                        .start_frame_capture(null(), null());
+                }
+            }
+        }
+
+        let mut garbage = vec![];
+        for (index, renderer) in self.renderers.iter().enumerate().rev() {
+            if !renderer.is_valid() {
+                garbage.push(index);
+            }
+        }
+
+        for index in garbage {
+            self.renderers.remove(index);
+        }
+    }
+
+    fn end_frame(&mut self) {
+        #[cfg(feature = "tracy")]
+        {
+            if self.wgpu_resources.is_some() {
+                self.wgpu_resources
+                    .as_ref()
+                    .unwrap()
+                    .lock()
+                    .unwrap()
+                    .end_frame()
+                    .unwrap();
+            }
+        }
+
+        #[cfg(feature = "renderdoc")]
+        {
+            use std::ptr::null;
+            if self.doc.is_some() {
+                if let Some(device) = self.extended_device.as_ref() {
+                    let device = device.device();
+
+                    #[cfg(target_os = "windows")]
+                    {
+                        use windows::core::Interface;
+
+                        if let Some(dx12_device) = unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
+                        {
+                            let dx12_context = dx12_device.raw_device();
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .end_frame_capture(dx12_context.as_raw(), null());
+                        } else {
+                            unreachable!();
+                        }
+                    }
+
+                    #[cfg(not(target_os = "windows"))]
+                    self.doc.as_mut().unwrap().end_frame_capture(null(), null());
+                }
             }
         }
     }
@@ -149,7 +247,8 @@ impl RenderThread {
                     center_y,
                     scale,
                 }) => {
-                    self.viewport_change(document, texture, center_x, center_y, scale);
+                    self.last_viewport_unlock =
+                        Some((document, texture, center_x, center_y, scale));
                     send.send(RenderResponse::Ack(cookie)).unwrap();
                 }
                 Err(TryRecvError::Empty) => {
@@ -158,53 +257,17 @@ impl RenderThread {
                     let del_time = cur_time - self.last_time;
                     let dt = del_time.as_micros() as f32 / 1_000_000.0;
 
-                    #[cfg(feature = "renderdoc")]
-                    {
-                        use std::ptr::null;
-                        if self.doc.is_none() {
-                            self.doc = renderdoc::RenderDoc::new().ok();
-                        }
-
-                        //TODO: Can I get native window handles out of GTK?
-                        if self.doc.is_some() {
-                            let device = self.extended_device.as_ref().unwrap().device();
-                            #[cfg(target_os = "windows")]
-                            {
-                                use windows::core::Interface;
-
-                                if let Some(dx12_device) =
-                                    unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
-                                {
-                                    let dx12_context = dx12_device.raw_device();
-                                    self.doc
-                                        .as_mut()
-                                        .unwrap()
-                                        .start_frame_capture(dx12_context.as_raw(), null());
-                                }
-                            }
-
-                            #[cfg(not(target_os = "windows"))]
-                            self.doc
-                                .as_mut()
-                                .unwrap()
-                                .start_frame_capture(null(), null());
-                        }
-                    }
-
-                    let mut garbage = vec![];
-                    for (index, renderer) in self.renderers.iter().enumerate().rev() {
-                        if !renderer.is_valid() {
-                            garbage.push(index);
-                        }
-                    }
-
-                    for index in garbage {
-                        self.renderers.remove(index);
-                    }
+                    self.start_frame();
 
                     for renderer in self.renderers.iter_mut() {
                         renderer.collect_garbage();
                         renderer.update(dt);
+
+                        //TODO: Force an allocation every frame so that plugins
+                        //don't ever see intermediate results.
+                        //Ideally, this should be a ring buffer.
+                        renderer.alloc_texture();
+                        renderer.render();
                     }
 
                     if let (Some(device), Some(queue)) =
@@ -231,46 +294,22 @@ impl RenderThread {
                         }
                     }
 
-                    #[cfg(feature = "tracy")]
+                    if let Some((document, texture, center_x, center_y, scale)) =
+                        self.last_viewport_unlock.take()
                     {
-                        if self.wgpu_resources.is_some() {
-                            self.wgpu_resources
-                                .as_ref()
-                                .unwrap()
-                                .lock()
-                                .unwrap()
-                                .end_frame()
-                                .unwrap();
+                        self.viewport_change(document, texture, center_x, center_y, scale);
+
+                        for renderer in self.renderers.iter_mut() {
+                            let index = renderer.render_viewport();
+                            send.send(RenderResponse::RenderComplete(
+                                renderer.document().upgrade().unwrap(),
+                                index,
+                            ));
                         }
                     }
 
-                    #[cfg(feature = "renderdoc")]
-                    {
-                        use std::ptr::null;
-                        if self.doc.is_some() {
-                            let device = self.extended_device.as_ref().unwrap().device();
+                    self.end_frame();
 
-                            #[cfg(target_os = "windows")]
-                            {
-                                use windows::core::Interface;
-
-                                if let Some(dx12_device) =
-                                    unsafe { device.as_hal::<wgpu_hal::dx12::Api>() }
-                                {
-                                    let dx12_context = dx12_device.raw_device();
-                                    self.doc
-                                        .as_mut()
-                                        .unwrap()
-                                        .end_frame_capture(dx12_context.as_raw(), null());
-                                } else {
-                                    unreachable!();
-                                }
-                            }
-
-                            #[cfg(not(target_os = "windows"))]
-                            self.doc.as_mut().unwrap().end_frame_capture(null(), null());
-                        }
-                    }
                     send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }
                 Ok(RenderMessage::UnregisterDocument(c, document)) => {

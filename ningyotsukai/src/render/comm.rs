@@ -28,4 +28,5 @@ pub enum RenderMessage<C> {
 pub enum RenderResponse<C> {
     Ack(C),
     DidFrameUpdate,
+    RenderComplete(Document, Option<wgpu::SubmissionIndex>),
 }

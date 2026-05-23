@@ -26,23 +26,25 @@ use crate::widget::subclass::{WgpuAreaClass, WgpuAreaExt, WgpuAreaImpl};
 struct WgpuAreaState {
     needs_resize: bool,
     needs_render: bool,
-}
+    in_async_render: bool,
+    async_render_complete: bool,
 
-#[derive(Default)]
-pub struct WgpuAreaImp {
-    state: RefCell<WgpuAreaState>,
-
-    wgpu_instance: RefCell<Option<wgpu::Instance>>,
-    wgpu_adapter: RefCell<Option<wgpu::Adapter>>,
-    wgpu_device: RefCell<Option<ExtendedDevice>>,
-    wgpu_queue: RefCell<Option<wgpu::Queue>>,
+    wgpu_instance: Option<wgpu::Instance>,
+    wgpu_adapter: Option<wgpu::Adapter>,
+    wgpu_device: Option<ExtendedDevice>,
+    wgpu_queue: Option<wgpu::Queue>,
 
     /// WGPU texture, double-buffered.
     ///
     /// We absolutely cannot hand out the exportable texture to client code, as
     /// clear operations will fail on it.
-    wgpu_texture: RefCell<Option<(wgpu::Texture, ExportableTexture)>>,
-    texture: RefCell<Option<gdk4::Texture>>,
+    wgpu_texture: Option<(wgpu::Texture, ExportableTexture)>,
+    texture: Option<gdk4::Texture>,
+}
+
+#[derive(Default)]
+pub struct WgpuAreaImp {
+    state: RefCell<WgpuAreaState>,
 }
 
 #[glib::object_subclass]
@@ -133,16 +135,31 @@ impl WidgetImpl for WgpuAreaImp {
     }
 
     fn snapshot(&self, snapshot: &gtk4::Snapshot) {
-        let needs_resize = self.state.borrow().needs_resize;
-        let needs_render = self.state.borrow().needs_render;
+        let (
+            needs_resize,
+            needs_render,
+            in_async_render,
+            async_render_complete,
+            adapter,
+            device,
+            queue,
+        ) = {
+            let state_ref = self.state.borrow();
+            let state = &*state_ref;
+            (
+                state.needs_resize,
+                state.needs_render,
+                state.in_async_render,
+                state.async_render_complete,
+                state.wgpu_adapter.clone().unwrap(),
+                state.wgpu_device.clone().unwrap(),
+                state.wgpu_queue.clone().unwrap(),
+            )
+        };
 
         if needs_render {
-            if needs_resize {
-                if let (Some(adapter), Some(device), Some(queue)) = (
-                    &*self.wgpu_adapter.borrow(),
-                    &*self.wgpu_device.borrow(),
-                    &*self.wgpu_queue.borrow(),
-                ) {
+            if !in_async_render {
+                if needs_resize {
                     let size = wgpu::Extent3d {
                         width: self.obj().width() as u32 * self.obj().scale_factor() as u32,
                         height: self.obj().height() as u32 * self.obj().scale_factor() as u32,
@@ -160,8 +177,8 @@ impl WidgetImpl for WgpuAreaImp {
 
                     let backing_texture = device
                         .create_texture_exportable(
-                            adapter,
-                            queue,
+                            &adapter,
+                            &queue,
                             &wgpu::TextureDescriptor {
                                 size,
                                 mip_level_count: 1,
@@ -187,69 +204,50 @@ impl WidgetImpl for WgpuAreaImp {
                         view_formats: &[],
                     });
 
-                    *self.wgpu_texture.borrow_mut() = Some((buffer_texture, backing_texture));
+                    self.state.borrow_mut().wgpu_texture =
+                        Some((buffer_texture.clone(), backing_texture));
+
+                    //NOTE: We specifically give the subclass the buffer texture
+                    //so we can copy to the exportable one.
+                    self.obj().emit_resize(buffer_texture);
+                    self.state.borrow_mut().needs_resize = false;
                 }
 
-                //NOTE: We specifically give the subclass the buffer texture
-                //so we can copy to the exportable one.
-                self.obj()
-                    .emit_resize(self.wgpu_texture.borrow().as_ref().unwrap().0.clone());
-                self.state.borrow_mut().needs_resize = false;
+                // TODO: Add option to render directly to the backing texture, with
+                // the restriction that clearing the texture crashes your program.
             }
+        }
 
-            // TODO: Add option to disable the implicit clear.
-            // TODO: Add option to render directly to the backing texture, with
-            // the restriction that clearing the texture crashes your program.
-            {
-                let device = self.wgpu_device.borrow();
-                let device = device.as_ref().unwrap();
-                let queue = self.wgpu_queue.borrow();
-                let queue = queue.as_ref().unwrap();
-
-                let texture = self.wgpu_texture.borrow();
-                let texture = texture.as_ref().unwrap();
-                let (buffer_texture, _backing_texture) = texture;
-
-                let mut encoder =
+        if needs_render {
+            if !in_async_render {
+                let did_complete = self.obj().emit_render();
+                if did_complete == glib::ControlFlow::Break {
+                    //Async rendering in progress.
+                    //Do nothing until we hear back from the subclass.
+                    self.state.borrow_mut().in_async_render = true;
+                    self.state.borrow_mut().async_render_complete = false;
+                } else {
+                    //We only poll the GPU in the sync path
                     device
                         .device()
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("NGWgpuArea internal buffer clear"),
-                        });
-
-                encoder.clear_texture(
-                    buffer_texture,
-                    &wgpu::ImageSubresourceRange {
-                        aspect: wgpu::TextureAspect::All,
-                        base_mip_level: 0,
-                        mip_level_count: None,
-                        base_array_layer: 0,
-                        array_layer_count: None,
-                    },
-                );
-
-                queue.submit(std::iter::once(encoder.finish()));
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: None,
+                            timeout: None,
+                        })
+                        .unwrap();
+                }
             }
 
-            self.obj().emit_render();
-
-            {
-                let device = self.wgpu_device.borrow();
-                let device = device.as_ref().unwrap();
-                let queue = self.wgpu_queue.borrow();
-                let queue = queue.as_ref().unwrap();
-
-                device
-                    .device()
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: None,
-                        timeout: None,
-                    })
-                    .unwrap();
-
-                let texture = self.wgpu_texture.borrow();
-                let texture = texture.as_ref().unwrap();
-                let (buffer_texture, backing_texture) = texture;
+            if !in_async_render || (in_async_render && async_render_complete) {
+                self.state.borrow_mut().needs_render = false;
+                if in_async_render && async_render_complete {
+                    self.state.borrow_mut().in_async_render = false;
+                    self.state.borrow_mut().async_render_complete = false;
+                }
+                let ((buffer_texture, backing_texture), old_gdk_texture) = {
+                    let state = self.state.borrow();
+                    (state.wgpu_texture.clone().unwrap(), state.texture.clone())
+                };
 
                 let mut encoder =
                     device
@@ -260,7 +258,7 @@ impl WidgetImpl for WgpuAreaImp {
 
                 encoder.copy_texture_to_texture(
                     wgpu::TexelCopyTextureInfo {
-                        texture: buffer_texture,
+                        texture: &buffer_texture,
                         mip_level: 0,
                         origin: wgpu::Origin3d::ZERO,
                         aspect: wgpu::TextureAspect::All,
@@ -278,36 +276,26 @@ impl WidgetImpl for WgpuAreaImp {
                     },
                 );
 
-                queue.submit(std::iter::once(encoder.finish()));
+                let index = queue.submit(std::iter::once(encoder.finish()));
 
                 device
                     .device()
                     .poll(wgpu::PollType::Wait {
-                        submission_index: None,
+                        submission_index: Some(index),
                         timeout: None,
                     })
                     .unwrap();
+
+                let texture = backing_texture
+                    .clone()
+                    .into_gdk_texture(&device.device(), &self.obj().display(), old_gdk_texture)
+                    .expect("working gdk4 import");
+
+                self.state.borrow_mut().texture = Some(texture);
             }
-
-            let old_texture = self.texture.borrow().clone();
-            let texture = self
-                .wgpu_texture
-                .borrow()
-                .as_ref()
-                .unwrap()
-                .1
-                .clone()
-                .into_gdk_texture(
-                    &self.wgpu_device.borrow().as_ref().unwrap().device(),
-                    &self.obj().display(),
-                    old_texture,
-                )
-                .expect("working gdk4 import");
-
-            *self.texture.borrow_mut() = Some(texture);
         }
 
-        if let Some(ref texture) = *self.texture.borrow() {
+        if let Some(ref texture) = self.state.borrow_mut().texture {
             snapshot.append_texture(
                 texture,
                 &graphene::Rect::new(
@@ -322,8 +310,8 @@ impl WidgetImpl for WgpuAreaImp {
 }
 
 impl WgpuAreaImpl for WgpuAreaImp {
-    fn render(&self) -> glib::Propagation {
-        glib::Propagation::Stop
+    fn render(&self) -> glib::ControlFlow {
+        glib::ControlFlow::Break
     }
 
     fn resize(&self, _texture: wgpu::Texture) -> glib::Propagation {
@@ -349,10 +337,12 @@ impl WgpuAreaImp {
         };
         let (device, queue) = adapter.request_device_with_extensions(&dd_label).await?;
 
-        *me.imp().wgpu_instance.borrow_mut() = Some(instance);
-        *me.imp().wgpu_adapter.borrow_mut() = Some(adapter);
-        *me.imp().wgpu_device.borrow_mut() = Some(device);
-        *me.imp().wgpu_queue.borrow_mut() = Some(queue);
+        let mut state = me.imp().state.borrow_mut();
+
+        state.wgpu_instance = Some(instance);
+        state.wgpu_adapter = Some(adapter);
+        state.wgpu_device = Some(device);
+        state.wgpu_queue = Some(queue);
 
         Ok(())
     }
@@ -412,51 +402,63 @@ impl WgpuArea {
         self.queue_draw();
     }
 
+    pub fn async_render_complete(&self) {
+        let mut state = self.imp().state.borrow_mut();
+
+        if state.in_async_render {
+            state.needs_render = true;
+            state.async_render_complete = true;
+            self.queue_draw();
+        }
+    }
+
     /// Retrieve the object's instance.
     ///
     /// This function returns None if the instance has not yet been created.
     pub fn instance(&self) -> Option<wgpu::Instance> {
-        (*self.imp().wgpu_instance.borrow()).clone()
+        self.imp().state.borrow().wgpu_instance.clone()
     }
 
     /// Retrieve the object's adapter.
     ///
     /// This function returns None if the adapter has not yet been created.
     pub fn adapter(&self) -> Option<wgpu::Adapter> {
-        (*self.imp().wgpu_adapter.borrow()).clone()
+        self.imp().state.borrow().wgpu_adapter.clone()
     }
 
     /// Retrieve the object's device.
     ///
     /// This function returns None if the device has not yet been created.
     pub fn device(&self) -> Option<wgpu::Device> {
-        let data = self.imp().wgpu_device.borrow();
-        if let Some(ref device) = *data {
-            Some(device.device().clone())
-        } else {
-            None
-        }
+        self.imp()
+            .state
+            .borrow()
+            .wgpu_device
+            .as_ref()
+            .map(|d| d.device().clone())
     }
 
     /// Retrieve the object's device, with texture-sharing extensions.
     ///
     /// This function returns None if the device has not yet been created.
     pub fn extended_device(&self) -> Option<ExtendedDevice> {
-        (*self.imp().wgpu_device.borrow()).clone()
+        self.imp().state.borrow().wgpu_device.clone()
     }
 
     /// Retrieve the object's queue.
     ///
     /// This function returns None if the queue has not yet been created.
     pub fn queue(&self) -> Option<wgpu::Queue> {
-        (*self.imp().wgpu_queue.borrow()).clone()
+        self.imp().state.borrow().wgpu_queue.clone()
     }
 
     /// Retrieve the current texture to draw to.
     ///
     /// This is equivalent to the last texture that was sent to resize.
     pub fn texture(&self) -> Option<wgpu::Texture> {
-        if let Some((buffer_texture, _backing_texture)) = &*self.imp().wgpu_texture.borrow() {
+        if let Some((buffer_texture, _backing_texture)) =
+            self.imp().state.borrow().wgpu_texture.as_ref()
+        {
             Some(buffer_texture.clone())
         } else {
             None

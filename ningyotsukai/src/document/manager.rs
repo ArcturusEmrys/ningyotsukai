@@ -10,6 +10,7 @@ use crate::document::{Document, WeakDocument};
 use crate::render::{RenderMessage, RenderResponse, render_start};
 
 type UpdateCallback = Box<dyn Fn()>;
+type RenderCallback = Box<dyn Fn(Document, Option<wgpu::SubmissionIndex>)>;
 
 #[derive(Clone)]
 pub struct DocumentManager(Rc<RefCell<DocumentManagerInner>>);
@@ -18,6 +19,9 @@ struct DocumentManagerInner {
 
     /// Callbacks fired whenever the offcanvas thread has completed an update.
     callbacks: Vec<UpdateCallback>,
+
+    /// Callbacks fired whenever the offcanvas thread has completed rendering.
+    render_callbacks: Vec<RenderCallback>,
 
     send: Sender<RenderMessage<()>>,
 
@@ -33,6 +37,7 @@ impl DocumentManager {
             recv,
             documents: vec![],
             callbacks: vec![],
+            render_callbacks: vec![],
         })));
 
         glib::idle_add_local({
@@ -129,6 +134,16 @@ impl DocumentManager {
         self.0.borrow_mut().callbacks.push(Box::new(callback));
     }
 
+    pub fn add_render_callback<F>(&mut self, callback: F)
+    where
+        F: Fn(Document, Option<wgpu::SubmissionIndex>) + 'static,
+    {
+        self.0
+            .borrow_mut()
+            .render_callbacks
+            .push(Box::new(callback));
+    }
+
     pub fn tick(&mut self) {
         let state = &mut *self.0.borrow_mut();
         let mut garbage = vec![];
@@ -145,12 +160,17 @@ impl DocumentManager {
 
         while let Ok(e) = state.recv.try_recv() {
             match e {
+                RenderResponse::Ack(_) => {}
                 RenderResponse::DidFrameUpdate => {
                     for callback in state.callbacks.iter() {
                         callback();
                     }
                 }
-                RenderResponse::Ack(_) => {}
+                RenderResponse::RenderComplete(doc, index) => {
+                    for callback in state.render_callbacks.iter() {
+                        callback(doc.clone(), index.clone());
+                    }
+                }
             }
         }
     }

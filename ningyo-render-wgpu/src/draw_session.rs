@@ -77,6 +77,8 @@ pub struct WgpuDrawSession<'a> {
 
     pub(crate) draw_commands: &'a mut DrawCommandList,
 
+    pub(crate) last_submission_index: &'a mut Option<wgpu::SubmissionIndex>,
+
     last_mask_threshold: f32,
     is_in_mask: bool,
     is_in_composite: bool,
@@ -185,6 +187,7 @@ impl<'a> WgpuDrawSession<'a> {
             composite_frag_buffer: None,
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
+            last_submission_index: &mut renderer.last_submission_index,
 
             #[cfg(feature = "timing")]
             last_segment_time: start_time.clone(),
@@ -422,7 +425,7 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         }
 
         let end = self.encoder.finish();
-        self.resources.queue.submit(std::iter::once(end));
+        *self.last_submission_index = Some(self.resources.queue.submit(std::iter::once(end)));
 
         #[cfg(feature = "timing")]
         {

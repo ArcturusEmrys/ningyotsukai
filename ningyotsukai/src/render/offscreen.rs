@@ -125,7 +125,9 @@ impl OffscreenRender {
         }
     }
 
-    pub fn render(&mut self) {
+    pub fn render(&mut self) -> Option<wgpu::SubmissionIndex> {
+        let mut submission = None;
+
         if let Some(document) = self.document.upgrade() {
             let required_size = document.stage().size();
             let current_size = self
@@ -160,7 +162,7 @@ impl OffscreenRender {
                 ..Default::default()
             });
 
-            self.queue.submit(std::iter::once(encoder.finish()));
+            submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
 
             let texture = self.texture().clone();
 
@@ -189,6 +191,39 @@ impl OffscreenRender {
 
                 renderer.draw(&puppet.model().puppet).unwrap();
 
+                if let Some(index) = renderer.last_submission_index() {
+                    submission = Some(index);
+                }
+            }
+        }
+
+        submission
+    }
+
+    pub fn render_viewport(&mut self) -> Option<wgpu::SubmissionIndex> {
+        let mut submission = None;
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Screen clear"),
+            });
+
+        encoder.clear_texture(
+            &self.viewport_parameters.as_ref().unwrap().0,
+            &wgpu::ImageSubresourceRange {
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: None,
+                base_array_layer: 0,
+                array_layer_count: None,
+            },
+        );
+
+        submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
+
+        if let Some(document) = self.document.upgrade() {
+            for (index, puppet) in document.stage().iter() {
                 let viewport_renderer_exists = self.viewport_puppet_renderers.contains_key(&index);
                 if !viewport_renderer_exists {
                     self.viewport_puppet_renderers.insert(
@@ -207,20 +242,19 @@ impl OffscreenRender {
 
                 let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
                 renderer.draw(&puppet.model().puppet).unwrap();
+                if let Some(index) = renderer.last_submission_index() {
+                    submission = renderer.last_submission_index();
+                }
             }
         }
+
+        submission
     }
 
     pub fn update(&mut self, dt: f32) {
         if let Some(mut document) = self.document.upgrade() {
             document.stage_mut().update(dt);
         }
-
-        //TODO: Force an allocation every frame so that plugins
-        //don't ever see intermediate results.
-        //Ideally, this should be a ring buffer.
-        self.alloc_texture();
-        self.render();
     }
 
     pub fn apply_viewport_to_renderer(&mut self, index: Index) {
