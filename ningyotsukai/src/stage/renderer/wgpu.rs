@@ -96,8 +96,6 @@ impl WgpuAreaImpl for StageRendererImp {
     }
 
     fn resize(&self, _texture: wgpu::Texture) -> glib::Propagation {
-        self.viewport_changed();
-
         glib::Propagation::Proceed
     }
 
@@ -106,7 +104,30 @@ impl WgpuAreaImpl for StageRendererImp {
         // We instead inform the WgpuArea to wait until we signal that rendering
         // has completed, and inform the render thread that it is now time to
         // draw.
-        self.viewport_changed();
+        if let Some(texture) = self.obj().texture() {
+            let mut state = self.state.borrow_mut();
+            let document = state.document.clone().unwrap();
+
+            let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
+                10.0_f32.powf(zadjust.value() as f32)
+            } else {
+                1.0
+            };
+
+            let mut x = 0.0;
+            let mut y = 0.0;
+
+            if let Some(ref hadjust) = *self.hadjustment.borrow() {
+                x -= hadjust.value() as f32;
+            }
+            if let Some(ref vadjust) = *self.vadjustment.borrow() {
+                y -= vadjust.value() as f32;
+            }
+
+            if let Some(dm) = &mut state.document_manager {
+                dm.render_viewport(document, texture, x, y, zoom);
+            }
+        }
 
         glib::ControlFlow::Break
     }
@@ -159,38 +180,11 @@ impl StageRendererImp {
         }
     }
 
-    fn viewport_changed(&self) {
-        if let Some(texture) = self.obj().texture() {
-            let mut state = self.state.borrow_mut();
-            let document = state.document.clone().unwrap();
-
-            let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
-                10.0_f32.powf(zadjust.value() as f32)
-            } else {
-                1.0
-            };
-
-            let mut x = 0.0;
-            let mut y = 0.0;
-
-            if let Some(ref hadjust) = *self.hadjustment.borrow() {
-                x -= hadjust.value() as f32;
-            }
-            if let Some(ref vadjust) = *self.vadjustment.borrow() {
-                y -= vadjust.value() as f32;
-            }
-
-            if let Some(dm) = &mut state.document_manager {
-                dm.viewport_change(document, texture, x, y, zoom);
-            }
-        }
-    }
-
     fn set_hadjustment(&self, adjust: Option<gtk4::Adjustment>) {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
-                self_obj.imp().viewport_changed();
+                self_obj.queue_render();
             });
         }
 
@@ -201,7 +195,7 @@ impl StageRendererImp {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
-                self_obj.imp().viewport_changed();
+                self_obj.queue_render();
             });
         }
 
@@ -212,7 +206,7 @@ impl StageRendererImp {
         let self_obj = self.obj().clone();
         if let Some(ref adjust) = adjust {
             adjust.connect_value_changed(move |_| {
-                self_obj.imp().viewport_changed();
+                self_obj.queue_render();
             });
         }
 

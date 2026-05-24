@@ -14,7 +14,7 @@ pub enum RenderMessage<C> {
     ),
     RegisterDocument(C, Document),
     UnregisterDocument(C, Document),
-    ViewportChange {
+    RenderViewport {
         cookie: C,
         document: Document,
         texture: wgpu::Texture,

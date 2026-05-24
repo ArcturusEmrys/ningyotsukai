@@ -105,7 +105,7 @@ impl DocumentManager {
             .unwrap();
     }
 
-    pub fn viewport_change(
+    pub fn render_viewport(
         &self,
         document: Document,
         texture: wgpu::Texture,
@@ -116,7 +116,7 @@ impl DocumentManager {
         self.0
             .borrow()
             .send
-            .send(RenderMessage::ViewportChange {
+            .send(RenderMessage::RenderViewport {
                 cookie: (),
                 document,
                 texture,

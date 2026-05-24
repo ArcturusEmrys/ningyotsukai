@@ -239,7 +239,7 @@ impl RenderThread {
 
                     send.send(RenderResponse::Ack(c)).unwrap();
                 }
-                Ok(RenderMessage::ViewportChange {
+                Ok(RenderMessage::RenderViewport {
                     cookie,
                     document,
                     texture,
