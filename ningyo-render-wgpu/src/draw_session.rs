@@ -1,5 +1,6 @@
 use glam::Mat4;
 use glam::UVec2;
+use inox2d::node::components::MaskMode;
 use inox2d::node::drawables::DrawableKind;
 use inox2d::node::{InoxNodeUuid, components, drawables};
 use inox2d::render::CompositeRenderCtx;
@@ -83,6 +84,8 @@ pub struct WgpuDrawSession<'a> {
     is_in_mask: bool,
     is_in_composite: bool,
     stencil_reference_value: u32,
+
+    last_mask: Vec<(InoxNodeUuid, MaskMode)>,
 
     #[cfg(feature = "timing")]
     start_time: std::time::Instant,
@@ -181,6 +184,7 @@ impl<'a> WgpuDrawSession<'a> {
             is_in_mask: false,
             is_in_composite: false,
             stencil_reference_value: 1,
+            last_mask: Vec::new(),
             basic_vert_buffer: None,
             basic_frag_buffer: None,
             basic_mask_frag_buffer: None,
@@ -268,6 +272,9 @@ impl<'a> WgpuDrawSession<'a> {
             self.builder_composite_frag
                 .commit(&self.device, &self.resources.queue),
         );
+
+        self.last_mask_threshold = 0.0;
+        self.last_mask = vec![];
     }
 
     fn buffer_prepass_drawable(
@@ -357,8 +364,35 @@ impl<'a> WgpuDrawSession<'a> {
 }
 
 impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
-    fn on_begin_masks(&mut self, _masks: &components::Masks) {
-        self.draw_commands.clear_current_stencil();
+    fn on_begin_masks(&mut self, masks: &components::Masks) {
+        let mut masks_are_equal = masks.threshold == self.last_mask_threshold
+            && masks.masks.len() == self.last_mask.len();
+        for (mask_a, mask_b) in masks.masks.iter().zip(self.last_mask.iter()) {
+            if !masks_are_equal {
+                break;
+            }
+
+            masks_are_equal &= mask_a.mode == mask_b.1 && mask_a.source == mask_b.0;
+        }
+
+        if !masks_are_equal {
+            self.draw_commands.clear_current_stencil();
+
+            self.last_mask_threshold = masks.threshold;
+            self.last_mask = masks
+                .masks
+                .iter()
+                .map(|mask| {
+                    (
+                        mask.source,
+                        match mask.mode {
+                            MaskMode::Mask => MaskMode::Mask,
+                            MaskMode::Dodge => MaskMode::Dodge,
+                        },
+                    )
+                })
+                .collect();
+        }
     }
 
     fn on_begin_mask(&mut self, mask: &components::Mask) {
