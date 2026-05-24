@@ -1,5 +1,5 @@
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
-use std::sync::{Arc, Mutex};
 use std::thread::spawn;
 use std::time::Instant;
 
@@ -12,7 +12,7 @@ use crate::render::comm::{RenderMessage, RenderResponse};
 use crate::render::offscreen::OffscreenRender;
 
 struct RenderThread {
-    wgpu_resources: Option<Arc<Mutex<WgpuResources>>>,
+    wgpu_resources: Option<Arc<WgpuResources>>,
     wgpu_adapter: Option<wgpu::Adapter>,
     extended_device: Option<ExtendedDevice>,
     wgpu_queue: Option<wgpu::Queue>,
@@ -150,13 +150,7 @@ impl RenderThread {
         #[cfg(feature = "tracy")]
         {
             if self.wgpu_resources.is_some() {
-                self.wgpu_resources
-                    .as_ref()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .end_frame()
-                    .unwrap();
+                self.wgpu_resources.as_ref().unwrap().end_frame().unwrap();
             }
         }
 

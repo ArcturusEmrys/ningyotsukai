@@ -40,7 +40,7 @@ pub struct WgpuUploads {
 }
 
 impl WgpuUploads {
-    pub fn new(model: &Model, resources: &mut WgpuResources) -> Result<Self, WgpuRendererError> {
+    pub fn new(model: &Model, resources: &WgpuResources) -> Result<Self, WgpuRendererError> {
         let inox_buffers = model
             .puppet
             .render_ctx

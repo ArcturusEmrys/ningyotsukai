@@ -20,7 +20,7 @@ impl DeviceTexture {
     ///
     /// Note that the upload will not complete until the next queue submission.
     pub fn new_from_model(
-        resources: &mut WgpuResources,
+        resources: &WgpuResources,
         model: &Model,
         index: usize,
         texture: &ShallowTexture,
@@ -137,7 +137,7 @@ impl DeviceTexture {
                 multiview_mask: None,
             });
 
-            let pipeline = resources.mipmap_gen_pipeline.with_configuration(
+            let pipeline = resources.mipmap_gen_pipeline_with_configuration(
                 &resources.device,
                 [Some(device_texture.format())],
                 [Some(wgpu::BlendState::REPLACE)],
@@ -341,7 +341,7 @@ impl DepthStencilTexture {
         &self,
         device: &wgpu::Device,
         render_pass: &mut wgpu::RenderPass<'_>,
-        resources: &mut WgpuResources,
+        resources: &WgpuResources,
         color_attachments: &[Option<wgpu::RenderPassColorAttachment>],
     ) {
         let formats = [
@@ -358,7 +358,7 @@ impl DepthStencilTexture {
         let replace = Some(wgpu::BlendState::REPLACE);
         let none = wgpu::ColorWrites::empty();
         let clear = resources.clear_depthstencil.clone();
-        let pipeline = resources.clear_pipeline.with_configuration(
+        let pipeline = resources.clear_pipeline_with_configuration(
             &device,
             formats,
             [replace, replace, replace],

@@ -293,8 +293,7 @@ impl DrawCommandList {
                         );
                         let pipeline = draw_session
                             .resources
-                            .part_mask_pipeline
-                            .with_configuration(
+                            .part_mask_pipeline_with_configuration(
                                 &draw_session.device,
                                 formats,
                                 [blend, blend, blend],
@@ -330,7 +329,7 @@ impl DrawCommandList {
                         );
 
                         let pipeline = if using_mask {
-                            draw_session.resources.part_pipeline.with_configuration(
+                            draw_session.resources.part_pipeline_with_configuration(
                                 &draw_session.device,
                                 formats,
                                 [blend, blend, blend],
@@ -338,7 +337,7 @@ impl DrawCommandList {
                                 Some(masked_depthstencil.clone()),
                             )
                         } else {
-                            draw_session.resources.part_pipeline.with_configuration(
+                            draw_session.resources.part_pipeline_with_configuration(
                                 &draw_session.device,
                                 formats,
                                 [blend, blend, blend],
@@ -482,8 +481,7 @@ impl DrawCommandList {
 
                         let pipeline = draw_session
                             .resources
-                            .composite_pipeline
-                            .with_configuration(
+                            .composite_pipeline_with_configuration(
                                 &draw_session.device,
                                 formats,
                                 [blend, blend, blend],

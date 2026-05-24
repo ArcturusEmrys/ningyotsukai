@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
 
 use ningyo_render_wgpu::WgpuResources;
 use ningyo_texshare::ExtendedDevice;
@@ -88,7 +88,7 @@ impl DocumentManager {
     pub fn use_resources(
         &self,
         adapter: wgpu::Adapter,
-        resources: Arc<Mutex<WgpuResources>>,
+        resources: Arc<WgpuResources>,
         extended_device: ExtendedDevice,
         queue: wgpu::Queue,
     ) {

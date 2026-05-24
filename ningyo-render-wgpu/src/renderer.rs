@@ -5,7 +5,7 @@ use inox2d::model::Model;
 use inox2d::render::InoxRenderer;
 use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use wgpu;
 
 use crate::buffer_builder::BufferBuilder;
@@ -78,7 +78,7 @@ pub struct WgpuRenderer<'window> {
     pub(crate) uploads: WgpuUploads,
 
     /// Static resources common to all renderers regardless of puppet.
-    pub(crate) resources: Arc<Mutex<WgpuResources>>,
+    pub(crate) resources: Arc<WgpuResources>,
 
     /// All the current drawing commands.
     ///
@@ -156,7 +156,7 @@ impl<'window> WgpuRenderer<'window> {
             desired_maximum_frame_latency: 2,
         };
 
-        let resources = Arc::new(Mutex::new(WgpuResources::new(&adapter).await?));
+        let resources = Arc::new(WgpuResources::new(&adapter).await?);
 
         let mut renderer = Self::new_headless_with_resources(resources, model)?;
 
@@ -174,7 +174,7 @@ impl<'window> WgpuRenderer<'window> {
                 ..Default::default()
             })
             .await?;
-        let resources = Arc::new(Mutex::new(WgpuResources::new(&adapter).await?));
+        let resources = Arc::new(WgpuResources::new(&adapter).await?);
 
         // We actually can't create our render target until we know our size.
 
@@ -183,15 +183,13 @@ impl<'window> WgpuRenderer<'window> {
 
     /// Create a renderer with a user-specified resource pack.
     pub fn new_headless_with_resources(
-        resources_arc: Arc<Mutex<WgpuResources>>,
+        resources: Arc<WgpuResources>,
         model: &Model,
     ) -> Result<Self, WgpuRendererError> {
-        let mut resources = resources_arc.lock().unwrap();
         let device = resources.device.clone();
         let queue = resources.queue.clone();
 
-        let uploads = WgpuUploads::new(model, &mut *resources)?;
-        drop(resources);
+        let uploads = WgpuUploads::new(model, &resources)?;
 
         Ok(WgpuRenderer {
             surface: None,
@@ -201,7 +199,7 @@ impl<'window> WgpuRenderer<'window> {
             camera: Camera::default(),
             render_targets: None,
             uploads,
-            resources: resources_arc,
+            resources,
             builder_basic_frag: BufferBuilder::new(wgpu::Limits::default()),
             builder_basic_mask_frag: BufferBuilder::new(wgpu::Limits::default()),
             builder_basic_vert: BufferBuilder::new(wgpu::Limits::default()),

@@ -8,7 +8,6 @@ use inox2d::render::CompositeRenderCtx;
 use inox2d::render::{self, DrawSession};
 use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
-use std::sync::MutexGuard;
 use wgpu;
 
 use crate::WgpuRenderer;
@@ -29,7 +28,7 @@ pub struct WgpuDrawSession<'a> {
     ///
     /// We keep the resources locked throughout the draw session to avoid
     /// contention between multiple renderers.
-    pub(crate) resources: MutexGuard<'a, WgpuResources>,
+    pub(crate) resources: &'a WgpuResources,
 
     /// The uploads for the particular model that we will be drawing.
     pub(crate) uploads: &'a WgpuUploads,
@@ -109,7 +108,7 @@ impl<'a> WgpuDrawSession<'a> {
             panic!("Buffer is not yet set up.");
         }
 
-        let resources = renderer.resources.lock().unwrap();
+        let resources = &*renderer.resources;
 
         #[allow(unused_mut)]
         let mut encoder =
@@ -120,9 +119,7 @@ impl<'a> WgpuDrawSession<'a> {
                 });
 
         #[cfg(feature = "tracy")]
-        let encoder_query = resources
-            .profiler
-            .begin_query("WgpuDrawSession::begin", &mut encoder);
+        let encoder_query = resources.start_query(&mut encoder);
 
         let surface_texture = renderer.surface.as_ref().map(|(surface, config)| {
             (
@@ -454,7 +451,6 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         #[cfg(feature = "tracy")]
         {
             self.resources
-                .profiler
                 .end_query(&mut self.encoder, self.encoder_query);
         }
 

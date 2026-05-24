@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use generational_arena::Index;
 use ningyo_render_wgpu::{WgpuRenderer, WgpuResources};
@@ -16,7 +16,7 @@ pub struct OffscreenRender {
     document: WeakDocument,
 
     /// All loaded WGPU resources.
-    resources: Arc<Mutex<WgpuResources>>,
+    resources: Arc<WgpuResources>,
 
     device: wgpu::Device,
 
@@ -38,7 +38,7 @@ pub struct OffscreenRender {
 impl OffscreenRender {
     pub fn new(
         document: Document,
-        resources: Arc<Mutex<WgpuResources>>,
+        resources: Arc<WgpuResources>,
         device: wgpu::Device,
         queue: wgpu::Queue,
     ) -> Self {

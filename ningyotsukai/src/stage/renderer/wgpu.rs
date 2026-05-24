@@ -7,7 +7,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use ningyo_gtk_wgpu::WgpuArea;
 use ningyo_gtk_wgpu::prelude::*;
@@ -22,7 +22,7 @@ pub struct StageRendererState {
 
     document_manager: Option<DocumentManager>,
 
-    resources: Option<Arc<Mutex<WgpuResources>>>,
+    resources: Option<Arc<WgpuResources>>,
 }
 
 #[derive(Default, glib::Properties)]
@@ -62,10 +62,10 @@ impl WidgetImpl for StageRendererImp {
     fn realize(&self) {
         self.parent_realize();
 
-        let resources = Arc::new(Mutex::new(WgpuResources::new_with_user_device(
+        let resources = Arc::new(WgpuResources::new_with_user_device(
             self.obj().device().unwrap(),
             self.obj().queue().unwrap(),
-        )));
+        ));
 
         let mut state = self.state.borrow_mut();
 

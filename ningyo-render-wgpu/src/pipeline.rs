@@ -4,6 +4,7 @@ use crate::shader::{FragmentShader, VertexShader};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
+#[derive(Clone)]
 pub struct Pipeline<V, F>
 where
     V: VertexShader,
@@ -143,6 +144,24 @@ where
         }
     }
 
+    /// Yields a pipeline with the chosen configuration iff it has already been
+    /// created.
+    ///
+    /// Guaranteed to not allocate a new pipeline, but may fail if the chosen
+    /// configuration does not already exist.
+    pub fn with_configuration_cached(
+        &self,
+        formats: F::TargetArray<Option<wgpu::TextureFormat>>,
+        blend: F::TargetArray<Option<wgpu::BlendState>>,
+        write_mask: F::TargetArray<wgpu::ColorWrites>,
+        depth_stencil: Option<wgpu::DepthStencilState>,
+    ) -> Option<Pipeline<V, F>> {
+        self.cache
+            .get(&(formats, blend, write_mask, depth_stencil))
+            .cloned()
+    }
+
+    /// Yields a pipeline with the chosen configuration.
     pub fn with_configuration(
         &mut self,
         device: &wgpu::Device,
@@ -150,7 +169,7 @@ where
         blend: F::TargetArray<Option<wgpu::BlendState>>,
         write_mask: F::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
-    ) -> &Pipeline<V, F> {
+    ) -> Pipeline<V, F> {
         self.cache
             .entry((formats, blend, write_mask, depth_stencil))
             .or_insert_with_key(|(formats, blend, write_mask, depth_stencil)| {
@@ -164,5 +183,6 @@ where
                     depth_stencil.clone(),
                 )
             })
+            .clone()
     }
 }
