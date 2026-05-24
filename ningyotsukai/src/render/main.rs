@@ -30,6 +30,12 @@ struct RenderThread {
     /// flight.
     last_viewport_unlock: Option<(Document, wgpu::Texture, f32, f32, f32)>,
 
+    #[cfg(feature = "timing")]
+    start_time: std::time::Instant,
+
+    #[cfg(feature = "timing")]
+    last_segment_time: std::time::Instant,
+
     /// Renderdoc API
     #[cfg(feature = "renderdoc")]
     doc: Option<renderdoc::RenderDoc<renderdoc::V100>>,
@@ -60,6 +66,12 @@ impl RenderThread {
 
             #[cfg(feature = "renderdoc")]
             doc: None,
+
+            #[cfg(feature = "timing")]
+            start_time: last_time.clone(),
+
+            #[cfg(feature = "timing")]
+            last_segment_time: last_time.clone(),
         }
     }
 
@@ -98,7 +110,32 @@ impl RenderThread {
         }
     }
 
+    #[cfg(feature = "timing")]
+    fn lap(&mut self, segment_name: &str) {
+        let cur_segment_time = std::time::Instant::now();
+        let last_segment_dur = cur_segment_time - self.last_segment_time;
+
+        self.last_segment_time = cur_segment_time;
+
+        eprintln!(
+            "  {}: {}ms",
+            segment_name,
+            last_segment_dur.as_micros() as f64 / 1000.0
+        );
+    }
+
     fn start_frame(&mut self) {
+        #[cfg(feature = "timing")]
+        {
+            self.start_time = std::time::Instant::now();
+            eprintln!("BEGIN FRAME",);
+            let time_since_last = self.start_time - self.last_time;
+            eprintln!(
+                "  Time since last update: {}ms",
+                time_since_last.as_micros() as f64 / 1000.0
+            );
+        }
+
         #[cfg(feature = "renderdoc")]
         {
             use std::ptr::null;
@@ -134,16 +171,24 @@ impl RenderThread {
             }
         }
 
+        #[cfg(all(feature = "renderdoc", feature = "timing"))]
+        self.lap("Renderdoc setup");
+
         let mut garbage = vec![];
-        for (index, renderer) in self.renderers.iter().enumerate().rev() {
+        for (index, renderer) in self.renderers.iter_mut().enumerate().rev() {
             if !renderer.is_valid() {
                 garbage.push(index);
+            } else {
+                renderer.collect_garbage();
             }
         }
 
         for index in garbage {
             self.renderers.remove(index);
         }
+
+        #[cfg(feature = "timing")]
+        self.lap("Dead renderer cleanup");
     }
 
     fn end_frame(&mut self) {
@@ -152,6 +197,9 @@ impl RenderThread {
             if self.wgpu_resources.is_some() {
                 self.wgpu_resources.as_ref().unwrap().end_frame().unwrap();
             }
+
+            #[cfg(all(feature = "timing"))]
+            self.lap("Tracy teardown");
         }
 
         #[cfg(feature = "renderdoc")]
@@ -182,6 +230,29 @@ impl RenderThread {
                     self.doc.as_mut().unwrap().end_frame_capture(null(), null());
                 }
             }
+        }
+
+        #[cfg(feature = "timing")]
+        {
+            #[cfg(feature = "renderdoc")]
+            self.lap("Renderdoc teardown");
+
+            let end_time = std::time::Instant::now();
+            let time_elapsed = end_time - self.start_time;
+
+            eprintln!(
+                "Thread only: {}ms / {} FPS",
+                time_elapsed.as_micros() as f64 / 1000.0,
+                1_000_000.0 / time_elapsed.as_micros() as f64
+            );
+
+            let time_elapsed = end_time - self.last_time;
+
+            eprintln!(
+                "Total time: {}ms / {} FPS",
+                time_elapsed.as_micros() as f64 / 1000.0,
+                1_000_000.0 / time_elapsed.as_micros() as f64
+            );
         }
     }
 
@@ -256,15 +327,22 @@ impl RenderThread {
                     self.start_frame();
 
                     for renderer in self.renderers.iter_mut() {
-                        renderer.collect_garbage();
                         renderer.update(dt);
+                    }
 
+                    #[cfg(feature = "timing")]
+                    self.lap("Update");
+
+                    for renderer in self.renderers.iter_mut() {
                         //TODO: Force an allocation every frame so that plugins
                         //don't ever see intermediate results.
                         //Ideally, this should be a ring buffer.
                         renderer.alloc_texture();
                         renderer.render();
                     }
+
+                    #[cfg(feature = "timing")]
+                    self.lap("Artboard render");
 
                     if let (Some(device), Some(queue)) =
                         (self.extended_device.as_ref(), self.wgpu_queue.as_ref())
@@ -290,6 +368,9 @@ impl RenderThread {
                         }
                     }
 
+                    #[cfg(feature = "timing")]
+                    self.lap("Plugin update");
+
                     if let Some((document, texture, center_x, center_y, scale)) =
                         self.last_viewport_unlock.take()
                     {
@@ -303,9 +384,14 @@ impl RenderThread {
                             ))
                             .unwrap();
                         }
+
+                        #[cfg(feature = "timing")]
+                        self.lap("Viewport render");
                     }
 
                     self.end_frame();
+
+                    self.last_time = self.start_time;
 
                     send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }

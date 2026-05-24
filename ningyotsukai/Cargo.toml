@@ -66,7 +66,7 @@ glib-build-tools = "0.22.0"
 [features]
 pipewire = ["dep:pipewire", "dep:libspa", "dep:libspa-sys", "dep:drm-fourcc"]
 spout = ["dep:ningyo-spout2"]
-timing = ["ningyo-render-wgpu/timing"]
+timing = []
 tracy = [
     "ningyo-render-wgpu/tracy",
     "tracy-client/sampling",

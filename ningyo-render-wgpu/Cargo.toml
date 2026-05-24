@@ -23,7 +23,6 @@ shaderc = { version = "0.10", features=["build-from-source"] }
 spirv-reflect = { git = "https://github.com/gwihlidal/spirv-reflect-rs.git", rev="97298067e3b1c9ce05633d78f1183c14a3cc6acc"}
 
 [features]
-timing = []
 tracy = [
     "dep:wgpu-profiler",
     "dep:tracy-client",

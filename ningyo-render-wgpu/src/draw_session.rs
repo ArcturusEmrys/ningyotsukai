@@ -86,12 +86,6 @@ pub struct WgpuDrawSession<'a> {
 
     last_mask: Vec<(InoxNodeUuid, MaskMode)>,
 
-    #[cfg(feature = "timing")]
-    start_time: std::time::Instant,
-
-    #[cfg(feature = "timing")]
-    last_segment_time: std::time::Instant,
-
     #[cfg(feature = "tracy")]
     encoder_query: wgpu_profiler::GpuProfilerQuery,
 }
@@ -101,9 +95,6 @@ impl<'a> WgpuDrawSession<'a> {
         renderer: &'a mut WgpuRenderer<'_>,
         puppet: &inox2d::puppet::Puppet,
     ) -> Result<Self, Box<dyn Error>> {
-        #[cfg(feature = "timing")]
-        let start_time = std::time::Instant::now();
-
         if renderer.render_targets.is_none() {
             panic!("Buffer is not yet set up.");
         }
@@ -190,47 +181,13 @@ impl<'a> WgpuDrawSession<'a> {
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
 
-            #[cfg(feature = "timing")]
-            last_segment_time: start_time.clone(),
-
-            #[cfg(feature = "timing")]
-            start_time,
-
             #[cfg(feature = "tracy")]
             encoder_query,
         };
 
-        #[cfg(feature = "timing")]
-        {
-            eprintln!(
-                "BEGIN FRAME for {}",
-                puppet.meta.name.as_deref().unwrap_or("")
-            );
-            session.lap("Overhead");
-        }
-
         session.buffer_prepass(puppet);
 
-        #[cfg(feature = "timing")]
-        {
-            session.lap("Uniform buffers");
-        }
-
         Ok(session)
-    }
-
-    #[cfg(feature = "timing")]
-    fn lap(&mut self, segment_name: &str) {
-        let cur_segment_time = std::time::Instant::now();
-        let last_segment_dur = cur_segment_time - self.last_segment_time;
-
-        self.last_segment_time = cur_segment_time;
-
-        eprintln!(
-            "  {}: {}ms",
-            segment_name,
-            last_segment_dur.as_micros() as f64 / 1000.0
-        );
     }
 
     /// Fill our uniform buffers with all the data we will need during
@@ -445,9 +402,6 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
     fn on_end_draw(mut self, puppet: &inox2d::puppet::Puppet) {
         DrawCommandList::flush(&mut self, puppet);
 
-        #[cfg(feature = "timing")]
-        self.lap("Drawing");
-
         #[cfg(feature = "tracy")]
         {
             self.resources
@@ -456,24 +410,5 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
 
         let end = self.encoder.finish();
         *self.last_submission_index = Some(self.resources.queue.submit(std::iter::once(end)));
-
-        #[cfg(feature = "timing")]
-        {
-            let end_time = std::time::Instant::now();
-
-            let time_elapsed = end_time - self.start_time;
-            let submission_time = end_time - self.last_segment_time;
-
-            eprintln!(
-                "  Submission: {}ms",
-                submission_time.as_micros() as f64 / 1000.0
-            );
-
-            eprintln!(
-                "{}ms / {} FPS",
-                time_elapsed.as_micros() as f64 / 1000.0,
-                1_000_000.0 / time_elapsed.as_micros() as f64
-            );
-        }
     }
 }
