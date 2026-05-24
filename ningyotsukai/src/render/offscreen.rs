@@ -275,8 +275,8 @@ impl OffscreenRender {
                     y -= texture.height() as f32 / 2.0 / scale;
 
                     // Apply the viewport scale and position
-                    x -= center_x / puppet.scale();
-                    y -= center_y / puppet.scale();
+                    x += center_x / scale;
+                    y += center_y / scale;
 
                     x += puppet.position().x / puppet.scale();
                     y += puppet.position().y / puppet.scale();

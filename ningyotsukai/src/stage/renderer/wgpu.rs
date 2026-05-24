@@ -108,20 +108,22 @@ impl WgpuAreaImpl for StageRendererImp {
             let mut state = self.state.borrow_mut();
             let document = state.document.clone().unwrap();
 
+            let dpi = self.obj().scale_factor().abs() as u32;
+
             let zoom = if let Some(ref zadjust) = *self.zadjustment.borrow() {
-                10.0_f32.powf(zadjust.value() as f32)
+                10.0_f32.powf(zadjust.value() as f32) * dpi as f32
             } else {
-                1.0
+                dpi as f32
             };
 
             let mut x = 0.0;
             let mut y = 0.0;
 
             if let Some(ref hadjust) = *self.hadjustment.borrow() {
-                x -= hadjust.value() as f32;
+                x -= hadjust.value() as f32 * zoom;
             }
             if let Some(ref vadjust) = *self.vadjustment.borrow() {
-                y -= vadjust.value() as f32;
+                y -= vadjust.value() as f32 * zoom;
             }
 
             if let Some(dm) = &mut state.document_manager {
@@ -244,10 +246,14 @@ impl StageRenderer {
         document_manager.add_render_callback({
             let callback_self = self.clone();
             move |doc, index| {
-                callback_self.device().unwrap().poll(wgpu::PollType::Wait {
-                    submission_index: index,
-                    timeout: None,
-                });
+                callback_self
+                    .device()
+                    .unwrap()
+                    .poll(wgpu::PollType::Wait {
+                        submission_index: index,
+                        timeout: None,
+                    })
+                    .unwrap();
                 if Some(doc) == callback_self.imp().state.borrow().document {
                     callback_self.async_render_complete();
                 }
