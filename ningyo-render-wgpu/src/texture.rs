@@ -277,7 +277,6 @@ impl DeviceTexture {
 pub struct DepthStencilTexture {
     device_texture: wgpu::Texture,
     view: wgpu::TextureView,
-    format: wgpu::TextureFormat,
 }
 
 impl DepthStencilTexture {
@@ -310,7 +309,6 @@ impl DepthStencilTexture {
         let empty = Self {
             device_texture,
             view,
-            format,
         };
 
         empty.clear(encoder);
@@ -386,45 +384,12 @@ impl DepthStencilTexture {
         &self.device_texture
     }
 
-    pub fn view(&self) -> &wgpu::TextureView {
-        &self.view
-    }
-
-    pub fn format(&self) -> wgpu::TextureFormat {
-        self.format
-    }
-
     pub fn as_depth_stencil_attachment_rw(&self) -> wgpu::RenderPassDepthStencilAttachment<'_> {
         wgpu::RenderPassDepthStencilAttachment {
             view: &self.view,
             depth_ops: None,
             stencil_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            }),
-        }
-    }
-
-    pub fn as_depth_stencil_attachment_ro(&self) -> wgpu::RenderPassDepthStencilAttachment<'_> {
-        wgpu::RenderPassDepthStencilAttachment {
-            view: &self.view,
-            depth_ops: None,
-            stencil_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Discard,
-            }),
-        }
-    }
-
-    pub fn as_depth_stencil_attachment_clear(
-        &self,
-        clear_value: u32,
-    ) -> wgpu::RenderPassDepthStencilAttachment<'_> {
-        wgpu::RenderPassDepthStencilAttachment {
-            view: &self.view,
-            depth_ops: None,
-            stencil_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(clear_value),
                 store: wgpu::StoreOp::Store,
             }),
         }

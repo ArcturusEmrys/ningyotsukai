@@ -1,6 +1,5 @@
 use std::ffi::{CStr, c_void};
 use std::num::NonZero;
-use std::ptr::null;
 
 use gtk4::prelude::*;
 
@@ -12,7 +11,7 @@ unsafe fn lookup_gl_symbol(symbol: &CStr) -> *const c_void {
             symbol.as_ptr() as *const u8,
         )) {
             Some(fun) => fun as *const c_void,
-            None => null::<c_void>(),
+            None => std::ptr::null::<c_void>(),
         }
     }
     #[cfg(target_os = "linux")]
@@ -22,7 +21,7 @@ unsafe fn lookup_gl_symbol(symbol: &CStr) -> *const c_void {
     #[cfg(all(not(windows), not(target_os = "linux")))]
     {
         eprintln!("GL not implemented on this platform");
-        null::<c_void>()
+        std::ptr::null::<c_void>()
     }
 }
 

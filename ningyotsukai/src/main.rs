@@ -34,7 +34,7 @@ fn main() -> glib::ExitCode {
         .application_id("live.arcturus.ningyotsukai")
         .build();
 
-    let mut document_manager = document::DocumentManager::new();
+    let document_manager = document::DocumentManager::new();
 
     app.connect_activate({
         let my_document_manager = document_manager.clone();

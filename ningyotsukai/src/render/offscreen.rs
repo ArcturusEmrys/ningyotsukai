@@ -201,8 +201,6 @@ impl OffscreenRender {
     }
 
     pub fn render_viewport(&mut self) -> Option<wgpu::SubmissionIndex> {
-        let mut submission = None;
-
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -220,7 +218,7 @@ impl OffscreenRender {
             },
         );
 
-        submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
+        let mut submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
 
         if let Some(document) = self.document.upgrade() {
             for (index, puppet) in document.stage().iter() {
@@ -243,7 +241,7 @@ impl OffscreenRender {
                 let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
                 renderer.draw(&puppet.model().puppet).unwrap();
                 if let Some(index) = renderer.last_submission_index() {
-                    submission = renderer.last_submission_index();
+                    submission = Some(index);
                 }
             }
         }

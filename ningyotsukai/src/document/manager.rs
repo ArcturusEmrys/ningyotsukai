@@ -176,6 +176,10 @@ impl DocumentManager {
     }
 
     pub fn shutdown(&mut self) {
-        self.0.borrow_mut().send.send(RenderMessage::Shutdown);
+        self.0
+            .borrow_mut()
+            .send
+            .send(RenderMessage::Shutdown)
+            .unwrap();
     }
 }

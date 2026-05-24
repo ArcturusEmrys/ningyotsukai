@@ -25,7 +25,9 @@ pub trait InstanceExt {
 }
 
 impl InstanceExt for Instance {
-    fn new_with_extensions(mut desc: InstanceDescriptor) -> Result<Instance, InstanceError> {
+    fn new_with_extensions(
+        #[allow(unused_mut)] mut desc: InstanceDescriptor,
+    ) -> Result<Instance, InstanceError> {
         // On windows, DX12 basically has to allocate all the memory, so we
         // *have* to make a DX12 backend. Ignore the caller's requests and ONLY
         // use DX12.

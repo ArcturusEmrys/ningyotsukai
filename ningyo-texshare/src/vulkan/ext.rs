@@ -1,7 +1,6 @@
 use crate::error::Error as OurError;
 use crate::vulkan::image;
 use ash::vk;
-use std::ptr::null;
 use wgpu_hal::vulkan::{Adapter, Api, Device, Instance, Texture, TextureMemory};
 use wgpu_hal::{
     DeviceError, DynDevice, InstanceDescriptor, InstanceError, OpenDevice, TextureDescriptor,
@@ -94,7 +93,7 @@ impl DeviceExt for Device {
         texture: &TextureDescriptor<'_>,
     ) -> Result<(Texture, vk::MemoryRequirements, vk::SubresourceLayout), OurError> {
         let mut handle_types = vk::ExternalMemoryHandleTypeFlags::default();
-        #[allow(unused_mut)]
+        #[allow(unused_mut, unused_assignments)]
         let mut tiling = vk::ImageTiling::OPTIMAL;
 
         #[cfg(target_os = "linux")]
@@ -171,11 +170,12 @@ impl DeviceExt for Device {
             .allocation_size(mem_req.size)
             .memory_type_index(desired_memory_type as u32);
 
+        #[allow(unused_mut, unused_variables)]
         let mut win32_handle_info = vk::ExportMemoryWin32HandleInfoKHR::default();
         #[cfg(target_os = "windows")]
         {
             win32_handle_info.dw_access = 0; //windows::Win32::Foundation::GENERIC_ALL.0 | windows::Win32::Graphics::Dxgi::DXGI_SHARED_RESOURCE_READ.0 | windows::Win32::Graphics::Dxgi::DXGI_SHARED_RESOURCE_WRITE.0;
-            win32_handle_info.p_attributes = null();
+            win32_handle_info.p_attributes = std::ptr::null();
 
             allocate_info = allocate_info.push_next(&mut win32_handle_info);
         }

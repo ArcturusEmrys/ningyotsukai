@@ -109,6 +109,7 @@ impl RenderThread {
             //TODO: Can I get native window handles out of GTK?
             if self.doc.is_some() {
                 if let Some(device) = self.extended_device.as_ref() {
+                    #[allow(unused)]
                     let device = device.device();
                     #[cfg(target_os = "windows")]
                     {
@@ -164,6 +165,7 @@ impl RenderThread {
             use std::ptr::null;
             if self.doc.is_some() {
                 if let Some(device) = self.extended_device.as_ref() {
+                    #[allow(unused)]
                     let device = device.device();
 
                     #[cfg(target_os = "windows")]
@@ -304,7 +306,8 @@ impl RenderThread {
                             send.send(RenderResponse::RenderComplete(
                                 renderer.document().upgrade().unwrap(),
                                 index,
-                            ));
+                            ))
+                            .unwrap();
                         }
                     }
 

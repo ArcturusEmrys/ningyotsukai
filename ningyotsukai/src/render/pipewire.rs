@@ -25,7 +25,6 @@ use glam::Vec2;
 
 use ningyo_render_wgpu::WgpuRenderer;
 use ningyo_texshare::ExtendedDevice;
-use ningyo_texshare::prelude::*;
 
 use crate::document::Document;
 use crate::render::SinkPlugin;
@@ -743,9 +742,9 @@ impl SinkPlugin for PipewirePlugin {
     fn update_stream_image(
         &mut self,
         document: Document,
-        adapter: &wgpu::Adapter,
-        device: &ExtendedDevice,
-        queue: &wgpu::Queue,
+        _adapter: &wgpu::Adapter,
+        _device: &ExtendedDevice,
+        _queue: &wgpu::Queue,
         texture: wgpu::Texture,
     ) {
         self.msg_send
