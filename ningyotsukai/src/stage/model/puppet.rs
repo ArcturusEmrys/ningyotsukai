@@ -179,12 +179,37 @@ impl Puppet {
 
     /// Update the puppet's physics and apply tracker data to this puppet.
     pub fn update(&mut self, dt: f32) {
+        #[cfg(feature = "timing")]
+        let mut start_time = std::time::Instant::now();
+
         self.ensure_render_initialized();
+
+        #[cfg(feature = "timing")]
+        let mut lap_time = std::time::Instant::now();
+
+        #[cfg(feature = "timing")]
+        {
+            eprintln!("  Update:");
+            eprintln!(
+                "    Pre-init: {}ms",
+                (lap_time - start_time).as_micros() as f32 / 1_000.0
+            );
+        }
 
         let mut inner = self.0.write().unwrap();
 
         if dt > 0.0 {
             inner.model.puppet.begin_frame();
+        }
+
+        #[cfg(feature = "timing")]
+        {
+            start_time = lap_time;
+            lap_time = std::time::Instant::now();
+            eprintln!(
+                "    Begin frame: {}ms",
+                (lap_time - start_time).as_micros() as f32 / 1_000.0
+            );
         }
 
         let PuppetInner {
@@ -230,10 +255,40 @@ impl Puppet {
             }
         }
 
+        #[cfg(feature = "timing")]
+        {
+            start_time = lap_time;
+            lap_time = std::time::Instant::now();
+            eprintln!(
+                "    Bindings: {}ms",
+                (lap_time - start_time).as_micros() as f32 / 1_000.0
+            );
+        }
+
         if dt > 0.0 {
             inner.model.puppet.end_frame(dt);
         }
 
+        #[cfg(feature = "timing")]
+        {
+            start_time = lap_time;
+            lap_time = std::time::Instant::now();
+            eprintln!(
+                "    End frame: {}ms",
+                (lap_time - start_time).as_micros() as f32 / 1_000.0
+            );
+        }
+
         inner.bounds = inner.model.puppet.bounds();
+
+        #[cfg(feature = "timing")]
+        {
+            start_time = lap_time;
+            lap_time = std::time::Instant::now();
+            eprintln!(
+                "    Bounds: {}ms",
+                (lap_time - start_time).as_micros() as f32 / 1_000.0
+            );
+        }
     }
 }
