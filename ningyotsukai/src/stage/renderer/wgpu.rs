@@ -8,6 +8,7 @@ use gtk4::subclass::prelude::*;
 
 use std::cell::RefCell;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ningyo_gtk_wgpu::WgpuArea;
 use ningyo_gtk_wgpu::prelude::*;
@@ -23,6 +24,10 @@ pub struct StageRendererState {
     document_manager: Option<DocumentManager>,
 
     resources: Option<Arc<WgpuResources>>,
+
+    pending_submission: Option<wgpu::SubmissionIndex>,
+
+    poll_task: Option<glib::SourceId>,
 }
 
 #[derive(Default, glib::Properties)]
@@ -199,16 +204,33 @@ impl StageRenderer {
         document_manager.add_render_callback({
             let callback_self = self.clone();
             move |doc, index| {
-                callback_self
-                    .device()
-                    .unwrap()
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: index,
-                        timeout: None,
-                    })
-                    .unwrap();
-                if Some(doc) == callback_self.imp().state.borrow().document {
-                    callback_self.async_render_complete();
+                let mut state = callback_self.imp().state.borrow_mut();
+                state.pending_submission = index;
+
+                if state.poll_task.is_none() {
+                    state.poll_task = Some(glib::idle_add_local({
+                        let task_self = callback_self.clone();
+                        move || {
+                            let mut state = task_self.imp().state.borrow_mut();
+
+                            match task_self.device().unwrap().poll(wgpu::PollType::Wait {
+                                submission_index: state.pending_submission.clone(),
+                                timeout: Some(Duration::from_millis(0)),
+                            }) {
+                                Ok(wgpu::PollStatus::Poll) => unreachable!(), // We didn't poll.
+                                Ok(wgpu::PollStatus::QueueEmpty)
+                                | Ok(wgpu::PollStatus::WaitSucceeded) => {
+                                    state.poll_task = None;
+                                    state.pending_submission = None;
+                                    task_self.async_render_complete();
+
+                                    glib::ControlFlow::Break
+                                }
+                                Err(wgpu::PollError::Timeout) => glib::ControlFlow::Continue,
+                                Err(e) => Err(e).unwrap(),
+                            }
+                        }
+                    }));
                 }
             }
         });
