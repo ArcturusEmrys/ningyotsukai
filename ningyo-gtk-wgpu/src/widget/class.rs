@@ -40,6 +40,8 @@ struct WgpuAreaState {
     /// clear operations will fail on it.
     wgpu_texture: Option<(wgpu::Texture, ExportableTexture)>,
     texture: Option<gdk4::Texture>,
+
+    use_backing_texture: bool,
 }
 
 #[derive(Default)]
@@ -205,16 +207,18 @@ impl WidgetImpl for WgpuAreaImp {
                     });
 
                     self.state.borrow_mut().wgpu_texture =
-                        Some((buffer_texture.clone(), backing_texture));
+                        Some((buffer_texture.clone(), backing_texture.clone()));
 
                     //NOTE: We specifically give the subclass the buffer texture
                     //so we can copy to the exportable one.
-                    self.obj().emit_resize(buffer_texture);
+                    self.obj()
+                        .emit_resize(if self.state.borrow().use_backing_texture {
+                            backing_texture.texture().clone()
+                        } else {
+                            buffer_texture
+                        });
                     self.state.borrow_mut().needs_resize = false;
                 }
-
-                // TODO: Add option to render directly to the backing texture, with
-                // the restriction that clearing the texture crashes your program.
             }
         }
 
@@ -244,47 +248,53 @@ impl WidgetImpl for WgpuAreaImp {
                     self.state.borrow_mut().in_async_render = false;
                     self.state.borrow_mut().async_render_complete = false;
                 }
-                let ((buffer_texture, backing_texture), old_gdk_texture) = {
+                let ((buffer_texture, backing_texture), old_gdk_texture, use_backing_texture) = {
                     let state = self.state.borrow();
-                    (state.wgpu_texture.clone().unwrap(), state.texture.clone())
+                    (
+                        state.wgpu_texture.clone().unwrap(),
+                        state.texture.clone(),
+                        state.use_backing_texture,
+                    )
                 };
 
-                let mut encoder =
+                if !use_backing_texture {
+                    let mut encoder =
+                        device
+                            .device()
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("NGWgpuArea internal copy to backing texture"),
+                            });
+
+                    encoder.copy_texture_to_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &buffer_texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::TexelCopyTextureInfo {
+                            texture: backing_texture.texture(),
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::Extent3d {
+                            width: buffer_texture.width(),
+                            height: buffer_texture.height(),
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    let index = queue.submit(std::iter::once(encoder.finish()));
+
                     device
                         .device()
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("NGWgpuArea internal copy to backing texture"),
-                        });
-
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &buffer_texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        texture: backing_texture.texture(),
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::Extent3d {
-                        width: buffer_texture.width(),
-                        height: buffer_texture.height(),
-                        depth_or_array_layers: 1,
-                    },
-                );
-
-                let index = queue.submit(std::iter::once(encoder.finish()));
-
-                device
-                    .device()
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(index),
-                        timeout: None,
-                    })
-                    .unwrap();
+                        .poll(wgpu::PollType::Wait {
+                            submission_index: Some(index),
+                            timeout: None,
+                        })
+                        .unwrap();
+                }
 
                 let texture = backing_texture
                     .clone()
@@ -455,13 +465,38 @@ impl WgpuArea {
     /// Retrieve the current texture to draw to.
     ///
     /// This is equivalent to the last texture that was sent to resize.
+    ///
+    /// If the user has enabled `render_to_backing_texture`, this yields the
+    /// backing texture, for consistency.
     pub fn texture(&self) -> Option<wgpu::Texture> {
-        if let Some((buffer_texture, _backing_texture)) =
-            self.imp().state.borrow().wgpu_texture.as_ref()
-        {
-            Some(buffer_texture.clone())
+        let state = self.imp().state.borrow();
+        if let Some((buffer_texture, backing_texture)) = state.wgpu_texture.as_ref() {
+            if state.use_backing_texture {
+                Some(backing_texture.texture().clone())
+            } else {
+                Some(buffer_texture.clone())
+            }
         } else {
             None
         }
+    }
+
+    /// Enable direct rendering to the widget's backing texture.
+    ///
+    /// WgpuArea normally provides an internal buffer texture for client code
+    /// to render to. This buffer texture is then copied to a specially
+    /// allocated shared backing texture and provided to GTK.
+    ///
+    /// When this setting is enabled, texture() returns the backing texture,
+    /// and the buffer-to-backing texture copy is skipped.
+    ///
+    /// The backing texture is allocated with a specific configuration that
+    /// does not permit the use of all valid WGPU operations. Issuing a render
+    /// command that is incompatible with this texture will panic your program.
+    /// Notably, the backing texture cannot be cleared using the usual
+    /// `Encoder.clear_texture()` command. Normal polygon drawing and texture
+    /// copies will work.
+    pub fn render_to_backing_texture(&self, use_backing_texture: bool) {
+        self.imp().state.borrow_mut().use_backing_texture = use_backing_texture;
     }
 }

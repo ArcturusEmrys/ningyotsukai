@@ -214,6 +214,23 @@ pub trait WgpuAreaExt {
     /// This function returns None if the texture has not yet been created. It
     /// is guaranteed to be Some if the widget has already been realized.
     fn texture(&self) -> Option<wgpu::Texture>;
+
+    /// Enable direct rendering to the widget's backing texture.
+    ///
+    /// WgpuArea normally provides an internal buffer texture for client code
+    /// to render to. This buffer texture is then copied to a specially
+    /// allocated shared backing texture and provided to GTK.
+    ///
+    /// When this setting is enabled, texture() returns the backing texture,
+    /// and the buffer-to-backing texture copy is skipped.
+    ///
+    /// The backing texture is allocated with a specific configuration that
+    /// does not permit the use of all valid WGPU operations. Issuing a render
+    /// command that is incompatible with this texture will panic your program.
+    /// Notably, the backing texture cannot be cleared using the usual
+    /// `Encoder.clear_texture()` command. Normal polygon drawing and texture
+    /// copies will work.
+    fn render_to_backing_texture(&self, use_backing_texture: bool);
 }
 
 impl<T> WgpuAreaExt for T
@@ -283,5 +300,11 @@ where
 
     fn texture(&self) -> Option<wgpu::Texture> {
         self.clone().upcast::<WgpuArea>().texture()
+    }
+
+    fn render_to_backing_texture(&self, use_backing_texture: bool) {
+        self.clone()
+            .upcast::<WgpuArea>()
+            .render_to_backing_texture(use_backing_texture)
     }
 }
