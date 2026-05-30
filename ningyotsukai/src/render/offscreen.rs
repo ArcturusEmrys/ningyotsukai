@@ -32,7 +32,12 @@ pub struct OffscreenRender {
     viewport_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
 
     /// The last known viewport parameters.
+    ///
+    /// The texture contained in this variable is good for copying ONLY.
     viewport_parameters: Option<(wgpu::Texture, f32, f32, f32)>,
+
+    /// The current viewport buffer texture.
+    viewport_buffer: Option<wgpu::Texture>,
 }
 
 impl OffscreenRender {
@@ -51,6 +56,7 @@ impl OffscreenRender {
             artboard_texture: None,
             viewport_puppet_renderers: HashMap::new(),
             viewport_parameters: None,
+            viewport_buffer: None,
         }
     }
 
@@ -201,24 +207,27 @@ impl OffscreenRender {
     }
 
     pub fn render_viewport(&mut self) -> Option<wgpu::SubmissionIndex> {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Screen clear"),
-            });
+        let mut submission = None;
+        if let Some(buffer) = &self.viewport_buffer {
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Screen clear"),
+                });
 
-        encoder.clear_texture(
-            &self.viewport_parameters.as_ref().unwrap().0,
-            &wgpu::ImageSubresourceRange {
-                aspect: wgpu::TextureAspect::All,
-                base_mip_level: 0,
-                mip_level_count: None,
-                base_array_layer: 0,
-                array_layer_count: None,
-            },
-        );
+            encoder.clear_texture(
+                buffer,
+                &wgpu::ImageSubresourceRange {
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: 0,
+                    mip_level_count: None,
+                    base_array_layer: 0,
+                    array_layer_count: None,
+                },
+            );
 
-        let mut submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
+            submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
+        }
 
         if let Some(document) = self.document.upgrade() {
             for (index, puppet) in document.stage().iter() {
@@ -249,6 +258,40 @@ impl OffscreenRender {
         submission
     }
 
+    pub fn viewport_copy(&self) -> wgpu::SubmissionIndex {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Screen clear"),
+            });
+
+        if let Some(buffer) = &self.viewport_buffer {
+            if let Some((texture, _, _, _)) = &self.viewport_parameters {
+                encoder.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: buffer,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d {
+                        width: texture.width(),
+                        height: texture.height(),
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()))
+    }
+
     pub fn update(&mut self, dt: f32) {
         if let Some(mut document) = self.document.upgrade() {
             document.stage_mut().update(dt);
@@ -258,7 +301,9 @@ impl OffscreenRender {
     pub fn apply_viewport_to_renderer(&mut self, index: Index) {
         let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
         if let Some((texture, center_x, center_y, zoom)) = &self.viewport_parameters {
-            renderer.set_render_target(texture.clone()).unwrap();
+            if let Some(buffer) = &self.viewport_buffer {
+                renderer.set_render_target(buffer.clone()).unwrap();
+            }
 
             if let Some(document) = self.document.upgrade() {
                 if let Some(puppet) = document.stage().puppet(index) {
@@ -296,6 +341,32 @@ impl OffscreenRender {
         zoom: f32,
     ) {
         self.viewport_parameters = Some((texture.clone(), center_x, center_y, zoom));
+
+        let viewport_buffer_needs_alloc = if let Some(viewport_buffer) = &self.viewport_buffer {
+            viewport_buffer.width() != texture.width()
+                || viewport_buffer.height() != texture.height()
+        } else {
+            true
+        };
+
+        if viewport_buffer_needs_alloc {
+            self.viewport_buffer = Some(self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("Viewport Texture Buffer"),
+                dimension: wgpu::TextureDimension::D2,
+                size: wgpu::Extent3d {
+                    width: texture.width(),
+                    height: texture.height(),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                format: wgpu::TextureFormat::Bgra8Unorm,
+                usage: WgpuRenderer::required_render_target_uses()
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            }));
+        }
 
         let indexes: Vec<_> = self.viewport_puppet_renderers.keys().map(|i| *i).collect();
         for index in indexes {

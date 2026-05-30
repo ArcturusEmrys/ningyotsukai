@@ -129,11 +129,6 @@ impl RenderThread {
         {
             self.start_time = std::time::Instant::now();
             eprintln!("BEGIN FRAME",);
-            let time_since_last = self.start_time - self.last_time;
-            eprintln!(
-                "  Time since last update: {}ms",
-                time_since_last.as_micros() as f64 / 1000.0
-            );
         }
 
         #[cfg(feature = "renderdoc")]
@@ -241,19 +236,103 @@ impl RenderThread {
             let time_elapsed = end_time - self.start_time;
 
             eprintln!(
-                "Thread only: {}ms / {} FPS",
+                "This update: {}ms / {} FPS",
                 time_elapsed.as_micros() as f64 / 1000.0,
                 1_000_000.0 / time_elapsed.as_micros() as f64
             );
 
-            let time_elapsed = end_time - self.last_time;
-
-            eprintln!(
-                "Total time: {}ms / {} FPS",
-                time_elapsed.as_micros() as f64 / 1000.0,
-                1_000_000.0 / time_elapsed.as_micros() as f64
-            );
+            self.last_time = end_time;
         }
+    }
+
+    fn do_update(&mut self, send: &Sender<RenderResponse>) {
+        let cur_time = Instant::now();
+        let del_time = cur_time - self.last_time;
+        let dt = del_time.as_micros() as f32 / 1_000_000.0;
+
+        self.start_frame();
+
+        // First, check if we got any RenderViewport messages.
+        // We do this first thing to unlock GTK, since the rest of the update
+        // will take longer.
+        if let Some((doc, _, _, _, _)) = &self.last_viewport_unlock {
+            for renderer in &self.renderers {
+                if renderer.is_for_document(doc) {
+                    send.send(RenderResponse::RenderComplete(
+                        renderer.document().upgrade().unwrap(),
+                        Some(renderer.viewport_copy()),
+                    ))
+                    .unwrap();
+                }
+            }
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Copy to main thread");
+
+        for renderer in self.renderers.iter_mut() {
+            renderer.update(dt);
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Update");
+
+        for renderer in self.renderers.iter_mut() {
+            //TODO: Force an allocation every frame so that plugins
+            //don't ever see intermediate results.
+            //Ideally, this should be a ring buffer.
+            renderer.alloc_texture();
+            renderer.render();
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Artboard render");
+
+        if let (Some(device), Some(queue)) =
+            (self.extended_device.as_ref(), self.wgpu_queue.as_ref())
+        {
+            device
+                .device()
+                .poll(wgpu::PollType::Wait {
+                    submission_index: None,
+                    timeout: None,
+                })
+                .unwrap();
+
+            for plugin in &mut self.plugins {
+                for renderer in &mut self.renderers {
+                    plugin.update_stream_image(
+                        renderer.document().upgrade().unwrap(),
+                        self.wgpu_adapter.as_ref().unwrap(),
+                        self.extended_device.as_ref().unwrap(),
+                        queue,
+                        renderer.texture().clone(),
+                    );
+                }
+            }
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Plugin update");
+
+        let last_viewport_unlock = self.last_viewport_unlock.take();
+
+        if let Some((document, texture, center_x, center_y, scale)) = last_viewport_unlock {
+            self.viewport_change(document, texture, center_x, center_y, scale);
+        }
+
+        for renderer in self.renderers.iter_mut() {
+            renderer.render_viewport();
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Viewport render");
+
+        self.end_frame();
+
+        self.last_time = cur_time;
+
+        send.send(RenderResponse::DidFrameUpdate).unwrap();
     }
 
     /// Main loop for off-canvas rendering.
@@ -309,85 +388,13 @@ impl RenderThread {
                     center_y,
                     scale,
                 }) => {
+                    //TODO: This won't work if we have multiple documents open.
                     self.last_viewport_unlock =
                         Some((document, texture, center_x, center_y, scale));
                 }
                 Err(TryRecvError::Empty) => {
-                    // The channel is empty. Run an update.
-                    let cur_time = Instant::now();
-                    let del_time = cur_time - self.last_time;
-                    let dt = del_time.as_micros() as f32 / 1_000_000.0;
-
-                    self.start_frame();
-
-                    for renderer in self.renderers.iter_mut() {
-                        renderer.update(dt);
-                    }
-
-                    #[cfg(feature = "timing")]
-                    self.lap("Update");
-
-                    for renderer in self.renderers.iter_mut() {
-                        //TODO: Force an allocation every frame so that plugins
-                        //don't ever see intermediate results.
-                        //Ideally, this should be a ring buffer.
-                        renderer.alloc_texture();
-                        renderer.render();
-                    }
-
-                    #[cfg(feature = "timing")]
-                    self.lap("Artboard render");
-
-                    if let (Some(device), Some(queue)) =
-                        (self.extended_device.as_ref(), self.wgpu_queue.as_ref())
-                    {
-                        device
-                            .device()
-                            .poll(wgpu::PollType::Wait {
-                                submission_index: None,
-                                timeout: None,
-                            })
-                            .unwrap();
-
-                        for plugin in &mut self.plugins {
-                            for renderer in &mut self.renderers {
-                                plugin.update_stream_image(
-                                    renderer.document().upgrade().unwrap(),
-                                    self.wgpu_adapter.as_ref().unwrap(),
-                                    self.extended_device.as_ref().unwrap(),
-                                    queue,
-                                    renderer.texture().clone(),
-                                );
-                            }
-                        }
-                    }
-
-                    #[cfg(feature = "timing")]
-                    self.lap("Plugin update");
-
-                    if let Some((document, texture, center_x, center_y, scale)) =
-                        self.last_viewport_unlock.take()
-                    {
-                        self.viewport_change(document, texture, center_x, center_y, scale);
-
-                        for renderer in self.renderers.iter_mut() {
-                            let index = renderer.render_viewport();
-                            send.send(RenderResponse::RenderComplete(
-                                renderer.document().upgrade().unwrap(),
-                                index,
-                            ))
-                            .unwrap();
-                        }
-
-                        #[cfg(feature = "timing")]
-                        self.lap("Viewport render");
-                    }
-
-                    self.end_frame();
-
-                    self.last_time = cur_time;
-
-                    send.send(RenderResponse::DidFrameUpdate).unwrap();
+                    // The channel is empty. We are idle. Run an update.
+                    self.do_update(&send);
                 }
                 Ok(RenderMessage::UnregisterDocument(document)) => {
                     let index = self

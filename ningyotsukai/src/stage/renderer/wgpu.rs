@@ -104,6 +104,8 @@ impl WgpuAreaImpl for StageRendererImp {
     }
 
     fn render(&self) -> glib::ControlFlow {
+        self.obj().render_to_backing_texture(true);
+
         // We do no rendering in our render callback, since it's off-thread.
         // We instead inform the WgpuArea to wait until we signal that rendering
         // has completed, and inform the render thread that it is now time to
