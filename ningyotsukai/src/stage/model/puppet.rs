@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
-use inox2d::math::rect::Rect;
+use inox2d::math::rect::RectBounds;
 use inox2d::model::Model;
 use inox2d::params::Param;
 use inox2d::puppet::Puppet as InoxPuppet;
@@ -46,7 +46,7 @@ struct PuppetInner {
     ///
     /// Will change as the puppet is deformed by parameters.
     /// Is not affected by position or scale.
-    bounds: Option<Rect>,
+    bounds: Option<RectBounds>,
 
     /// Binding data configuration for this puppet.
     ///
@@ -146,7 +146,7 @@ impl Puppet {
     }
 
     /// Get the current puppet bounds.
-    pub fn bounds(&self) -> Option<impl Deref<Target = Rect>> {
+    pub fn bounds(&self) -> Option<impl Deref<Target = RectBounds>> {
         let me = self.0.read().unwrap();
 
         if me.bounds.is_none() {
