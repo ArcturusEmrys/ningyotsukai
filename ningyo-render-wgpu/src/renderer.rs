@@ -233,9 +233,18 @@ impl<'window> WgpuRenderer<'window> {
             };
 
             if let Some((old_width, old_height)) = old_size {
-                if old_width == width && old_height == height && self.render_targets.is_some() {
-                    //We don't need to do anything.
-                    return Ok(());
+                if let Some(render_targets) = self.render_targets.as_ref() {
+                    if old_width == width
+                        && old_height == height
+                        && self.render_targets.is_some()
+                        && render_targets.0.albedo().texture().width() == width
+                        && render_targets.0.albedo().texture().height() == height
+                        && render_targets.1.texture().width() == width
+                        && render_targets.1.texture().height() == height
+                    {
+                        //We don't need to do anything.
+                        return Ok(());
+                    }
                 }
             }
 
