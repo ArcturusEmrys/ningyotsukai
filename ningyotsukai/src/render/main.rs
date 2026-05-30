@@ -391,7 +391,7 @@ impl RenderThread {
 
                     self.end_frame();
 
-                    self.last_time = self.start_time;
+                    self.last_time = cur_time;
 
                     send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }
