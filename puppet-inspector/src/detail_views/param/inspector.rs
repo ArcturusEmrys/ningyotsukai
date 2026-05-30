@@ -206,8 +206,8 @@ impl ParamInspector {
 
                     label.set_text(
                         &match &binding.values {
-                            inox2d::params::BindingValues::Deform(_) => {
-                                Cow::Borrowed("(Deform vertices...)")
+                            inox2d::params::BindingValues::Deform(d) => {
+                                Cow::Owned(format!("(Deform vertices: {})", d.get(0, 0).map(|v| (&*v).len()).unwrap_or(0)))
                             }
                             v => format!("{:?}", v).into(),
                         }
