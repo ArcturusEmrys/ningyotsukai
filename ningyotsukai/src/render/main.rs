@@ -257,10 +257,10 @@ impl RenderThread {
     }
 
     /// Main loop for off-canvas rendering.
-    fn main<C>(&mut self, recv: Receiver<RenderMessage<C>>, send: Sender<RenderResponse<C>>) {
+    fn main(&mut self, recv: Receiver<RenderMessage>, send: Sender<RenderResponse>) {
         loop {
             match recv.try_recv() {
-                Ok(RenderMessage::UseResources(c, adapter, resources, extended_device, queue)) => {
+                Ok(RenderMessage::UseResources(adapter, resources, extended_device, queue)) => {
                     self.wgpu_resources = Some(resources);
                     self.wgpu_adapter = Some(adapter);
                     self.extended_device = Some(extended_device);
@@ -294,20 +294,15 @@ impl RenderThread {
                     for document in doclist {
                         self.register_document(document);
                     }
-
-                    send.send(RenderResponse::Ack(c)).unwrap();
                 }
-                Ok(RenderMessage::RegisterDocument(c, document)) => {
+                Ok(RenderMessage::RegisterDocument(document)) => {
                     if self.wgpu_adapter.is_none() || self.wgpu_resources.is_none() {
                         self.unregistered_documents.push(document.downgrade());
                     } else {
                         self.register_document(document);
                     }
-
-                    send.send(RenderResponse::Ack(c)).unwrap();
                 }
                 Ok(RenderMessage::RenderViewport {
-                    cookie,
                     document,
                     texture,
                     center_x,
@@ -316,7 +311,6 @@ impl RenderThread {
                 }) => {
                     self.last_viewport_unlock =
                         Some((document, texture, center_x, center_y, scale));
-                    send.send(RenderResponse::Ack(cookie)).unwrap();
                 }
                 Err(TryRecvError::Empty) => {
                     // The channel is empty. Run an update.
@@ -395,7 +389,7 @@ impl RenderThread {
 
                     send.send(RenderResponse::DidFrameUpdate).unwrap();
                 }
-                Ok(RenderMessage::UnregisterDocument(c, document)) => {
+                Ok(RenderMessage::UnregisterDocument(document)) => {
                     let index = self
                         .renderers
                         .iter()
@@ -415,8 +409,6 @@ impl RenderThread {
                     if let Some((index, _)) = unreg_index {
                         self.unregistered_documents.remove(index);
                     }
-
-                    send.send(RenderResponse::Ack(c)).unwrap();
                 }
                 Ok(RenderMessage::Shutdown) | Err(_) => return,
             }
@@ -428,13 +420,12 @@ impl RenderThread {
 ///
 /// Returns communication channels for sending requests and receiving
 /// responses.
-pub fn render_start<C: Send + 'static>() -> (Sender<RenderMessage<C>>, Receiver<RenderResponse<C>>)
-{
+pub fn render_start() -> (Sender<RenderMessage>, Receiver<RenderResponse>) {
     let (send_message, recv_message) = channel();
     let (send_response, recv_response) = channel();
 
     spawn(|| {
-        RenderThread::new().main::<C>(recv_message, send_response);
+        RenderThread::new().main(recv_message, send_response);
     });
 
     (send_message, recv_response)

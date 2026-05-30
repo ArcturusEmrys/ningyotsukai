@@ -3,6 +3,7 @@
 //! This type enables having multiple renderers share resources such as shaders,
 //! and pipelines.
 
+use std::fmt::Debug;
 use std::sync::RwLock;
 
 use glam::Vec2;
@@ -27,6 +28,7 @@ use crate::uploads::cast_vec2;
 ///
 /// It is recommended to shove this in an Arc<Mutex<>> so it can be shared
 /// across all renderers in a process.
+#[derive(Debug)]
 pub struct WgpuResources {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -66,6 +68,20 @@ struct WgpuResourcesMutable {
 
     #[cfg(feature = "tracy")]
     pub profiler: wgpu_profiler::GpuProfiler,
+}
+
+impl Debug for WgpuResourcesMutable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // NOTE: The `profiler` field is deliberately elided since they forgot
+        // to derive Debug
+        f.debug_struct("WgpuResourcesMutable")
+            .field("clear_pipeline", &self.clear_pipeline)
+            .field("mipmap_gen_pipeline", &self.mipmap_gen_pipeline)
+            .field("part_pipeline", &self.part_pipeline)
+            .field("part_mask_pipeline", &self.part_mask_pipeline)
+            .field("composite_pipeline", &self.composite_pipeline)
+            .finish()
+    }
 }
 
 impl WgpuResources {

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock, Weak};
@@ -13,8 +14,9 @@ use crate::tracker::Trackers;
 #[derive(Clone)]
 pub struct Document(Arc<RwLock<DocumentInner>>);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WeakDocument(Weak<RwLock<DocumentInner>>);
+
 struct DocumentInner {
     stage: Stage,
     trackers: Trackers,
@@ -26,6 +28,14 @@ impl Default for Document {
             stage: Stage::new_with_size((1920.0, 1080.0)),
             trackers: Trackers::new(),
         })))
+    }
+}
+
+impl Debug for Document {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Document")
+            .field(&Arc::as_ptr(&self.0))
+            .finish()
     }
 }
 

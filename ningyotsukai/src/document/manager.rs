@@ -23,9 +23,9 @@ struct DocumentManagerInner {
     /// Callbacks fired whenever the offcanvas thread has completed rendering.
     render_callbacks: Vec<RenderCallback>,
 
-    send: Sender<RenderMessage<()>>,
+    send: Sender<RenderMessage>,
 
-    recv: Receiver<RenderResponse<()>>,
+    recv: Receiver<RenderResponse>,
 }
 
 impl DocumentManager {
@@ -62,7 +62,7 @@ impl DocumentManager {
 
         state
             .send
-            .send(RenderMessage::RegisterDocument((), document))
+            .send(RenderMessage::RegisterDocument(document))
             .unwrap();
     }
 
@@ -81,7 +81,7 @@ impl DocumentManager {
         self.0
             .borrow()
             .send
-            .send(RenderMessage::UnregisterDocument((), document))
+            .send(RenderMessage::UnregisterDocument(document))
             .unwrap();
     }
 
@@ -96,7 +96,6 @@ impl DocumentManager {
             .borrow()
             .send
             .send(RenderMessage::UseResources(
-                (),
                 adapter,
                 resources,
                 extended_device,
@@ -117,7 +116,6 @@ impl DocumentManager {
             .borrow()
             .send
             .send(RenderMessage::RenderViewport {
-                cookie: (),
                 document,
                 texture,
                 center_x,
@@ -160,7 +158,6 @@ impl DocumentManager {
 
         while let Ok(e) = state.recv.try_recv() {
             match e {
-                RenderResponse::Ack(_) => {}
                 RenderResponse::DidFrameUpdate => {
                     for callback in state.callbacks.iter() {
                         callback();

@@ -4,18 +4,17 @@ use crate::document::Document;
 use ningyo_render_wgpu::WgpuResources;
 use ningyo_texshare::ExtendedDevice;
 
-pub enum RenderMessage<C> {
+#[derive(Debug)]
+pub enum RenderMessage {
     UseResources(
-        C,
         wgpu::Adapter,
         Arc<WgpuResources>,
         ExtendedDevice,
         wgpu::Queue,
     ),
-    RegisterDocument(C, Document),
-    UnregisterDocument(C, Document),
+    RegisterDocument(Document),
+    UnregisterDocument(Document),
     RenderViewport {
-        cookie: C,
         document: Document,
         texture: wgpu::Texture,
         center_x: f32,
@@ -25,8 +24,8 @@ pub enum RenderMessage<C> {
     Shutdown,
 }
 
-pub enum RenderResponse<C> {
-    Ack(C),
+#[derive(Debug)]
+pub enum RenderResponse {
     DidFrameUpdate,
     RenderComplete(Document, Option<wgpu::SubmissionIndex>),
 }

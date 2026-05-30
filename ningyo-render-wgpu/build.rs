@@ -954,7 +954,7 @@ fn introspect_spirv(
             entrypoint.spirv_execution_model
         )?;
         writeln!(out, "/// Shader stage {:?}", entrypoint.shader_stage)?;
-        writeln!(out, "#[derive(Clone)]")?;
+        writeln!(out, "#[derive(Clone, Debug)]")?;
         writeln!(out, "pub struct {} {{", struct_name)?;
         writeln!(out, "    {}: wgpu::ShaderModule,", entrypoint.name)?;
         writeln!(out, "    bindgroup_layout: wgpu::BindGroupLayout")?;

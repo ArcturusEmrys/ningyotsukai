@@ -4,7 +4,7 @@ use crate::shader::{FragmentShader, VertexShader};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Pipeline<V, F>
 where
     V: VertexShader,
@@ -113,6 +113,7 @@ where
 /// Cache for different pipelines with the same shader program.
 ///
 /// Necessary as certain configurations cannot be changed dynamically in WGPU.
+#[derive(Debug)]
 pub struct PipelineGroup<V, F>
 where
     V: VertexShader,

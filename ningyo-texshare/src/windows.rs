@@ -22,7 +22,7 @@ use crate::wgpu::DeviceExt as WgpuDeviceExt;
 use crate::wgpu::map_texture_usage_for_texture;
 
 /// An extended device type that can hold a D3D11On12 device for DX11 sharing.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExtendedDevice {
     inner: wgpu::Device,
     d3d11on12_dev: ID3D11On12Device,

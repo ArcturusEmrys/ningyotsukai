@@ -15,7 +15,7 @@ use crate::texture::ExportableTexture;
 use crate::wgpu::DeviceExt;
 
 /// An extended device that has the necessary extensions for texture sharing.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExtendedDevice {
     inner: wgpu::Device,
 }
