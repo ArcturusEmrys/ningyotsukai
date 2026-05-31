@@ -136,7 +136,7 @@ impl WgpuResources {
         .unwrap();
 
         // Compile all our shaders now.
-        let part_shader_vert = basic_vert::Shader::new(&device, true);
+        let part_shader_vert = basic_vert::Shader::new(&device, true, false);
         let part_shader_frag = basic_frag::Shader::new(&device, true);
         let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true);
 

@@ -253,6 +253,7 @@ impl DrawCommandList {
                     let vert_binding = draw_session.binding_cache.bind_basic_vert(
                         &*draw_session.resources,
                         draw_session.basic_vert_buffer.as_ref().unwrap(),
+                        draw_session.viewports_config,
                     );
 
                     render_pass.set_vertex_buffer(

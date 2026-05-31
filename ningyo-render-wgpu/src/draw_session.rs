@@ -79,6 +79,8 @@ pub struct WgpuDrawSession<'a> {
 
     pub(crate) last_submission_index: &'a mut Option<wgpu::SubmissionIndex>,
 
+    pub(crate) viewports_config: &'a wgpu::Buffer,
+
     last_mask_threshold: f32,
     is_in_mask: bool,
     is_in_composite: bool,
@@ -180,6 +182,7 @@ impl<'a> WgpuDrawSession<'a> {
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
+            viewports_config: &renderer.viewports_config.1,
 
             #[cfg(feature = "tracy")]
             encoder_query,

@@ -27,25 +27,10 @@ pub trait FragmentShader: Shader {
     ) -> wgpu::FragmentState<'a>;
 }
 
-/// Stupid workaround for the fact that Rust STILL doesn't support Default on
-/// large array types
-pub trait DefaultArray {
-    fn new() -> Self;
-}
-
-impl<const N: usize> DefaultArray for [u8; N] {
-    fn new() -> Self {
-        [0; N]
-    }
-}
-
 pub trait UniformBlock {
-    type Buffer: DefaultArray
-        + AsRef<[u8]>
-        + AsMut<[u8]>
-        + for<'a> TryFrom<&'a [u8]>
-        + for<'a> TryFrom<&'a mut [u8]>
-        + std::fmt::Debug;
+    fn static_size() -> usize;
 
-    fn write_buffer(&self, out: &mut Self::Buffer);
+    fn required_size(&self) -> usize;
+
+    fn write_buffer(&self, out: &mut [u8]);
 }

@@ -2,7 +2,7 @@ use std::{any::type_name, marker::PhantomData};
 
 use wgpu::util::DeviceExt;
 
-use crate::shader::{DefaultArray, UniformBlock};
+use crate::shader::UniformBlock;
 
 /// Builder object for creating arrays of aligned uniform blocks.
 ///
@@ -58,11 +58,10 @@ where
         }
 
         let start = self.data.len();
+        let end = start + uniform.required_size();
 
-        let mut buffer = B::Buffer::new();
-        uniform.write_buffer(&mut buffer);
-
-        self.data.extend_from_slice(buffer.as_ref());
+        self.data.resize(end, 0);
+        uniform.write_buffer(&mut self.data[start..end]);
 
         start
     }

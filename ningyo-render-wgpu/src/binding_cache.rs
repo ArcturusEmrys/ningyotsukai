@@ -16,7 +16,10 @@ pub struct BindingCache {
     /// The associated Buffer object is the buffer bound to the shader in the
     /// given bindgroup. If the buffer changes, the previous binding is
     /// invalidated.
-    basic_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer)>,
+    ///
+    /// There is additionally a second Buffer object for the viewports. This is
+    /// intended to be used whole - i.e. not suballocated with a BufferBuilder.
+    basic_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer, wgpu::Buffer)>,
 
     /// The cache of bind groups used for basic_frag.
     ///
@@ -61,9 +64,10 @@ impl BindingCache {
         &mut self,
         resources: &WgpuResources,
         buffer: &wgpu::Buffer,
+        viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
-        if let Some((bg, my_buffer)) = &self.basic_vert_bind {
-            if buffer == my_buffer {
+        if let Some((bg, my_buffer, my_viewports)) = &self.basic_vert_bind {
+            if buffer == my_buffer && viewports == my_viewports {
                 return bg.clone();
             }
         }
@@ -73,14 +77,16 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(
-                    NonZero::new(size_of::<<basic_vert::Input as UniformBlock>::Buffer>() as u64)
-                        .unwrap(),
-                ),
+                size: Some(NonZero::new(basic_vert::Input::static_size() as u64).unwrap()),
+            },
+            wgpu::BufferBinding {
+                buffer: viewports,
+                offset: 0,
+                size: None,
             },
         );
 
-        self.basic_vert_bind = Some((new_bg.clone(), buffer.clone()));
+        self.basic_vert_bind = Some((new_bg.clone(), buffer.clone(), viewports.clone()));
 
         new_bg
     }
@@ -115,10 +121,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(
-                    NonZero::new(size_of::<<basic_frag::Input as UniformBlock>::Buffer>() as u64)
-                        .unwrap(),
-                ),
+                size: Some(NonZero::new(basic_frag::Input::static_size() as u64).unwrap()),
             },
         );
 
@@ -151,12 +154,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(
-                    NonZero::new(
-                        size_of::<<basic_mask_frag::Input as UniformBlock>::Buffer>() as u64,
-                    )
-                    .unwrap(),
-                ),
+                size: Some(NonZero::new(basic_mask_frag::Input::static_size() as u64).unwrap()),
             },
         );
 
@@ -194,16 +192,17 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(
-                    NonZero::new(
-                        size_of::<<composite_frag::Input as UniformBlock>::Buffer>() as u64
-                    )
-                    .unwrap(),
-                ),
+                size: Some(NonZero::new(composite_frag::Input::static_size() as u64).unwrap()),
             },
         );
 
-        self.basic_vert_bind = Some((new_bg.clone(), buffer.clone()));
+        self.composite_frag_bind = Some((
+            new_bg.clone(),
+            albedo.clone(),
+            emissive.clone(),
+            bump.clone(),
+            buffer.clone(),
+        ));
 
         new_bg
     }

@@ -7,8 +7,11 @@ use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
 use std::sync::Arc;
 use wgpu;
+use wgpu::util::DeviceExt;
 
 use crate::buffer_builder::BufferBuilder;
+use crate::shader::UniformBlock;
+use crate::shaders::basic::basic_vert::Viewports;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
 use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
 
@@ -90,6 +93,11 @@ pub struct WgpuRenderer<'window> {
 
     /// The last submission index received when queueing our work.
     pub(crate) last_submission_index: Option<wgpu::SubmissionIndex>,
+
+    /// The current viewports configuration.
+    ///
+    /// This will eventually support describing multiple viewports.
+    pub(crate) viewports_config: (Viewports, wgpu::Buffer),
 
     /// The device to render to.
     ///
@@ -191,6 +199,18 @@ impl<'window> WgpuRenderer<'window> {
 
         let uploads = WgpuUploads::new(model, &resources)?;
 
+        let viewports_config = Viewports {
+            active_viewports: 0,
+            viewports: vec![],
+        };
+        let mut data = vec![0; viewports_config.required_size()];
+        viewports_config.write_buffer(data.as_mut_slice());
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Viewports config"),
+            contents: &data,
+            usage: wgpu::BufferUsages::STORAGE,
+        });
+
         Ok(WgpuRenderer {
             surface: None,
 
@@ -208,6 +228,7 @@ impl<'window> WgpuRenderer<'window> {
             draw_commands: Default::default(),
             bind_cache: Default::default(),
             last_submission_index: None,
+            viewports_config: (viewports_config, buffer),
 
             device,
             queue,

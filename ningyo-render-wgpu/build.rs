@@ -6,9 +6,11 @@ use spirv_reflect::types::{
 };
 
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsString;
 use std::fmt::Write;
+use std::iter::repeat;
 use std::{fs, path};
 
 fn spirv_to_rust_type<'a>(
@@ -17,7 +19,7 @@ fn spirv_to_rust_type<'a>(
     let base_type = if typemember.type_flags.contains(ReflectTypeFlags::FLOAT) {
         match typemember.traits.numeric.scalar.width {
             32 => "f32",
-            _ => "unimplemented",
+            _ => "//unimplemented by way of invalid float type",
         }
     } else if typemember.type_flags.contains(ReflectTypeFlags::INT) {
         match (
@@ -30,10 +32,12 @@ fn spirv_to_rust_type<'a>(
             (8, 0) => "u8",
             (16, 0) => "u16",
             (32, 0) => "u32",
-            _ => "unimplemented",
+            _ => "//unimplemented by way of invalid integer type",
         }
+    } else if typemember.type_flags.contains(ReflectTypeFlags::STRUCT) {
+        &typemember.type_name
     } else {
-        "unimplemented"
+        "//unimplemented by way of unknown base type"
     };
 
     if typemember.type_flags.contains(ReflectTypeFlags::MATRIX) {
@@ -51,6 +55,17 @@ fn spirv_to_rust_type<'a>(
             base_type, typemember.traits.numeric.vector.component_count
         )
         .into())
+    } else if typemember.type_flags.contains(ReflectTypeFlags::ARRAY) {
+        let mut base = base_type.to_string();
+        for d in typemember.traits.array.dims.iter().rev() {
+            if *d == 0 {
+                base = format!("Vec<{}>", base);
+            } else {
+                base = format!("[{}; {}]", base, d);
+            }
+        }
+
+        Ok(base.into())
     } else {
         //Single
         Ok(base_type.into())
@@ -97,10 +112,14 @@ fn spirv_to_wgpu_vertex_format<'a>(
     }
 }
 
-fn describe_block_struct(
+fn describe_block_struct<'a>(
     out: &mut String,
-    blockvar: &ReflectBlockVariable,
-    typevar: &ReflectTypeDescription,
+    blockvar: &'a ReflectBlockVariable,
+    typevar: &'a ReflectTypeDescription,
+    unclaimed_referents: &mut HashMap<
+        &'a str,
+        (&'a ReflectBlockVariable, &'a ReflectTypeDescription),
+    >,
 ) -> Result<(), Box<dyn Error>> {
     writeln!(out, "#[allow(non_snake_case)]")?; //I'm too lazy to write a to_snake_case fn
     writeln!(out, "pub struct {} {{", typevar.type_name)?;
@@ -125,19 +144,56 @@ fn describe_block_struct(
     writeln!(out, "}}")?;
     writeln!(out)?;
 
-    writeln!(
-        out,
-        "impl shader::UniformBlock for {} {{",
-        typevar.type_name
-    )?;
-    writeln!(out, "    type Buffer = [u8; {}];", blockvar.size)?;
-    writeln!(
-        out,
-        "    fn write_buffer(&self, out: &mut [u8; {}]) {{",
-        blockvar.size
-    )?;
+    if blockvar.size > 0 {
+        //0 indicates "variable sized block"
+        writeln!(
+            out,
+            "impl shader::UniformBlock for {} {{",
+            typevar.type_name
+        )?;
+        writeln!(out, "    fn static_size() -> usize {{")?;
+        writeln!(out, "        {}", blockvar.size)?;
+        writeln!(out, "    }}")?;
+        writeln!(out, "    fn required_size(&self) -> usize {{")?;
+        writeln!(out, "        {}", blockvar.size)?;
+        writeln!(out, "    }}")?;
+    } else {
+        let mut static_minimum_size = 0;
+        let mut variable_stride = 0;
+        let mut variable_name = None;
+        if let Some((blockmember, typemember)) =
+            blockvar.members.iter().zip(typevar.members.iter()).last()
+        {
+            static_minimum_size = blockmember.absolute_offset;
+            variable_name = Some(&blockmember.name);
+            variable_stride = typemember.traits.array.stride;
+        } else {
+            writeln!(out, "    // ACTUALLY EMPTY STRUCTURE?!")?;
+        }
+
+        writeln!(
+            out,
+            "impl shader::UniformBlock for {} {{",
+            typevar.type_name
+        )?;
+        writeln!(out, "    fn static_size() -> usize {{")?;
+        writeln!(out, "        {}", blockvar.size)?;
+        writeln!(out, "    }}")?;
+        writeln!(out, "    fn required_size(&self) -> usize {{")?;
+        writeln!(
+            out,
+            "        {} + self.{}.len() * {}",
+            static_minimum_size,
+            variable_name.unwrap(),
+            variable_stride
+        )?;
+        writeln!(out, "    }}")?;
+    }
+
+    writeln!(out, "    fn write_buffer(&self, out: &mut [u8]) {{")?;
 
     for (blockmember, typemember) in blockvar.members.iter().zip(typevar.members.iter()) {
+        // TODO: What happens if we have a MATRIX or VECTOR of ARRAYS?
         if typemember.type_flags.contains(ReflectTypeFlags::MATRIX) {
             if !typemember
                 .decoration_flags
@@ -173,6 +229,28 @@ fn describe_block_struct(
                 blockmember.offset + blockmember.size,
                 blockmember.name
             )?;
+        } else if typemember.type_flags.contains(ReflectTypeFlags::ARRAY) {
+            for (dim, d) in typemember.traits.array.dims.iter().enumerate() {
+                let indent = repeat("    ").take(dim + 1).collect::<Vec<_>>().join("");
+                writeln!(
+                    out,
+                    "    {}for (index, value) in self.{}.iter().enumerate() {{",
+                    indent, blockmember.name
+                )?;
+                if *d == 0 {
+                    //only possible on outermost dimension of last member
+                    writeln!(
+                        out,
+                        "        {}value.write_buffer(&mut out[({}+index*{})..({}+index*{})])",
+                        indent,
+                        blockmember.offset,
+                        typemember.traits.array.stride,
+                        blockmember.offset + blockmember.size,
+                        typemember.traits.array.stride
+                    )?;
+                }
+                writeln!(out, "    {}}}", indent)?;
+            }
         } else {
             writeln!(
                 out,
@@ -181,6 +259,10 @@ fn describe_block_struct(
                 blockmember.offset + blockmember.size,
                 blockmember.name
             )?;
+        }
+
+        if typemember.type_flags.contains(ReflectTypeFlags::STRUCT) {
+            unclaimed_referents.insert(&typemember.type_name, (blockmember, typemember));
         }
     }
 
@@ -215,8 +297,13 @@ fn gen_shader_new(
     let mut extra_parameters = String::new();
     for descriptor_set in &entrypoint.descriptor_sets {
         for binding in &descriptor_set.bindings {
+            // NOTE: Yes, the Dynamic type is the same as regular, both allow
+            // picking static or dynamic offsets at layout creation time.
             match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer => {
+                ReflectDescriptorType::UniformBuffer
+                | ReflectDescriptorType::UniformBufferDynamic
+                | ReflectDescriptorType::StorageBuffer
+                | ReflectDescriptorType::StorageBufferDynamic => {
                     write!(
                         extra_parameters,
                         ", has_dynamic_offset_{}_{}: bool",
@@ -261,7 +348,8 @@ fn gen_shader_new(
             writeln!(out, "                        visibility: {},", visibility)?;
 
             match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer => {
+                ReflectDescriptorType::UniformBuffer
+                | ReflectDescriptorType::UniformBufferDynamic => {
                     writeln!(
                         out,
                         "                        ty: wgpu::BindingType::Buffer {{"
@@ -269,6 +357,34 @@ fn gen_shader_new(
                     writeln!(
                         out,
                         "                            ty: wgpu::BufferBindingType::Uniform,"
+                    )?;
+                    writeln!(
+                        out,
+                        "                            has_dynamic_offset: has_dynamic_offset_{}_{},",
+                        descriptor_set.set, binding.name
+                    )?;
+
+                    if binding.block.size > 0 {
+                        writeln!(
+                            out,
+                            "                            min_binding_size: Some(std::num::NonZero::new({}).expect(\"nonzero type\")),",
+                            binding.block.size
+                        )?;
+                    } else {
+                        writeln!(out, "                            min_binding_size: None,")?;
+                    }
+                    writeln!(out, "                        }},")?;
+                }
+                ReflectDescriptorType::StorageBuffer
+                | ReflectDescriptorType::StorageBufferDynamic => {
+                    writeln!(
+                        out,
+                        "                        ty: wgpu::BindingType::Buffer {{"
+                    )?;
+                    //TODO: At some point we're going to want writable storage buffers.
+                    writeln!(
+                        out,
+                        "                            ty: wgpu::BufferBindingType::Storage {{ read_only: true }},"
                     )?;
                     writeln!(
                         out,
@@ -405,12 +521,13 @@ fn gen_shader_new(
                 | ReflectDescriptorType::StorageImage
                 | ReflectDescriptorType::UniformTexelBuffer
                 | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::UniformBufferDynamic
-                | ReflectDescriptorType::StorageBufferDynamic
                 | ReflectDescriptorType::InputAttachment
                 | ReflectDescriptorType::AccelerationStructureKHR => {
-                    writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
+                    writeln!(
+                        out,
+                        "///TODO: Unknown descriptor type {:?}",
+                        binding.descriptor_type
+                    )?;
                 }
             }
 
@@ -440,8 +557,11 @@ fn gen_shader_bind(
     let mut has_lifetime_parameter = false;
     for descriptor_set in &entrypoint.descriptor_sets {
         for binding in &descriptor_set.bindings {
+            // TODO: These can all be passed as arrays, we should probably
+            // support that.
             match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer => {
+                ReflectDescriptorType::UniformBuffer
+                | ReflectDescriptorType::UniformBufferDynamic => {
                     has_lifetime_parameter = true;
                     write!(
                         &mut bind_params,
@@ -449,7 +569,15 @@ fn gen_shader_bind(
                         binding.name
                     )?;
                 }
-
+                ReflectDescriptorType::StorageBuffer
+                | ReflectDescriptorType::StorageBufferDynamic => {
+                    has_lifetime_parameter = true;
+                    write!(
+                        &mut bind_params,
+                        ", {}: impl Into<wgpu::BufferBinding<'a>>",
+                        binding.name
+                    )?;
+                }
                 ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
                     write!(&mut bind_params, ", {}: &wgpu::Sampler", binding.name)?;
                 }
@@ -462,9 +590,6 @@ fn gen_shader_bind(
                 | ReflectDescriptorType::StorageImage
                 | ReflectDescriptorType::UniformTexelBuffer
                 | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::UniformBufferDynamic
-                | ReflectDescriptorType::StorageBufferDynamic
                 | ReflectDescriptorType::InputAttachment
                 | ReflectDescriptorType::AccelerationStructureKHR => {
                     writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
@@ -505,7 +630,10 @@ fn gen_shader_bind(
                 binding.name.to_uppercase()
             )?;
             match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer => {
+                ReflectDescriptorType::UniformBuffer
+                | ReflectDescriptorType::UniformBufferDynamic
+                | ReflectDescriptorType::StorageBuffer
+                | ReflectDescriptorType::StorageBufferDynamic => {
                     writeln!(
                         out,
                         "                    resource: wgpu::BindingResource::Buffer({}.into())",
@@ -533,9 +661,6 @@ fn gen_shader_bind(
                 | ReflectDescriptorType::StorageImage
                 | ReflectDescriptorType::UniformTexelBuffer
                 | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::UniformBufferDynamic
-                | ReflectDescriptorType::StorageBufferDynamic
                 | ReflectDescriptorType::InputAttachment
                 | ReflectDescriptorType::AccelerationStructureKHR => {
                     writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
@@ -865,6 +990,14 @@ fn introspect_spirv(
             }
         }
 
+        // spirv_reflect exposes referred-to structs as a graph, rooted by the
+        // descriptor sets.
+        //
+        // We need to keep track of what has been already printed (claimed) and
+        // what still needs to be printed (unclaimed_referents).
+        let mut unclaimed_referents = HashMap::new();
+        let mut claimed = HashSet::new();
+
         for descriptor_set in &entrypoint.descriptor_sets {
             writeln!(out, "/// descriptor set {}", descriptor_set.set)?;
 
@@ -884,6 +1017,7 @@ fn introspect_spirv(
                 match binding.descriptor_type {
                     ReflectDescriptorType::UniformBuffer => {
                         if let Some(typevar) = &binding.type_description {
+                            claimed.insert(typevar.type_name.as_str());
                             writeln!(out, "/// UNIFORM BUFFER of type {}", typevar.type_name)?;
                             writeln!(
                                 out,
@@ -894,7 +1028,12 @@ fn introspect_spirv(
                             writeln!(out, "/// Type Flags: {:?}", typevar.type_flags)?;
                             writeln!(out, "/// Decoration Flags: {:?}", typevar.decoration_flags)?;
                             writeln!(out, "/// Traits: {:?}", typevar.traits)?;
-                            describe_block_struct(out, &binding.block, &typevar)?;
+                            describe_block_struct(
+                                out,
+                                &binding.block,
+                                &typevar,
+                                &mut unclaimed_referents,
+                            )?;
                             writeln!(
                                 out,
                                 "const BINDING_{}: u32 = {};",
@@ -915,6 +1054,45 @@ fn introspect_spirv(
                             )?;
                         }
                     }
+                    ReflectDescriptorType::StorageBuffer => {
+                        if let Some(typevar) = &binding.type_description {
+                            claimed.insert(typevar.type_name.as_str());
+                            writeln!(out, "/// STORAGE BUFFER of type {}", typevar.type_name)?;
+                            writeln!(
+                                out,
+                                "/// Struct member name: {}",
+                                typevar.struct_member_name
+                            )?;
+                            writeln!(out, "/// Storage class: {:?}", typevar.storage_class)?;
+                            writeln!(out, "/// Type Flags: {:?}", typevar.type_flags)?;
+                            writeln!(out, "/// Decoration Flags: {:?}", typevar.decoration_flags)?;
+                            writeln!(out, "/// Traits: {:?}", typevar.traits)?;
+                            describe_block_struct(
+                                out,
+                                &binding.block,
+                                &typevar,
+                                &mut unclaimed_referents,
+                            )?;
+                            writeln!(
+                                out,
+                                "const BINDING_{}: u32 = {};",
+                                binding.name.to_uppercase(),
+                                binding.binding
+                            )?;
+                        } else {
+                            writeln!(
+                                out,
+                                "/// STORAGE BUFFER of unknown type name {}",
+                                binding.name
+                            )?;
+                            writeln!(
+                                out,
+                                "const BINDING_{}: u32 = {};",
+                                binding.name.to_uppercase(),
+                                binding.binding
+                            )?;
+                        }
+                    }
                     _ => {
                         writeln!(out, "/// unknown type {:?}", binding.descriptor_type)?;
                         writeln!(
@@ -925,6 +1103,30 @@ fn introspect_spirv(
                         )?;
                     }
                 }
+            }
+        }
+
+        loop {
+            let mut next_level = HashMap::new();
+            let mut can_continue = false;
+
+            for (name, (blockmember, typemember)) in unclaimed_referents {
+                if claimed.contains(name) {
+                    continue;
+                }
+
+                can_continue = true;
+
+                claimed.insert(name);
+
+                writeln!(out, "/// Struct referenced from elsewhere")?;
+                describe_block_struct(out, blockmember, typemember, &mut next_level)?;
+            }
+
+            unclaimed_referents = next_level;
+
+            if !can_continue {
+                break;
             }
         }
 
