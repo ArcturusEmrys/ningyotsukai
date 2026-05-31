@@ -21,7 +21,7 @@ layout(set = 1, binding = 2) uniform Input {
     float threshold;
 } uni_in;
 
-layout(set = 1, binding = 3) buffer Viewports {
+layout(set = 1, binding = 3) readonly buffer Viewports {
     uint active_viewports;
     Viewport viewports[];
 } viewports_in;

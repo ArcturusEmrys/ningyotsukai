@@ -95,7 +95,8 @@ impl WgpuResources {
             required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
                 | wgpu::Features::CLEAR_TEXTURE
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                | wgpu::Features::DEPTH_CLIP_CONTROL,
+                | wgpu::Features::DEPTH_CLIP_CONTROL
+                | wgpu::Features::MULTIVIEW,
             required_limits: wgpu::Limits {
                 max_color_attachment_bytes_per_sample: 48,
                 ..Default::default()

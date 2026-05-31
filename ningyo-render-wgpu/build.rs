@@ -159,18 +159,20 @@ fn describe_block_struct<'a>(
         writeln!(out, "        {}", blockvar.size)?;
         writeln!(out, "    }}")?;
     } else {
-        let mut static_minimum_size = 0;
+        let mut static_member_size = 0;
         let mut variable_stride = 0;
         let mut variable_name = None;
         if let Some((blockmember, typemember)) =
             blockvar.members.iter().zip(typevar.members.iter()).last()
         {
-            static_minimum_size = blockmember.absolute_offset;
+            static_member_size = blockmember.absolute_offset;
             variable_name = Some(&blockmember.name);
             variable_stride = typemember.traits.array.stride;
         } else {
             writeln!(out, "    // ACTUALLY EMPTY STRUCTURE?!")?;
         }
+
+        let minimum_allowed_size = static_member_size + variable_stride;
 
         writeln!(
             out,
@@ -178,13 +180,13 @@ fn describe_block_struct<'a>(
             typevar.type_name
         )?;
         writeln!(out, "    fn static_size() -> usize {{")?;
-        writeln!(out, "        {}", blockvar.size)?;
+        writeln!(out, "        {}", minimum_allowed_size)?;
         writeln!(out, "    }}")?;
         writeln!(out, "    fn required_size(&self) -> usize {{")?;
         writeln!(
             out,
-            "        {} + self.{}.len() * {}",
-            static_minimum_size,
+            "        {} + std::cmp::max(self.{}.len(), 1) * {}",
+            static_member_size,
             variable_name.unwrap(),
             variable_stride
         )?;
@@ -1328,6 +1330,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             Err(e) => Err(e.to_string()),
         }
     });
+
+    options.set_target_env(
+        shaderc::TargetEnv::Vulkan,
+        shaderc::EnvVersion::Vulkan1_1 as u32,
+    );
 
     let corresponding_mod_file = shader_path.with_extension("rs");
     let mut rust_src = "/// AUTO GENERATED SOURCE DO NOT EDIT\n".to_string();

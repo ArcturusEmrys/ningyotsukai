@@ -15,7 +15,7 @@ layout(set = 0, binding = 0) uniform Input {
   vec2 offset;
 } uni_in;
 
-layout(set = 0, binding = 1) buffer Viewports {
+layout(set = 0, binding = 1) readonly buffer Viewports {
   uint active_viewports;
   Viewport viewports[];
 } viewports_in;
