@@ -6,15 +6,14 @@
 */
 #version 440
 #extension GL_EXT_multiview : require
+#extension GL_GOOGLE_include_directive : require
+
+#include "viewport.glsl"
 
 layout(set = 0, binding = 0) uniform Input {
   mat4 mvp;
   vec2 offset;
 } uni_in;
-
-struct Viewport {
-  vec2 internal_size;
-};
 
 layout(set = 0, binding = 1) buffer Viewports {
   uint active_viewports;
@@ -28,8 +27,11 @@ layout(location = 2) in vec2 deform;
 layout(location = 0) out vec2 texUVs;
 
 void main() {
-  if (gl_ViewIndex < viewports_in.active_viewports || gl_ViewIndex == 1) {
-    gl_Position = uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
-    texUVs = uvs;
+  mat4 viewport_proj = mat4(1.0);
+  if (gl_ViewIndex < viewports_in.active_viewports && gl_ViewIndex < viewports_in.viewports.length()) {
+    mat4 viewport_proj = viewports_in.viewports[gl_ViewIndex].projection;
   }
+
+  gl_Position = uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
+  texUVs = uvs;
 }

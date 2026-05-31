@@ -50,7 +50,7 @@ pub struct WgpuResources {
     pub(crate) clear_depthstencil: wgpu::DepthStencilState,
     pub(crate) ignore_depthstencil: wgpu::DepthStencilState,
 
-    pub(crate) composite_shader_vert_bind: wgpu::BindGroup,
+    pub(crate) composite_shader_vert: composite_vert::Shader,
     pub(crate) composite_shader_frag: composite_frag::Shader,
 
     pipelines: RwLock<WgpuResourcesMutable>,
@@ -137,8 +137,8 @@ impl WgpuResources {
 
         // Compile all our shaders now.
         let part_shader_vert = basic_vert::Shader::new(&device, true, false);
-        let part_shader_frag = basic_frag::Shader::new(&device, true);
-        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true);
+        let part_shader_frag = basic_frag::Shader::new(&device, true, false);
+        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true, false);
 
         let masked_depthstencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
@@ -240,9 +240,8 @@ impl WgpuResources {
         let part_mask_pipeline =
             pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
 
-        let composite_shader_vert = composite_vert::Shader::new(&device);
-        let composite_shader_vert_bind = composite_shader_vert.bind(&device);
-        let composite_shader_frag = composite_frag::Shader::new(&device, true);
+        let composite_shader_vert = composite_vert::Shader::new(&device, false);
+        let composite_shader_frag = composite_frag::Shader::new(&device, true, false);
 
         let composite_pipeline = pipeline::PipelineGroup::new(
             composite_shader_vert.clone(),
@@ -301,7 +300,7 @@ impl WgpuResources {
             masked_depthstencil,
             clear_depthstencil,
             ignore_depthstencil,
-            composite_shader_vert_bind,
+            composite_shader_vert,
             composite_shader_frag,
             null_frag_bind,
             pipelines: RwLock::new(WgpuResourcesMutable {

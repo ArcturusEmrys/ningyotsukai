@@ -30,10 +30,11 @@ pub struct BindingCache {
     basic_frag_bind:
         HashMap<(wgpu::TextureView, wgpu::TextureView, wgpu::TextureView), wgpu::BindGroup>,
 
-    /// The last buffer used to access the basic_frag cache.
+    /// The last uniform and viewport settings buffer used to access the
+    /// basic_frag cache.
     ///
     /// If it changes, the entire cache is erased.
-    last_basic_frag_bind_buffer: Option<wgpu::Buffer>,
+    last_basic_frag_bind_buffer: Option<(wgpu::Buffer, wgpu::Buffer)>,
 
     /// The cache of bind groups used for basic_mask_frag.
     ///
@@ -41,20 +42,32 @@ pub struct BindingCache {
     /// changes, the old bind groups are invalidated.
     basic_mask_frag_bind: HashMap<wgpu::TextureView, wgpu::BindGroup>,
 
-    /// The last buffer used to access the basic_mask_frag cache.
+    /// The last uniform and viewport settings buffer used to access the
+    /// basic_mask_frag cache.
     ///
     /// If it changes, the entire cache is erased.
-    last_basic_mask_frag_bind_buffer: Option<wgpu::Buffer>,
+    last_basic_mask_frag_bind_buffer: Option<(wgpu::Buffer, wgpu::Buffer)>,
+
+    /// The bind group used for composite_vert.
+    ///
+    /// This shader only accepts the viewport configuration, which should be
+    /// static across renderers, so we only permit one BindGroup in the cache
+    /// at a time.
+    composite_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer)>,
 
     /// The bind group used for composite_frag.
     ///
     /// This shader accepts the compositing render targets (aka "GBuffer") only
     /// so we only permit one bind group to be cached at any one time.
+    ///
+    /// The two buffers in the list are the uniform and viewport settings
+    /// buffers, in that order.
     composite_frag_bind: Option<(
         wgpu::BindGroup,
         wgpu::TextureView,
         wgpu::TextureView,
         wgpu::TextureView,
+        wgpu::Buffer,
         wgpu::Buffer,
     )>,
 }
@@ -98,6 +111,7 @@ impl BindingCache {
         emissive: &wgpu::TextureView,
         bumpmap: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
+        viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         // Fun wrinkle of the Rust HashMap API is that I have to bump the
         // reference count every time I want to query these texture views
@@ -105,7 +119,8 @@ impl BindingCache {
         if let Some(bg) = self.basic_frag_bind.get(&key) {
             // NOTE: Not recording the buffer is an internal logic error,
             // so a panic is appropriate
-            if buffer == self.last_basic_frag_bind_buffer.as_ref().unwrap() {
+            let (last_buffer, last_viewports) = self.last_basic_frag_bind_buffer.as_ref().unwrap();
+            if buffer == last_buffer && viewports == last_viewports {
                 return bg.clone();
             } else {
                 self.basic_frag_bind = HashMap::new();
@@ -123,10 +138,15 @@ impl BindingCache {
                 offset: 0,
                 size: Some(NonZero::new(basic_frag::Input::static_size() as u64).unwrap()),
             },
+            wgpu::BufferBinding {
+                buffer: viewports,
+                offset: 0,
+                size: None,
+            },
         );
 
         self.basic_frag_bind.insert(key, new_bg.clone());
-        self.last_basic_frag_bind_buffer = Some(buffer.clone());
+        self.last_basic_frag_bind_buffer = Some((buffer.clone(), viewports.clone()));
 
         new_bg
     }
@@ -136,11 +156,14 @@ impl BindingCache {
         resources: &WgpuResources,
         albedo: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
+        viewport: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         if let Some(bg) = self.basic_mask_frag_bind.get(albedo) {
             // NOTE: Not recording the buffer is an internal logic error,
             // so a panic is appropriate
-            if buffer == self.last_basic_mask_frag_bind_buffer.as_ref().unwrap() {
+            let (last_buffer, last_viewport) =
+                self.last_basic_mask_frag_bind_buffer.as_ref().unwrap();
+            if buffer == last_buffer && viewport == last_viewport {
                 return bg.clone();
             } else {
                 self.basic_mask_frag_bind = HashMap::new();
@@ -156,11 +179,41 @@ impl BindingCache {
                 offset: 0,
                 size: Some(NonZero::new(basic_mask_frag::Input::static_size() as u64).unwrap()),
             },
+            wgpu::BufferBinding {
+                buffer: viewport,
+                offset: 0,
+                size: None,
+            },
         );
 
         self.basic_mask_frag_bind
             .insert(albedo.clone(), new_bg.clone());
-        self.last_basic_mask_frag_bind_buffer = Some(buffer.clone());
+        self.last_basic_mask_frag_bind_buffer = Some((buffer.clone(), viewport.clone()));
+
+        new_bg
+    }
+
+    pub fn bind_composite_vert(
+        &mut self,
+        resources: &WgpuResources,
+        viewports: &wgpu::Buffer,
+    ) -> wgpu::BindGroup {
+        if let Some((bg, my_viewports)) = &self.composite_vert_bind {
+            if viewports == my_viewports {
+                return bg.clone();
+            }
+        }
+
+        let new_bg = resources.composite_shader_vert.bind(
+            &resources.device,
+            wgpu::BufferBinding {
+                buffer: viewports,
+                offset: 0,
+                size: None,
+            },
+        );
+
+        self.composite_vert_bind = Some((new_bg.clone(), viewports.clone()));
 
         new_bg
     }
@@ -172,12 +225,16 @@ impl BindingCache {
         emissive: &wgpu::TextureView,
         bump: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
+        viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
-        if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer)) = &self.composite_frag_bind {
+        if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
+            &self.composite_frag_bind
+        {
             if buffer == my_buffer
                 && albedo == my_albedo
                 && emissive == my_emissive
                 && bump == my_bump
+                && viewports == my_viewports
             {
                 return bg.clone();
             }
@@ -194,6 +251,11 @@ impl BindingCache {
                 offset: 0,
                 size: Some(NonZero::new(composite_frag::Input::static_size() as u64).unwrap()),
             },
+            wgpu::BufferBinding {
+                buffer: viewports,
+                offset: 0,
+                size: None,
+            },
         );
 
         self.composite_frag_bind = Some((
@@ -202,6 +264,7 @@ impl BindingCache {
             emissive.clone(),
             bump.clone(),
             buffer.clone(),
+            viewports.clone(),
         ));
 
         new_bg

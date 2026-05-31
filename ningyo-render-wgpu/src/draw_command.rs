@@ -291,6 +291,7 @@ impl DrawCommandList {
                             &draw_session.resources,
                             albedo.view(),
                             draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
+                            draw_session.viewports_config,
                         );
                         let pipeline = draw_session
                             .resources
@@ -327,6 +328,7 @@ impl DrawCommandList {
                             emissive.view(),
                             bumpmap.view(),
                             draw_session.basic_frag_buffer.as_ref().unwrap(),
+                            draw_session.viewports_config,
                         );
 
                         let pipeline = if using_mask {
@@ -470,14 +472,17 @@ impl DrawCommandList {
                         ];
 
                         let index = draw_session.buffer_indices.get(&id.into()).unwrap();
-                        let vert_binding =
-                            draw_session.resources.composite_shader_vert_bind.clone();
+                        let vert_binding = draw_session.binding_cache.bind_composite_vert(
+                            &draw_session.resources,
+                            draw_session.viewports_config,
+                        );
                         let frag_binding = draw_session.binding_cache.bind_composite_frag(
                             &draw_session.resources,
                             composite.albedo().view(),
                             composite.emissive().view(),
                             composite.bump().view(),
                             draw_session.composite_frag_buffer.as_ref().unwrap(),
+                            draw_session.viewports_config,
                         );
 
                         let pipeline = draw_session

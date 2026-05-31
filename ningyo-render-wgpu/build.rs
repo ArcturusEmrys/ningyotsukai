@@ -1,4 +1,4 @@
-use shaderc;
+use shaderc::{self, IncludeType, ResolvedInclude};
 use spirv_reflect;
 use spirv_reflect::types::{
     ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectEntryPoint,
@@ -11,6 +11,7 @@ use std::error::Error;
 use std::ffi::OsString;
 use std::fmt::Write;
 use std::iter::repeat;
+use std::path::PathBuf;
 use std::{fs, path};
 
 fn spirv_to_rust_type<'a>(
@@ -1225,10 +1226,7 @@ fn compile_dir(
                 let binary = compiler.compile_into_spirv(
                     &source_text,
                     shaderkind,
-                    &in_path
-                        .file_name()
-                        .map(|o| o.to_string_lossy())
-                        .unwrap_or(Cow::Borrowed("source.glsl")),
+                    &in_path.to_string_lossy(),
                     "main",
                     Some(&options),
                 )?;
@@ -1309,7 +1307,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("cargo:rerun-if-changed={}", shader_path.to_string_lossy());
 
     let compiler = shaderc::Compiler::new()?;
-    let options = shaderc::CompileOptions::new()?;
+    let mut options = shaderc::CompileOptions::new()?;
+
+    options.set_include_callback(|included_file, include_type, from_file, _depth| {
+        let from_file = path::absolute(from_file).map_err(|e| e.to_string())?;
+        let mut include_path = match include_type {
+            IncludeType::Relative => from_file.parent().ok_or("No parent?")?,
+            IncludeType::Standard => shader_path.as_path(),
+        }
+        .to_owned();
+
+        include_path.push(PathBuf::from(included_file));
+        let included_path = include_path.to_string_lossy().into_owned();
+
+        match fs::read_to_string(&included_path) {
+            Ok(included_source) => Ok(ResolvedInclude {
+                resolved_name: included_path,
+                content: included_source,
+            }),
+            Err(e) => Err(e.to_string()),
+        }
+    });
 
     let corresponding_mod_file = shader_path.with_extension("rs");
     let mut rust_src = "/// AUTO GENERATED SOURCE DO NOT EDIT\n".to_string();
