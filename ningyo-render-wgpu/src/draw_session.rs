@@ -1,17 +1,15 @@
-use glam::Mat4;
-use glam::UVec2;
 use inox2d::node::components::MaskMode;
 use inox2d::node::drawables::DrawableKind;
 use inox2d::node::{InoxNodeUuid, components, drawables};
 use inox2d::render::CompositeRenderCtx;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession};
-use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
 use wgpu;
 
 use crate::WgpuRenderer;
 use crate::buffer_builder::BufferBuilder;
+use crate::camera::CameraExt;
 use crate::draw_command::DrawCommandList;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
 use crate::texture::{DepthStencilTexture, GBuffer};
@@ -33,13 +31,6 @@ pub struct WgpuDrawSession<'a> {
     /// The uploads for the particular model that we will be drawing.
     pub(crate) uploads: &'a WgpuUploads,
 
-    /// All textures used as render targets, excluding the surface color
-    /// buffer.
-    ///
-    /// GBuffer is used solely for composite rendering, where rendered pixels
-    /// are used for a deferred shading pass.
-    pub(crate) render_targets: &'a mut Option<(GBuffer, DepthStencilTexture)>,
-
     pub(crate) buffer_indices: &'a mut HashMap<u32, BufferIndices>,
     pub(crate) builder_basic_vert: &'a mut BufferBuilder<basic_vert::Input>,
     pub(crate) builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
@@ -57,8 +48,14 @@ pub struct WgpuDrawSession<'a> {
     /// The output texture to render.
     pub(crate) view: wgpu::TextureView,
 
-    /// The position of the root of our model.
-    viewmatrix: Mat4,
+    /// Corresponding stencil buffer for the output texture.
+    pub(crate) stencil: &'a DepthStencilTexture,
+
+    /// The compositing buffers.
+    pub(crate) composite: &'a GBuffer,
+
+    /// The renderer's camera position as an artboard-space matrix
+    pub(crate) artboard_matrix: glam::Mat4,
 
     /// All of the node names (for debugging purposes).
     pub(crate) node_names: HashMap<InoxNodeUuid, String>,
@@ -97,10 +94,6 @@ impl<'a> WgpuDrawSession<'a> {
         renderer: &'a mut WgpuRenderer<'_>,
         puppet: &inox2d::puppet::Puppet,
     ) -> Result<Self, Box<dyn Error>> {
-        if renderer.render_targets.is_none() {
-            panic!("Buffer is not yet set up.");
-        }
-
         let resources = &*renderer.resources;
 
         #[allow(unused_mut)]
@@ -114,36 +107,9 @@ impl<'a> WgpuDrawSession<'a> {
         #[cfg(feature = "tracy")]
         let encoder_query = resources.start_query(&mut encoder);
 
-        let surface_texture = renderer.surface.as_ref().map(|(surface, config)| {
-            (
-                surface.get_current_texture().as_surface_texture(),
-                UVec2::new(config.width, config.height),
-            )
-        });
-        let surface_texture = match surface_texture {
-            Some((
-                Ok(ningyo_extensions::SurfaceTexture {
-                    texture,
-                    optimal: _optimal,
-                }),
-                viewport,
-            )) => Some((texture, viewport)),
-            Some((Err(e), _)) => return Err(e)?,
-            None => None,
-        };
-
-        let (view, viewport) = if let Some((surface_texture, viewport)) = &surface_texture {
-            (
-                surface_texture
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default()),
-                *viewport,
-            )
-        } else if let (Some(device_texture), viewport) = &renderer.target {
-            (device_texture.view().clone(), *viewport)
-        } else {
-            return Err("Please resize the renderer before drawing.".into());
-        };
+        let view = renderer.render_target.color_target_view()?;
+        let composite = renderer.render_target.composite()?;
+        let stencil = renderer.render_target.stencil()?;
 
         //TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
 
@@ -152,14 +118,13 @@ impl<'a> WgpuDrawSession<'a> {
             .iter()
             .map(|n| (n.uuid, n.name.clone()))
             .collect::<HashMap<_, _>>();
-        let viewmatrix = renderer.camera.matrix(viewport.as_vec2());
+        let artboard_matrix = renderer.camera.to_artboard_matrix();
 
         let device = resources.device.clone();
 
         let mut session = WgpuDrawSession {
             resources,
             uploads: &renderer.uploads,
-            render_targets: &mut renderer.render_targets,
             buffer_indices: &mut renderer.buffer_indices,
             builder_basic_vert: &mut renderer.builder_basic_vert,
             builder_basic_frag: &mut renderer.builder_basic_frag,
@@ -168,7 +133,9 @@ impl<'a> WgpuDrawSession<'a> {
             device,
             encoder,
             view,
-            viewmatrix,
+            composite,
+            stencil,
+            artboard_matrix,
             node_names,
             last_mask_threshold: 0.0,
             is_in_mask: false,
@@ -182,7 +149,7 @@ impl<'a> WgpuDrawSession<'a> {
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
-            viewports_config: &renderer.viewports_config.1,
+            viewports_config: renderer.render_target.viewports_config()?,
 
             #[cfg(feature = "tracy")]
             encoder_query,
@@ -291,7 +258,7 @@ impl<'a> WgpuDrawSession<'a> {
             Some(DrawableKind::TexturedMesh(components)) => {
                 if index.basic_vert.is_none() {
                     index.basic_vert = Some(self.builder_basic_vert.insert(basic_vert::Input {
-                        mvp: (self.viewmatrix * *components.transform).to_cols_array_2d(),
+                        mvp: (self.artboard_matrix * *components.transform).to_cols_array_2d(),
                         offset: [0.0; 2],
                     }));
                 }

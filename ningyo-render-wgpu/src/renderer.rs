@@ -1,4 +1,3 @@
-use glam::UVec2;
 use inox2d::math::camera::Camera;
 use inox2d::model::Model;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
@@ -7,13 +6,10 @@ use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
 use std::sync::Arc;
 use wgpu;
-use wgpu::util::DeviceExt;
 
 use crate::buffer_builder::BufferBuilder;
-use crate::shader::UniformBlock;
-use crate::shaders::basic::basic_vert::Viewports;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
-use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
+use crate::texture::DeviceTexture;
 
 use std::collections::HashMap;
 
@@ -22,6 +18,7 @@ use crate::draw_command::DrawCommandList;
 use crate::draw_session::WgpuDrawSession;
 use crate::error::WgpuRendererError;
 use crate::resources::WgpuResources;
+use crate::targets::RenderTarget;
 use crate::uploads::WgpuUploads;
 
 /// Buffer offsets for all four of our main shaders.
@@ -46,18 +43,10 @@ impl BufferIndices {
 }
 
 pub struct WgpuRenderer<'window> {
-    pub(crate) surface: Option<(wgpu::Surface<'window>, wgpu::SurfaceConfiguration)>,
-    pub(crate) target: (Option<DeviceTexture>, UVec2),
+    /// The target of all rendering operations.
+    pub(crate) render_target: RenderTarget<'window>,
 
-    /// All textures used as render targets, excluding the surface color
-    /// buffer.
-    ///
-    /// GBuffer is used solely for composite rendering, where rendered pixels
-    /// are used for a deferred shading pass.
-    pub(crate) render_targets: Option<(GBuffer, DepthStencilTexture)>,
-
-    /// Where to draw the puppet relative to the current target surface or
-    /// texture.
+    /// Where to draw the puppet relative to the artboard.
     pub camera: Camera,
 
     /// Builder for basic part vertex uniforms
@@ -93,11 +82,6 @@ pub struct WgpuRenderer<'window> {
 
     /// The last submission index received when queueing our work.
     pub(crate) last_submission_index: Option<wgpu::SubmissionIndex>,
-
-    /// The current viewports configuration.
-    ///
-    /// This will eventually support describing multiple viewports.
-    pub(crate) viewports_config: (Viewports, wgpu::Buffer),
 
     /// The device to render to.
     ///
@@ -136,39 +120,10 @@ impl<'window> WgpuRenderer<'window> {
             })
             .await?;
 
-        // Find a suitable surface configuration.
-        let surface_caps = surface.get_capabilities(&adapter);
-        let mut surface_format = surface_caps.formats[0];
-        let non_srgb_surface = surface_caps.formats[0].remove_srgb_suffix();
-
-        // SRGB makes blending look funny.
-        if surface_caps
-            .formats
-            .iter()
-            .find(|fmt| **fmt == non_srgb_surface)
-            .is_some()
-        {
-            surface_format = non_srgb_surface;
-        }
-
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: surface_format,
-
-            //TODO: We don't know the size of our surface at init time.
-            width: 640,
-            height: 480,
-            present_mode: surface_caps.present_modes[0],
-            alpha_mode: surface_caps.alpha_modes[0],
-            view_formats: vec![],
-            desired_maximum_frame_latency: 2,
-        };
-
         let resources = Arc::new(WgpuResources::new(&adapter).await?);
+        let target = RenderTarget::new_with_surface(surface, &adapter);
 
-        let mut renderer = Self::new_headless_with_resources(resources, model)?;
-
-        renderer.surface = Some((surface, config));
+        let renderer = Self::new_headless_internal(resources, model, target)?;
 
         Ok(renderer)
     }
@@ -183,10 +138,9 @@ impl<'window> WgpuRenderer<'window> {
             })
             .await?;
         let resources = Arc::new(WgpuResources::new(&adapter).await?);
+        let target = RenderTarget::new_texture_target();
 
-        // We actually can't create our render target until we know our size.
-
-        Ok(Self::new_headless_with_resources(resources, model)?)
+        Ok(Self::new_headless_internal(resources, model, target)?)
     }
 
     /// Create a renderer with a user-specified resource pack.
@@ -194,30 +148,24 @@ impl<'window> WgpuRenderer<'window> {
         resources: Arc<WgpuResources>,
         model: &Model,
     ) -> Result<Self, WgpuRendererError> {
+        let target = RenderTarget::new_texture_target();
+
+        Ok(Self::new_headless_internal(resources, model, target)?)
+    }
+
+    fn new_headless_internal(
+        resources: Arc<WgpuResources>,
+        model: &Model,
+        target: RenderTarget<'window>,
+    ) -> Result<Self, WgpuRendererError> {
         let device = resources.device.clone();
         let queue = resources.queue.clone();
 
         let uploads = WgpuUploads::new(model, &resources)?;
 
-        let viewports_config = Viewports {
-            active_viewports: 0,
-            viewports: vec![],
-        };
-        let mut data = vec![0; viewports_config.required_size()];
-        viewports_config.write_buffer(data.as_mut_slice());
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Viewports config"),
-            contents: &data,
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-
         Ok(WgpuRenderer {
-            surface: None,
-
-            // The 640x480 size is a placeholder, we're waiting for a resize.
-            target: (None, UVec2::new(640, 480)),
             camera: Camera::default(),
-            render_targets: None,
+            render_target: target,
             uploads,
             resources,
             builder_basic_frag: BufferBuilder::new(wgpu::Limits::default()),
@@ -228,8 +176,6 @@ impl<'window> WgpuRenderer<'window> {
             draw_commands: Default::default(),
             bind_cache: Default::default(),
             last_submission_index: None,
-            viewports_config: (viewports_config, buffer),
-
             device,
             queue,
         })
@@ -245,65 +191,9 @@ impl<'window> WgpuRenderer<'window> {
     /// function. Instead, call `resize_with_texture`.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
-            let old_size = if let Some((_, config)) = &self.surface {
-                Some((config.width, config.height))
-            } else if let Some(target) = &self.target.0 {
-                Some((target.texture().width(), target.texture().height()))
-            } else {
-                None
-            };
+            self.render_target.resize(width, height);
+            self.render_target.apply(&self.device, &self.queue);
 
-            if let Some((old_width, old_height)) = old_size {
-                if let Some(render_targets) = self.render_targets.as_ref() {
-                    if old_width == width
-                        && old_height == height
-                        && self.render_targets.is_some()
-                        && render_targets.0.albedo().texture().width() == width
-                        && render_targets.0.albedo().texture().height() == height
-                        && render_targets.1.texture().width() == width
-                        && render_targets.1.texture().height() == height
-                    {
-                        //We don't need to do anything.
-                        return Ok(());
-                    }
-                }
-            }
-
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Inox2D texture resizes"),
-                });
-
-            if let Some((surface, config)) = &mut self.surface {
-                config.width = width;
-                config.height = height;
-                surface.configure(&self.device, config);
-            } else if self.target.0.is_none() {
-                panic!("Render target texture must have been set before resize!!!")
-            }
-
-            self.render_targets = Some((
-                GBuffer::new(
-                    &self.device,
-                    &mut encoder,
-                    width,
-                    height,
-                    //TODO: Wait, why? Nothing we work with is HDR.
-                    wgpu::TextureFormat::Rgba16Float,
-                    //TODO: You know wgpu has a stencil only format, right?
-                    wgpu::TextureFormat::Depth24PlusStencil8,
-                ),
-                DepthStencilTexture::empty_render_target(
-                    &self.device,
-                    &mut encoder,
-                    width,
-                    height,
-                    wgpu::TextureFormat::Depth24PlusStencil8,
-                ),
-            ));
-
-            self.queue.submit(std::iter::once(encoder.finish()));
             Ok(())
         } else {
             Err(WgpuRendererError::SizeCannotBeZero)
@@ -320,21 +210,17 @@ impl<'window> WgpuRenderer<'window> {
     /// `required_render_target_uses` and must originate from the same device
     /// that we are using to render with.
     pub fn set_render_target(&mut self, target: wgpu::Texture) -> Result<(), WgpuRendererError> {
-        let width = target.width();
-        let height = target.height();
-        let new_target = DeviceTexture::user_render_target(target)?;
+        self.render_target.set_render_target(target)?;
+        self.render_target.apply(&self.device, &self.queue);
 
-        self.target.1 = UVec2::new(new_target.texture().width(), new_target.texture().height());
-        self.target.0 = Some(new_target);
-
-        self.resize(width, height)
+        Ok(())
     }
 
     /// Convenience method for presenting the rendered surface.
     ///
     /// Does nothing if this renderer is not directly rendering to a surface.
     pub fn present(&self) -> Result<(), ningyo_extensions::SurfaceError> {
-        if let Some((surface, _config)) = &self.surface {
+        if let Some(surface) = self.render_target.surface() {
             surface
                 .get_current_texture()
                 .as_surface_texture()?
@@ -346,49 +232,16 @@ impl<'window> WgpuRenderer<'window> {
     }
 
     /// Convenience method for clearing the target texture or surface.
-    pub fn clear(&self) -> Result<(), ningyo_extensions::SurfaceError> {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("WGPURenderer::clear"),
-            });
-
-        match (&self.surface, &self.target) {
-            (Some((surface, _)), (None, _)) => {
-                encoder.clear_texture(
-                    &surface
-                        .get_current_texture()
-                        .as_surface_texture()?
-                        .texture
-                        .texture,
-                    &wgpu::ImageSubresourceRange {
-                        aspect: wgpu::TextureAspect::All,
-                        base_mip_level: 0,
-                        mip_level_count: None,
-                        base_array_layer: 0,
-                        array_layer_count: None,
-                    },
-                );
-            }
-            (None, (Some(target), _)) => target.clear(&mut encoder),
-            _ => {}
-        }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
-
-        Ok(())
+    pub fn clear(&self) -> Result<(), WgpuRendererError> {
+        self.render_target.clear(&self.device, &self.queue)
     }
 
     pub fn device(&self) -> wgpu::Device {
         self.device.clone()
     }
 
-    pub fn target_texture(&self) -> Option<wgpu::Texture> {
-        if let (Some(targ), _) = &self.target {
-            return Some(targ.texture().clone());
-        }
-
-        None
+    pub fn target_texture(&self) -> Result<wgpu::Texture, WgpuRendererError> {
+        self.render_target.color_target()
     }
 
     pub fn last_submission_index(&self) -> Option<wgpu::SubmissionIndex> {

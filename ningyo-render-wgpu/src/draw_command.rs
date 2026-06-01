@@ -129,8 +129,9 @@ impl DrawCommandList {
         let mut is_in_composite = false;
         let me = &mut draw_session.draw_commands;
 
-        let (composite, surface_stencil) = draw_session.render_targets.as_ref().unwrap();
         let surface_color_view = &draw_session.view;
+        let composite = draw_session.composite;
+        let stencil = draw_session.stencil;
 
         let masked_depthstencil = draw_session.resources.masked_depthstencil.clone();
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
@@ -158,10 +159,10 @@ impl DrawCommandList {
                     // !is_in_composite
                     if render_pass.is_none() {
                         render_pass = None;
-                        surface_stencil.clear(&mut draw_session.encoder);
+                        stencil.clear(&mut draw_session.encoder);
                     } else {
                         let render_pass = render_pass.as_mut().unwrap();
-                        surface_stencil.clear_with_render_pass(
+                        stencil.clear_with_render_pass(
                             &draw_session.device,
                             render_pass,
                             &mut draw_session.resources,
@@ -216,7 +217,7 @@ impl DrawCommandList {
                         let depth_stencil_attachment = if is_in_composite {
                             Some(composite.stencil().as_depth_stencil_attachment_rw())
                         } else {
-                            Some(surface_stencil.as_depth_stencil_attachment_rw())
+                            Some(stencil.as_depth_stencil_attachment_rw())
                         };
 
                         drop(render_pass);
@@ -393,8 +394,7 @@ impl DrawCommandList {
                     is_in_composite = false;
 
                     let surface_color_view = &draw_session.view;
-                    let depth_stencil_attachment =
-                        Some(surface_stencil.as_depth_stencil_attachment_rw());
+                    let depth_stencil_attachment = Some(stencil.as_depth_stencil_attachment_rw());
 
                     //TODO: Do we even want blending on in Normal mode?
                     let blend = Some(Self::blend_mode_to_state(components.drawable.blending.mode));

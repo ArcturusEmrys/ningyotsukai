@@ -188,12 +188,13 @@ impl DeviceTexture {
         encoder: &mut wgpu::CommandEncoder,
         width: u32,
         height: u32,
+        layers: u32,
         format: wgpu::TextureFormat,
     ) -> Self {
         let size = wgpu::Extent3d {
             width,
             height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: layers,
         };
         let device_texture = device.create_texture(&wgpu::TextureDescriptor {
             size,
@@ -285,12 +286,13 @@ impl DepthStencilTexture {
         encoder: &mut wgpu::CommandEncoder,
         width: u32,
         height: u32,
+        layers: u32,
         format: wgpu::TextureFormat,
     ) -> Self {
         let size = wgpu::Extent3d {
             width,
             height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: layers,
         };
         let device_texture = device.create_texture(&wgpu::TextureDescriptor {
             size,
@@ -410,6 +412,7 @@ impl GBuffer {
         encoder: &mut wgpu::CommandEncoder,
         width: u32,
         height: u32,
+        layers: u32,
         format: wgpu::TextureFormat,
         depth_format: wgpu::TextureFormat,
     ) -> Self {
@@ -419,14 +422,18 @@ impl GBuffer {
                 encoder,
                 width,
                 height,
+                layers,
                 wgpu::TextureFormat::Rgba8Unorm,
             ),
-            emissive: DeviceTexture::empty_render_target(device, encoder, width, height, format),
+            emissive: DeviceTexture::empty_render_target(
+                device, encoder, width, height, layers, format,
+            ),
             bump: DeviceTexture::empty_render_target(
                 device,
                 encoder,
                 width,
                 height,
+                layers,
                 wgpu::TextureFormat::Rgba8Unorm,
             ),
             stencil: DepthStencilTexture::empty_render_target(
@@ -434,6 +441,7 @@ impl GBuffer {
                 encoder,
                 width,
                 height,
+                layers,
                 depth_format,
             ),
         }

@@ -15,4 +15,7 @@ pub enum WgpuRendererError {
 
     #[error("Could not adopt texture as render target as it is missing required usages")]
     InvalidRenderTargetTexture,
+
+    #[error("Viewport not yet initialized")]
+    ViewportNotInitialized,
 }

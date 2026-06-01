@@ -1,5 +1,6 @@
 mod binding_cache;
 mod buffer_builder;
+mod camera;
 mod draw_command;
 mod draw_session;
 mod error;
@@ -8,6 +9,7 @@ mod renderer;
 mod resources;
 mod shader;
 mod shaders;
+mod targets;
 mod texture;
 mod uploads;
 
