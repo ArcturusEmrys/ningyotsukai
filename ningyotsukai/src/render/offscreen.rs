@@ -262,7 +262,7 @@ impl OffscreenRender {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Screen clear"),
+                label: Some("Output copy"),
             });
 
         if let Some(buffer) = &self.viewport_buffer {
@@ -307,27 +307,27 @@ impl OffscreenRender {
 
             if let Some(document) = self.document.upgrade() {
                 if let Some(puppet) = document.stage().puppet(index) {
-                    let mut scale = puppet.scale();
-                    scale *= zoom;
-
                     let mut x = 0.0;
                     let mut y = 0.0;
 
                     //Cancel out the center coordinate offset Inox uses
-                    x -= texture.width() as f32 / 2.0 / scale;
-                    y -= texture.height() as f32 / 2.0 / scale;
-
-                    // Apply the viewport scale and position
-                    x += center_x / scale;
-                    y += center_y / scale;
+                    x -= texture.width() as f32 / 2.0 / puppet.scale();
+                    y -= texture.height() as f32 / 2.0 / puppet.scale();
 
                     x += puppet.position().x / puppet.scale();
                     y += puppet.position().y / puppet.scale();
 
                     renderer.camera.position.x = x;
                     renderer.camera.position.y = y;
-                    renderer.camera.scale.x = scale;
-                    renderer.camera.scale.y = scale;
+                    renderer.camera.scale.x = puppet.scale();
+                    renderer.camera.scale.y = puppet.scale();
+
+                    let camera = renderer.viewport_camera_mut(0).unwrap();
+
+                    camera.position.x = *center_x;
+                    camera.position.y = *center_y;
+                    camera.scale.x = *zoom;
+                    camera.scale.y = *zoom;
                 }
             }
         }
@@ -360,7 +360,7 @@ impl OffscreenRender {
                 },
                 mip_level_count: 1,
                 sample_count: 1,
-                format: wgpu::TextureFormat::Bgra8Unorm,
+                format: texture.format(),
                 usage: WgpuRenderer::required_render_target_uses()
                     | wgpu::TextureUsages::COPY_SRC
                     | wgpu::TextureUsages::RENDER_ATTACHMENT,

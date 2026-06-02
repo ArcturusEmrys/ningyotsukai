@@ -186,18 +186,42 @@ impl<'window> WgpuRenderer<'window> {
     /// If this renderer was created to render directly to a surface, the
     /// surface will be reconfigured. Otherwise, this renderer will allocate a
     /// new texture of the required size.
+    /// 
+    /// This renderer is capable of rendering multiple views at once. To use
+    /// this facility, you must configure multiple viewports, which you do by
+    /// calling `.resize()` for each viewport, starting from 0 and counting up.
     ///
     /// If you wish to provide your own target textures, do not call this
     /// function. Instead, call `resize_with_texture`.
-    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), WgpuRendererError> {
+    pub fn resize(&mut self, width: u32, height: u32, viewport: usize) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
-            self.render_target.resize(width, height);
+            self.render_target.resize(width, height, viewport);
             self.render_target.apply(&self.device, &self.queue);
 
             Ok(())
         } else {
             Err(WgpuRendererError::SizeCannotBeZero)
         }
+    }
+
+    /// Retrieve a particular viewport's camera.
+    /// 
+    /// Each viewport has an independent camera that specifies a particular
+    /// position, scale, and rotation for that view. This camera is applied
+    /// after the global "artboard" camera that positions the puppet on the
+    /// stage.
+    pub fn viewport_camera(&self, viewport: usize) -> Option<&Camera> {
+        self.render_target.viewport_camera(viewport)
+    }
+
+    /// Retrieve a particular viewport's camera for mutation.
+    /// 
+    /// Each viewport has an independent camera that specifies a particular
+    /// position, scale, and rotation for that view. This camera is applied
+    /// after the global "artboard" camera that positions the puppet on the
+    /// stage.
+    pub fn viewport_camera_mut(&mut self, viewport: usize) -> Option<&mut Camera> {
+        self.render_target.viewport_camera_mut(viewport)
     }
 
     pub fn required_render_target_uses() -> wgpu::TextureUsages {

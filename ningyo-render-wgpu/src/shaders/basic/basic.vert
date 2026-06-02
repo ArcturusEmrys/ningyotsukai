@@ -32,6 +32,6 @@ void main() {
     mat4 viewport_proj = viewports_in.viewports[gl_ViewIndex].projection;
   }
 
-  gl_Position = uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
+  gl_Position = viewport_proj * uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
   texUVs = uvs;
 }
