@@ -123,6 +123,7 @@ fn describe_block_struct<'a>(
     >,
 ) -> Result<(), Box<dyn Error>> {
     writeln!(out, "#[allow(non_snake_case)]")?; //I'm too lazy to write a to_snake_case fn
+    writeln!(out, "#[derive(Clone, Debug)]")?;
     writeln!(out, "pub struct {} {{", typevar.type_name)?;
 
     for (blockmember, typemember) in blockvar.members.iter().zip(typevar.members.iter()) {
