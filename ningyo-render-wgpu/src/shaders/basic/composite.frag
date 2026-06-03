@@ -36,11 +36,11 @@ void main() {
     if (gl_ViewIndex < viewports_in.active_viewports && gl_ViewIndex < viewports_in.viewports.length()) {
         vec2 scissor_origin_tl = viewports_in.viewports[gl_ViewIndex].scissor_origin_tl;
         vec2 scissor_origin_br = viewports_in.viewports[gl_ViewIndex].scissor_origin_br;
-        if (gl_FragCoord.x < scissor_origin_tl.x && scissor_origin_br.x < gl_FragCoord.x) {
+        if (gl_FragCoord.x < scissor_origin_tl.x || scissor_origin_br.x < gl_FragCoord.x) {
             discard;
         }
 
-        if (gl_FragCoord.y < scissor_origin_tl.y && scissor_origin_br.y < gl_FragCoord.y) {
+        if (gl_FragCoord.y < scissor_origin_tl.y || scissor_origin_br.y < gl_FragCoord.y) {
             discard;
         }
     }

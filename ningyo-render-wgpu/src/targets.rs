@@ -5,11 +5,11 @@ use inox2d::math::camera::Camera;
 use ningyo_extensions::CurrentSurfaceTextureExt;
 use wgpu::util::DeviceExt;
 
+use crate::camera::CameraExt;
 use crate::error::WgpuRendererError;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::basic_frag::{Viewport, Viewports};
 use crate::texture::{DepthStencilTexture, DeviceTexture, GBuffer};
-use crate::camera::CameraExt;
 
 /// A particular viewport's configuration.
 struct ViewportConfiguration {
@@ -175,7 +175,9 @@ impl RenderOutput {
                         wgpu::TextureFormat::Rgba8Unorm,
                     ))
                 }
-                OutputConfiguration::UserTarget((target, _)) => ColorOutput::Texture(target.clone()),
+                OutputConfiguration::UserTarget((target, _)) => {
+                    ColorOutput::Texture(target.clone())
+                }
             },
             stencil_target: DepthStencilTexture::empty_render_target(
                 device,
@@ -330,7 +332,7 @@ impl<'surf> RenderTarget<'surf> {
     /// For surface targets, this sets the width and height of the surface
     /// configuration. For viewports, this sets the width and height of the
     /// first viewport.
-    /// 
+    ///
     /// The viewport parameter should always be 0 for surfaces and user-provided
     /// textures. For renderer-allocated targets, you may specify multiple
     /// viewports. Specifying a viewport at the end of the current list will
@@ -359,7 +361,7 @@ impl<'surf> RenderTarget<'surf> {
     }
 
     /// Retrieve a given viewport's camera structure.
-    /// 
+    ///
     /// Surface and user-provided render targets have one fixed viewport in
     /// slot 0. For renderer-allocated targets, any viewport that has been
     /// previously defined by a call to `resize` may have its camera altered.
@@ -367,12 +369,12 @@ impl<'surf> RenderTarget<'surf> {
         match &self.config {
             OutputConfiguration::Surface(_) => None,
             OutputConfiguration::UserTarget((_, camera)) => Some(camera),
-            OutputConfiguration::Texture(viewports) => viewports.get(viewport).map(|vp| &vp.view)
+            OutputConfiguration::Texture(viewports) => viewports.get(viewport).map(|vp| &vp.view),
         }
     }
 
     /// Retrieve a given viewport's camera structure for mutation.
-    /// 
+    ///
     /// Surface and user-provided render targets have one fixed viewport in
     /// slot 0. For renderer-allocated targets, any viewport that has been
     /// previously defined by a call to `resize` may have its camera altered.
@@ -380,7 +382,9 @@ impl<'surf> RenderTarget<'surf> {
         match &mut self.config {
             OutputConfiguration::Surface(_) => None,
             OutputConfiguration::UserTarget((_, camera)) => Some(camera),
-            OutputConfiguration::Texture(viewports) => viewports.get_mut(viewport).map(|vp| &mut vp.view)
+            OutputConfiguration::Texture(viewports) => {
+                viewports.get_mut(viewport).map(|vp| &mut vp.view)
+            }
         }
     }
 
@@ -391,7 +395,8 @@ impl<'surf> RenderTarget<'surf> {
     /// that we are using to render with.
     pub fn set_render_target(&mut self, target: wgpu::Texture) -> Result<(), WgpuRendererError> {
         let camera = self.viewport_camera(0).cloned().unwrap_or_default();
-        self.config = OutputConfiguration::UserTarget((DeviceTexture::user_render_target(target)?, camera));
+        self.config =
+            OutputConfiguration::UserTarget((DeviceTexture::user_render_target(target)?, camera));
 
         Ok(())
     }
@@ -407,7 +412,7 @@ impl<'surf> RenderTarget<'surf> {
         {
             self.outputs = Some(RenderOutput::new(device, queue, &self.config));
         }
-        
+
         //TODO: We should have a flag to check if the viewport configuration
         //was actually mutated or not.
 

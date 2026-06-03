@@ -29,7 +29,7 @@ layout(location = 0) out vec2 texUVs;
 void main() {
   mat4 viewport_proj = mat4(1.0);
   if (gl_ViewIndex < viewports_in.active_viewports && gl_ViewIndex < viewports_in.viewports.length()) {
-    mat4 viewport_proj = viewports_in.viewports[gl_ViewIndex].projection;
+    viewport_proj = viewports_in.viewports[gl_ViewIndex].projection;
   }
 
   gl_Position = viewport_proj * uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);

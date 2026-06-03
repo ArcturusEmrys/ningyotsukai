@@ -311,9 +311,6 @@ impl OffscreenRender {
                     let mut y = 0.0;
 
                     //Cancel out the center coordinate offset Inox uses
-                    x -= texture.width() as f32 / 2.0 / puppet.scale();
-                    y -= texture.height() as f32 / 2.0 / puppet.scale();
-
                     x += puppet.position().x / puppet.scale();
                     y += puppet.position().y / puppet.scale();
 
@@ -324,8 +321,8 @@ impl OffscreenRender {
 
                     let camera = renderer.viewport_camera_mut(0).unwrap();
 
-                    camera.position.x = *center_x;
-                    camera.position.y = *center_y;
+                    camera.position.x = *center_x / *zoom;
+                    camera.position.y = *center_y / *zoom;
                     camera.scale.x = *zoom;
                     camera.scale.y = *zoom;
                 }
