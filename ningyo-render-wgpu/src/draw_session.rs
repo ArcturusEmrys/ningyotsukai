@@ -49,10 +49,10 @@ pub struct WgpuDrawSession<'a> {
     pub(crate) view: wgpu::TextureView,
 
     /// Corresponding stencil buffer for the output texture.
-    pub(crate) stencil: &'a DepthStencilTexture,
+    pub(crate) stencil: DepthStencilTexture,
 
     /// The compositing buffers.
-    pub(crate) composite: &'a GBuffer,
+    pub(crate) composite: GBuffer,
 
     /// The renderer's camera position as an artboard-space matrix
     pub(crate) artboard_matrix: glam::Mat4,
@@ -76,7 +76,7 @@ pub struct WgpuDrawSession<'a> {
 
     pub(crate) last_submission_index: &'a mut Option<wgpu::SubmissionIndex>,
 
-    pub(crate) viewports_config: &'a wgpu::Buffer,
+    pub(crate) viewports_config: wgpu::Buffer,
 
     last_mask_threshold: f32,
     is_in_mask: bool,
@@ -107,9 +107,9 @@ impl<'a> WgpuDrawSession<'a> {
         #[cfg(feature = "tracy")]
         let encoder_query = resources.start_query(&mut encoder);
 
-        let view = renderer.render_target.color_target_view()?;
-        let composite = renderer.render_target.composite()?;
-        let stencil = renderer.render_target.stencil()?;
+        let view = renderer.render_target.lock().unwrap().color_target_view()?;
+        let composite = renderer.render_target.lock().unwrap().composite()?.clone();
+        let stencil = renderer.render_target.lock().unwrap().stencil()?.clone();
 
         //TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
 
@@ -149,7 +149,12 @@ impl<'a> WgpuDrawSession<'a> {
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
-            viewports_config: renderer.render_target.viewports_config()?,
+            viewports_config: renderer
+                .render_target
+                .lock()
+                .unwrap()
+                .viewports_config()?
+                .clone(),
 
             #[cfg(feature = "tracy")]
             encoder_query,

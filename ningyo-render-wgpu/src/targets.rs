@@ -336,8 +336,14 @@ impl<'surf> RenderTarget<'surf> {
     /// The viewport parameter should always be 0 for surfaces and user-provided
     /// textures. For renderer-allocated targets, you may specify multiple
     /// viewports. Specifying a viewport at the end of the current list will
-    /// append a viewport of that size to the list.
-    pub fn resize(&mut self, width: u32, height: u32, viewport: usize) {
+    /// append a viewport of that size to the list. Thus, you can specify
+    /// multiple viewports by resizing each one in order.
+    pub fn resize(
+        &mut self,
+        width: u32,
+        height: u32,
+        viewport: usize,
+    ) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
             match &mut self.config {
                 OutputConfiguration::Surface((_, config, _)) => {
@@ -357,10 +363,18 @@ impl<'surf> RenderTarget<'surf> {
                 // User target size is defined by the provided texture.
                 OutputConfiguration::UserTarget(_) => {}
             }
+
+            Ok(())
+        } else {
+            Err(WgpuRendererError::SizeCannotBeZero)
         }
     }
 
     /// Retrieve a given viewport's camera structure.
+    ///
+    /// Each viewport has an independent camera that specifies a particular
+    /// position, scale, and rotation for that view, independent of any other
+    /// transformations applied to individual renderers.
     ///
     /// Surface and user-provided render targets have one fixed viewport in
     /// slot 0. For renderer-allocated targets, any viewport that has been
@@ -374,6 +388,10 @@ impl<'surf> RenderTarget<'surf> {
     }
 
     /// Retrieve a given viewport's camera structure for mutation.
+    ///
+    /// Each viewport has an independent camera that specifies a particular
+    /// position, scale, and rotation for that view, independent of any other
+    /// transformations applied to individual renderers.
     ///
     /// Surface and user-provided render targets have one fixed viewport in
     /// slot 0. For renderer-allocated targets, any viewport that has been
@@ -511,6 +529,21 @@ impl<'surf> RenderTarget<'surf> {
             .as_ref()
             .map(|o| &o.stencil_target)
             .ok_or(WgpuRendererError::ViewportNotInitialized)
+    }
+
+    /// Convenience method for presenting the rendered surface.
+    ///
+    /// Does nothing if this renderer is not directly rendering to a surface.
+    pub fn present(&self) -> Result<(), ningyo_extensions::SurfaceError> {
+        if let Some(surface) = self.surface() {
+            surface
+                .get_current_texture()
+                .as_surface_texture()?
+                .texture
+                .present();
+        }
+
+        Ok(())
     }
 
     /// Issue a clear command on the output color buffer.

@@ -130,8 +130,9 @@ impl DrawCommandList {
         let me = &mut draw_session.draw_commands;
 
         let surface_color_view = &draw_session.view;
-        let composite = draw_session.composite;
-        let stencil = draw_session.stencil;
+        let composite = &draw_session.composite;
+        let stencil = &draw_session.stencil;
+        let viewports_config = &draw_session.viewports_config;
 
         let masked_depthstencil = draw_session.resources.masked_depthstencil.clone();
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
@@ -254,7 +255,7 @@ impl DrawCommandList {
                     let vert_binding = draw_session.binding_cache.bind_basic_vert(
                         &*draw_session.resources,
                         draw_session.basic_vert_buffer.as_ref().unwrap(),
-                        draw_session.viewports_config,
+                        viewports_config,
                     );
 
                     render_pass.set_vertex_buffer(
@@ -292,7 +293,7 @@ impl DrawCommandList {
                             &draw_session.resources,
                             albedo.view(),
                             draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
-                            draw_session.viewports_config,
+                            viewports_config,
                         );
                         let pipeline = draw_session
                             .resources
@@ -329,7 +330,7 @@ impl DrawCommandList {
                             emissive.view(),
                             bumpmap.view(),
                             draw_session.basic_frag_buffer.as_ref().unwrap(),
-                            draw_session.viewports_config,
+                            viewports_config,
                         );
 
                         let pipeline = if using_mask {
@@ -472,17 +473,16 @@ impl DrawCommandList {
                         ];
 
                         let index = draw_session.buffer_indices.get(&id.into()).unwrap();
-                        let vert_binding = draw_session.binding_cache.bind_composite_vert(
-                            &draw_session.resources,
-                            draw_session.viewports_config,
-                        );
+                        let vert_binding = draw_session
+                            .binding_cache
+                            .bind_composite_vert(&draw_session.resources, viewports_config);
                         let frag_binding = draw_session.binding_cache.bind_composite_frag(
                             &draw_session.resources,
                             composite.albedo().view(),
                             composite.emissive().view(),
                             composite.bump().view(),
                             draw_session.composite_frag_buffer.as_ref().unwrap(),
-                            draw_session.viewports_config,
+                            viewports_config,
                         );
 
                         let pipeline = draw_session

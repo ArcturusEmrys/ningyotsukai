@@ -275,6 +275,7 @@ impl DeviceTexture {
     }
 }
 
+#[derive(Clone)]
 pub struct DepthStencilTexture {
     device_texture: wgpu::Texture,
     view: wgpu::TextureView,
@@ -399,6 +400,7 @@ impl DepthStencilTexture {
 }
 
 /// Structure that holds render targets for interim rendering results.
+#[derive(Clone)]
 pub struct GBuffer {
     albedo: DeviceTexture,
     emissive: DeviceTexture,

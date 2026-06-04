@@ -15,3 +15,4 @@ mod uploads;
 
 pub use renderer::WgpuRenderer;
 pub use resources::WgpuResources;
+pub use targets::RenderTarget;

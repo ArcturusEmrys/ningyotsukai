@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use generational_arena::Index;
-use ningyo_render_wgpu::{WgpuRenderer, WgpuResources};
+use ningyo_render_wgpu::{RenderTarget, WgpuRenderer, WgpuResources};
 
 use inox2d::render::InoxRendererExt;
 
@@ -28,6 +28,9 @@ pub struct OffscreenRender {
     /// The stage texture to render to.
     artboard_texture: Option<(wgpu::Texture, wgpu::TextureView)>,
 
+    /// The current set of render target(s) for the artboard.
+    artboard_render_target: Arc<Mutex<RenderTarget<'static>>>,
+
     /// All renderers for rendering the puppets in the user's viewport.
     viewport_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
 
@@ -38,6 +41,9 @@ pub struct OffscreenRender {
 
     /// The current viewport buffer texture.
     viewport_buffer: Option<wgpu::Texture>,
+
+    /// The current set of render target(s).
+    render_target: Arc<Mutex<RenderTarget<'static>>>,
 }
 
 impl OffscreenRender {
@@ -54,16 +60,17 @@ impl OffscreenRender {
             queue,
             artboard_puppet_renderers: HashMap::new(),
             artboard_texture: None,
+            artboard_render_target: Arc::new(Mutex::new(RenderTarget::new_texture_target())),
             viewport_puppet_renderers: HashMap::new(),
             viewport_parameters: None,
             viewport_buffer: None,
+            render_target: Arc::new(Mutex::new(RenderTarget::new_texture_target())),
         }
     }
 
     /// Remove renderers for puppets that are no longer in the document.
     pub fn collect_garbage(&mut self) {
         if let Some(document) = self.document.upgrade() {
-            document.collect_garbage(&mut self.artboard_puppet_renderers);
             document.collect_garbage(&mut self.viewport_puppet_renderers);
         }
     }
@@ -127,7 +134,11 @@ impl OffscreenRender {
                 base_array_layer: 0,
                 array_layer_count: None,
             });
-            self.artboard_texture = Some((texture, view));
+            self.artboard_texture = Some((texture.clone(), view));
+            let mut artboard_render_target = self.artboard_render_target.lock().unwrap();
+
+            artboard_render_target.set_render_target(texture).unwrap();
+            artboard_render_target.apply(&self.device, &self.queue);
         }
     }
 
@@ -180,13 +191,18 @@ impl OffscreenRender {
                         WgpuRenderer::new_headless_with_resources(
                             self.resources.clone(),
                             &puppet.model(),
+                            self.artboard_render_target.clone(),
                         )
                         .unwrap(),
                     );
                 }
 
                 let renderer = self.artboard_puppet_renderers.get_mut(&index).unwrap();
-                renderer.set_render_target(texture.clone()).unwrap();
+                self.artboard_render_target
+                    .lock()
+                    .unwrap()
+                    .set_render_target(texture.clone())
+                    .unwrap();
 
                 renderer.camera.position.x =
                     puppet.position().x / puppet.scale() - (required_size.x / 2.0 / puppet.scale());
@@ -240,6 +256,7 @@ impl OffscreenRender {
                         WgpuRenderer::new_headless_with_resources(
                             self.resources.clone(),
                             &puppet.model(),
+                            self.render_target.clone(),
                         )
                         .unwrap(),
                     );
@@ -300,11 +317,14 @@ impl OffscreenRender {
 
     pub fn apply_viewport_to_renderer(&mut self, index: Index) {
         let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
-        if let Some((texture, center_x, center_y, zoom)) = &self.viewport_parameters {
-            if let Some(buffer) = &self.viewport_buffer {
-                renderer.set_render_target(buffer.clone()).unwrap();
-            }
+        let mut render_target = self.render_target.lock().unwrap();
 
+        if let Some(buffer) = &self.viewport_buffer {
+            render_target.set_render_target(buffer.clone()).unwrap();
+            render_target.apply(&self.device, &self.queue);
+        }
+
+        if let Some((texture, center_x, center_y, zoom)) = &self.viewport_parameters {
             if let Some(document) = self.document.upgrade() {
                 if let Some(puppet) = document.stage().puppet(index) {
                     let mut x = 0.0;
@@ -319,12 +339,12 @@ impl OffscreenRender {
                     renderer.camera.scale.x = puppet.scale();
                     renderer.camera.scale.y = puppet.scale();
 
-                    let camera = renderer.viewport_camera_mut(0).unwrap();
-
-                    camera.position.x = *center_x / *zoom;
-                    camera.position.y = *center_y / *zoom;
-                    camera.scale.x = *zoom;
-                    camera.scale.y = *zoom;
+                    if let Some(camera) = render_target.viewport_camera_mut(0) {
+                        camera.position.x = *center_x / *zoom;
+                        camera.position.y = *center_y / *zoom;
+                        camera.scale.x = *zoom;
+                        camera.scale.y = *zoom;
+                    }
                 }
             }
         }

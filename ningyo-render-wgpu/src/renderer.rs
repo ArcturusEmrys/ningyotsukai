@@ -2,9 +2,8 @@ use inox2d::math::camera::Camera;
 use inox2d::model::Model;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::InoxRenderer;
-use ningyo_extensions::CurrentSurfaceTextureExt;
 use std::error::Error;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use wgpu;
 
 use crate::buffer_builder::BufferBuilder;
@@ -44,7 +43,7 @@ impl BufferIndices {
 
 pub struct WgpuRenderer<'window> {
     /// The target of all rendering operations.
-    pub(crate) render_target: RenderTarget<'window>,
+    pub(crate) render_target: Arc<Mutex<RenderTarget<'window>>>,
 
     /// Where to draw the puppet relative to the artboard.
     pub camera: Camera,
@@ -88,12 +87,6 @@ pub struct WgpuRenderer<'window> {
     /// Must match the device in WgpuResources (this is a cache to avoid lock
     /// contention)
     device: wgpu::Device,
-
-    /// The queue to render to.
-    ///
-    /// Must match the device in WgpuResources (this is a cache to avoid lock
-    /// contention)
-    queue: wgpu::Queue,
 }
 
 impl<'window> WgpuRenderer<'window> {
@@ -121,15 +114,20 @@ impl<'window> WgpuRenderer<'window> {
             .await?;
 
         let resources = Arc::new(WgpuResources::new(&adapter).await?);
-        let target = RenderTarget::new_with_surface(surface, &adapter);
+        let target = Arc::new(Mutex::new(RenderTarget::new_with_surface(
+            surface, &adapter,
+        )));
 
-        let renderer = Self::new_headless_internal(resources, model, target)?;
+        let renderer = Self::new_headless_with_resources(resources, model, target)?;
 
         Ok(renderer)
     }
 
     /// Create a WGPU renderer that renders to an internal texture.
-    pub async fn new_headless(model: &Model) -> Result<Self, WgpuRendererError> {
+    pub async fn new_headless(
+        model: &Model,
+        target: Arc<Mutex<RenderTarget<'window>>>,
+    ) -> Result<Self, WgpuRendererError> {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let adapter = instance
@@ -138,28 +136,17 @@ impl<'window> WgpuRenderer<'window> {
             })
             .await?;
         let resources = Arc::new(WgpuResources::new(&adapter).await?);
-        let target = RenderTarget::new_texture_target();
 
-        Ok(Self::new_headless_internal(resources, model, target)?)
+        Ok(Self::new_headless_with_resources(resources, model, target)?)
     }
 
     /// Create a renderer with a user-specified resource pack.
     pub fn new_headless_with_resources(
         resources: Arc<WgpuResources>,
         model: &Model,
-    ) -> Result<Self, WgpuRendererError> {
-        let target = RenderTarget::new_texture_target();
-
-        Ok(Self::new_headless_internal(resources, model, target)?)
-    }
-
-    fn new_headless_internal(
-        resources: Arc<WgpuResources>,
-        model: &Model,
-        target: RenderTarget<'window>,
+        target: Arc<Mutex<RenderTarget<'window>>>,
     ) -> Result<Self, WgpuRendererError> {
         let device = resources.device.clone();
-        let queue = resources.queue.clone();
 
         let uploads = WgpuUploads::new(model, &resources)?;
 
@@ -177,100 +164,15 @@ impl<'window> WgpuRenderer<'window> {
             bind_cache: Default::default(),
             last_submission_index: None,
             device,
-            queue,
         })
-    }
-
-    /// Indicate to the renderer that the target of rendering has changed size.
-    ///
-    /// If this renderer was created to render directly to a surface, the
-    /// surface will be reconfigured. Otherwise, this renderer will allocate a
-    /// new texture of the required size.
-    ///
-    /// This renderer is capable of rendering multiple views at once. To use
-    /// this facility, you must configure multiple viewports, which you do by
-    /// calling `.resize()` for each viewport, starting from 0 and counting up.
-    ///
-    /// If you wish to provide your own target textures, do not call this
-    /// function. Instead, call `resize_with_texture`.
-    pub fn resize(
-        &mut self,
-        width: u32,
-        height: u32,
-        viewport: usize,
-    ) -> Result<(), WgpuRendererError> {
-        if width > 0 && height > 0 {
-            self.render_target.resize(width, height, viewport);
-            self.render_target.apply(&self.device, &self.queue);
-
-            Ok(())
-        } else {
-            Err(WgpuRendererError::SizeCannotBeZero)
-        }
-    }
-
-    /// Retrieve a particular viewport's camera.
-    ///
-    /// Each viewport has an independent camera that specifies a particular
-    /// position, scale, and rotation for that view. This camera is applied
-    /// after the global "artboard" camera that positions the puppet on the
-    /// stage.
-    pub fn viewport_camera(&self, viewport: usize) -> Option<&Camera> {
-        self.render_target.viewport_camera(viewport)
-    }
-
-    /// Retrieve a particular viewport's camera for mutation.
-    ///
-    /// Each viewport has an independent camera that specifies a particular
-    /// position, scale, and rotation for that view. This camera is applied
-    /// after the global "artboard" camera that positions the puppet on the
-    /// stage.
-    pub fn viewport_camera_mut(&mut self, viewport: usize) -> Option<&mut Camera> {
-        self.render_target.viewport_camera_mut(viewport)
     }
 
     pub fn required_render_target_uses() -> wgpu::TextureUsages {
         DeviceTexture::required_render_target_uses()
     }
 
-    /// Provide a user-specified texture as a render target.
-    ///
-    /// The texture must have been created with the texture usages in
-    /// `required_render_target_uses` and must originate from the same device
-    /// that we are using to render with.
-    pub fn set_render_target(&mut self, target: wgpu::Texture) -> Result<(), WgpuRendererError> {
-        self.render_target.set_render_target(target)?;
-        self.render_target.apply(&self.device, &self.queue);
-
-        Ok(())
-    }
-
-    /// Convenience method for presenting the rendered surface.
-    ///
-    /// Does nothing if this renderer is not directly rendering to a surface.
-    pub fn present(&self) -> Result<(), ningyo_extensions::SurfaceError> {
-        if let Some(surface) = self.render_target.surface() {
-            surface
-                .get_current_texture()
-                .as_surface_texture()?
-                .texture
-                .present();
-        }
-
-        Ok(())
-    }
-
-    /// Convenience method for clearing the target texture or surface.
-    pub fn clear(&self) -> Result<(), WgpuRendererError> {
-        self.render_target.clear(&self.device, &self.queue)
-    }
-
     pub fn device(&self) -> wgpu::Device {
         self.device.clone()
-    }
-
-    pub fn target_texture(&self) -> Result<wgpu::Texture, WgpuRendererError> {
-        self.render_target.color_target()
     }
 
     pub fn last_submission_index(&self) -> Option<wgpu::SubmissionIndex> {
