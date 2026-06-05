@@ -13,7 +13,7 @@ pub trait CameraExt {
     ///
     /// The viewport size should be the width and height of the target render
     /// texture, *not* including any subdivision of such a texture.
-    fn to_view_proj_matrix(&self, viewport: Vec2) -> Mat4;
+    fn to_view_proj_matrix(&self, target_viewport_size: Vec2) -> Mat4;
 }
 
 impl CameraExt for Camera {
@@ -23,12 +23,18 @@ impl CameraExt for Camera {
             * Mat4::from_translation(self.position.extend(-(u16::MAX as f32 / 2.0)))
     }
 
-    fn to_view_proj_matrix(&self, viewport: Vec2) -> Mat4 {
+    fn to_view_proj_matrix(&self, target_viewport_size: Vec2) -> Mat4 {
         let pos = self.position.extend(-(u16::MAX as f32 / 2.0));
 
         // Return camera ortho matrix
-        Mat4::orthographic_lh(0.0, viewport.x, viewport.y, 0.0, 0.0, u16::MAX as f32)
-            * Mat4::from_scale(self.scale.extend(1.0))
+        Mat4::orthographic_lh(
+            0.0,
+            target_viewport_size.x,
+            target_viewport_size.y,
+            0.0,
+            0.0,
+            u16::MAX as f32,
+        ) * Mat4::from_scale(self.scale.extend(1.0))
             * Mat4::from_rotation_z(self.rotation)
             * Mat4::from_translation(pos)
     }

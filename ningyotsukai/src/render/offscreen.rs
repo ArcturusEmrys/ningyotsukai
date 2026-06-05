@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use generational_arena::Index;
-use ningyo_render_wgpu::{RenderTarget, WgpuRenderer, WgpuResources};
+use ningyo_render_wgpu::{RenderTarget, WgpuRenderer, WgpuRendererError, WgpuResources};
 
 use inox2d::render::InoxRendererExt;
 
@@ -22,25 +22,13 @@ pub struct OffscreenRender {
 
     queue: wgpu::Queue,
 
-    /// All renderers for the puppets on this document's stage.
-    artboard_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
-
-    /// The stage texture to render to.
-    artboard_texture: Option<(wgpu::Texture, wgpu::TextureView)>,
-
-    /// The current set of render target(s) for the artboard.
-    artboard_render_target: Arc<Mutex<RenderTarget<'static>>>,
-
-    /// All renderers for rendering the puppets in the user's viewport.
-    viewport_puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
+    /// All renderers for rendering the puppets in the document.
+    puppet_renderers: HashMap<Index, WgpuRenderer<'static>>,
 
     /// The last known viewport parameters.
     ///
     /// The texture contained in this variable is good for copying ONLY.
     viewport_parameters: Option<(wgpu::Texture, f32, f32, f32)>,
-
-    /// The current viewport buffer texture.
-    viewport_buffer: Option<wgpu::Texture>,
 
     /// The current set of render target(s).
     render_target: Arc<Mutex<RenderTarget<'static>>>,
@@ -58,12 +46,8 @@ impl OffscreenRender {
             resources,
             device,
             queue,
-            artboard_puppet_renderers: HashMap::new(),
-            artboard_texture: None,
-            artboard_render_target: Arc::new(Mutex::new(RenderTarget::new_texture_target())),
-            viewport_puppet_renderers: HashMap::new(),
+            puppet_renderers: HashMap::new(),
             viewport_parameters: None,
-            viewport_buffer: None,
             render_target: Arc::new(Mutex::new(RenderTarget::new_texture_target())),
         }
     }
@@ -71,7 +55,7 @@ impl OffscreenRender {
     /// Remove renderers for puppets that are no longer in the document.
     pub fn collect_garbage(&mut self) {
         if let Some(document) = self.document.upgrade() {
-            document.collect_garbage(&mut self.viewport_puppet_renderers);
+            document.collect_garbage(&mut self.puppet_renderers);
         }
     }
 
@@ -91,165 +75,25 @@ impl OffscreenRender {
         self.document.clone()
     }
 
-    pub fn texture(&self) -> &wgpu::Texture {
-        &self.artboard_texture.as_ref().unwrap().0
+    pub fn artboard_texture(&self) -> Option<(wgpu::Texture, wgpu::Origin3d, wgpu::Extent3d)> {
+        let render_target = self.render_target.lock().unwrap();
+        let (origin, extent) = render_target.viewport_origin_and_extent(1)?;
+
+        Some((render_target.color_target().ok()?, origin, extent))
     }
 
-    pub fn view(&self) -> &wgpu::TextureView {
-        &self.artboard_texture.as_ref().unwrap().1
-    }
-
-    /// Allocate a new texture to render on.
-    ///
-    /// This should be called if you plan to use the texture in this for other
-    /// non-rendering purposes.
-    pub fn alloc_texture(&mut self) {
-        if let Some(document) = self.document.upgrade() {
-            let required_size = document.stage().size();
-            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Offscreen Texture Buffer"),
-                dimension: wgpu::TextureDimension::D2,
-                size: wgpu::Extent3d {
-                    width: required_size.x as u32,
-                    height: required_size.y as u32,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: WgpuRenderer::required_render_target_uses()
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            });
-
-            let view = texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some("Offscreen Texture Buffer View"),
-                format: Some(wgpu::TextureFormat::Rgba8Unorm),
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                usage: Some(texture.usage()),
-                aspect: wgpu::TextureAspect::All,
-                base_mip_level: 0,
-                mip_level_count: None,
-                base_array_layer: 0,
-                array_layer_count: None,
-            });
-            self.artboard_texture = Some((texture.clone(), view));
-            let mut artboard_render_target = self.artboard_render_target.lock().unwrap();
-
-            artboard_render_target.set_render_target(texture).unwrap();
-            artboard_render_target.apply(&self.device, &self.queue);
-        }
-    }
-
-    pub fn render(&mut self) -> Option<wgpu::SubmissionIndex> {
-        let mut submission = None;
-
-        if let Some(document) = self.document.upgrade() {
-            let required_size = document.stage().size();
-            let current_size = self
-                .artboard_texture
-                .as_ref()
-                .map(|(t, _)| (t.width(), t.height()));
-
-            if current_size != Some((required_size.x as u32, required_size.y as u32)) {
-                self.alloc_texture();
-            }
-
-            //TODO: This probably should also clear the viewport.
-            //TODO: Are we sure we want to use a render pass here?
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Offscreen Render internal buffer clear"),
-                });
-
-            encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Offscreen Render Buffer clear"),
-                depth_stencil_attachment: None,
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.view(),
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                ..Default::default()
-            });
-
-            submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
-
-            let texture = self.texture().clone();
-
-            for (index, puppet) in document.stage().iter() {
-                let renderer_exists = self.artboard_puppet_renderers.contains_key(&index);
-                if !renderer_exists {
-                    self.artboard_puppet_renderers.insert(
-                        index,
-                        WgpuRenderer::new_headless_with_resources(
-                            self.resources.clone(),
-                            &puppet.model(),
-                            self.artboard_render_target.clone(),
-                        )
-                        .unwrap(),
-                    );
-                }
-
-                let renderer = self.artboard_puppet_renderers.get_mut(&index).unwrap();
-                self.artboard_render_target
-                    .lock()
-                    .unwrap()
-                    .set_render_target(texture.clone())
-                    .unwrap();
-
-                renderer.camera.position.x =
-                    puppet.position().x / puppet.scale() - (required_size.x / 2.0 / puppet.scale());
-                renderer.camera.position.y =
-                    puppet.position().y / puppet.scale() - (required_size.y / 2.0 / puppet.scale());
-                renderer.camera.scale.x = puppet.scale();
-                renderer.camera.scale.y = puppet.scale();
-
-                renderer.draw(&puppet.model().puppet).unwrap();
-
-                if let Some(index) = renderer.last_submission_index() {
-                    submission = Some(index);
-                }
-            }
-        }
-
-        submission
-    }
-
-    pub fn render_viewport(&mut self) -> Option<wgpu::SubmissionIndex> {
-        let mut submission = None;
-        if let Some(buffer) = &self.viewport_buffer {
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Screen clear"),
-                });
-
-            encoder.clear_texture(
-                buffer,
-                &wgpu::ImageSubresourceRange {
-                    aspect: wgpu::TextureAspect::All,
-                    base_mip_level: 0,
-                    mip_level_count: None,
-                    base_array_layer: 0,
-                    array_layer_count: None,
-                },
-            );
-
-            submission = Some(self.queue.submit(std::iter::once(encoder.finish())));
-        }
+    pub fn render(&mut self) -> Result<wgpu::SubmissionIndex, WgpuRendererError> {
+        let mut submission = self
+            .render_target
+            .lock()
+            .unwrap()
+            .clear(&self.device, &self.queue)?;
 
         if let Some(document) = self.document.upgrade() {
             for (index, puppet) in document.stage().iter() {
-                let viewport_renderer_exists = self.viewport_puppet_renderers.contains_key(&index);
+                let viewport_renderer_exists = self.puppet_renderers.contains_key(&index);
                 if !viewport_renderer_exists {
-                    self.viewport_puppet_renderers.insert(
+                    self.puppet_renderers.insert(
                         index,
                         // TODO: This should share resources with any artboard
                         // renderer that might exist for the puppet
@@ -264,49 +108,28 @@ impl OffscreenRender {
 
                 self.apply_viewport_to_renderer(index);
 
-                let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
+                let renderer = self.puppet_renderers.get_mut(&index).unwrap();
                 renderer.draw(&puppet.model().puppet).unwrap();
                 if let Some(index) = renderer.last_submission_index() {
-                    submission = Some(index);
+                    submission = index;
                 }
             }
         }
 
-        submission
+        Ok(submission)
     }
 
-    pub fn viewport_copy(&self) -> wgpu::SubmissionIndex {
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Output copy"),
-            });
-
-        if let Some(buffer) = &self.viewport_buffer {
-            if let Some((texture, _, _, _)) = &self.viewport_parameters {
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: buffer,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        texture: texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::Extent3d {
-                        width: texture.width(),
-                        height: texture.height(),
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
+    pub fn viewport_copy(&self) -> Option<wgpu::SubmissionIndex> {
+        let render_target = self.render_target.lock().unwrap();
+        if let Some((texture, _, _, _)) = &self.viewport_parameters {
+            return Some(
+                render_target
+                    .copy(&self.device, &self.queue, texture, 0)
+                    .unwrap(),
+            );
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()))
+        None
     }
 
     pub fn update(&mut self, dt: f32) {
@@ -316,36 +139,20 @@ impl OffscreenRender {
     }
 
     pub fn apply_viewport_to_renderer(&mut self, index: Index) {
-        let renderer = self.viewport_puppet_renderers.get_mut(&index).unwrap();
-        let mut render_target = self.render_target.lock().unwrap();
+        let renderer = self.puppet_renderers.get_mut(&index).unwrap();
+        if let Some(document) = self.document.upgrade() {
+            if let Some(puppet) = document.stage().puppet(index) {
+                let mut x = 0.0;
+                let mut y = 0.0;
 
-        if let Some(buffer) = &self.viewport_buffer {
-            render_target.set_render_target(buffer.clone()).unwrap();
-            render_target.apply(&self.device, &self.queue);
-        }
+                //Cancel out the center coordinate offset Inox uses
+                x += puppet.position().x;
+                y += puppet.position().y;
 
-        if let Some((texture, center_x, center_y, zoom)) = &self.viewport_parameters {
-            if let Some(document) = self.document.upgrade() {
-                if let Some(puppet) = document.stage().puppet(index) {
-                    let mut x = 0.0;
-                    let mut y = 0.0;
-
-                    //Cancel out the center coordinate offset Inox uses
-                    x += puppet.position().x / puppet.scale();
-                    y += puppet.position().y / puppet.scale();
-
-                    renderer.camera.position.x = x;
-                    renderer.camera.position.y = y;
-                    renderer.camera.scale.x = puppet.scale();
-                    renderer.camera.scale.y = puppet.scale();
-
-                    if let Some(camera) = render_target.viewport_camera_mut(0) {
-                        camera.position.x = *center_x / *zoom;
-                        camera.position.y = *center_y / *zoom;
-                        camera.scale.x = *zoom;
-                        camera.scale.y = *zoom;
-                    }
-                }
+                renderer.camera.position.x = x / puppet.scale();
+                renderer.camera.position.y = y / puppet.scale();
+                renderer.camera.scale.x = puppet.scale();
+                renderer.camera.scale.y = puppet.scale();
             }
         }
     }
@@ -356,38 +163,44 @@ impl OffscreenRender {
         center_x: f32,
         center_y: f32,
         zoom: f32,
-    ) {
-        self.viewport_parameters = Some((texture.clone(), center_x, center_y, zoom));
-
-        let viewport_buffer_needs_alloc = if let Some(viewport_buffer) = &self.viewport_buffer {
-            viewport_buffer.width() != texture.width()
-                || viewport_buffer.height() != texture.height()
-        } else {
-            true
-        };
-
-        if viewport_buffer_needs_alloc {
-            self.viewport_buffer = Some(self.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("Viewport Texture Buffer"),
-                dimension: wgpu::TextureDimension::D2,
-                size: wgpu::Extent3d {
-                    width: texture.width(),
-                    height: texture.height(),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                format: texture.format(),
-                usage: WgpuRenderer::required_render_target_uses()
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            }));
-        }
-
-        let indexes: Vec<_> = self.viewport_puppet_renderers.keys().map(|i| *i).collect();
+    ) -> Result<(), WgpuRendererError> {
+        // TODO: Do we need to apply the puppet position at this time?
+        let indexes: Vec<_> = self.puppet_renderers.keys().map(|i| *i).collect();
         for index in indexes {
             self.apply_viewport_to_renderer(index);
         }
+
+        let mut render_target = self.render_target.lock().unwrap();
+
+        render_target.resize(texture.width(), texture.height(), 0)?;
+
+        if let Some(document) = self.document.upgrade() {
+            render_target.resize(
+                document.stage().size().x as u32,
+                document.stage().size().y as u32,
+                1,
+            )?;
+        }
+
+        render_target.set_color_target_format(texture.format());
+        render_target.apply(&self.device, &self.queue);
+
+        if let Some(camera) = render_target.viewport_camera_mut(0) {
+            camera.position.x = center_x / zoom;
+            camera.position.y = center_y / zoom;
+            camera.scale.x = zoom;
+            camera.scale.y = zoom;
+        }
+
+        if let Some(camera) = render_target.viewport_camera_mut(1) {
+            camera.position.x = 0.0;
+            camera.position.y = 0.0;
+            camera.scale.x = 1.0;
+            camera.scale.y = 1.0;
+        }
+
+        self.viewport_parameters = Some((texture.clone(), center_x, center_y, zoom));
+
+        Ok(())
     }
 }

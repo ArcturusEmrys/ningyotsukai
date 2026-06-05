@@ -1,5 +1,7 @@
 //! Management for render targets
 
+use std::cmp::min;
+
 use glam::Vec2;
 use inox2d::math::camera::Camera;
 use ningyo_extensions::CurrentSurfaceTextureExt;
@@ -21,11 +23,11 @@ struct ViewportConfiguration {
 }
 
 impl ViewportConfiguration {
-    fn as_shader_viewport(&self) -> Viewport {
+    fn as_shader_viewport(&self, target_viewport_size: Vec2) -> Viewport {
         Viewport {
             projection: self
                 .view
-                .to_view_proj_matrix(Vec2::new(self.size.0 as f32, self.size.1 as f32))
+                .to_view_proj_matrix(target_viewport_size)
                 .to_cols_array_2d(),
             scissor_origin_tl: [0.0; 2],
             scissor_origin_br: [self.size.0 as f32, self.size.1 as f32],
@@ -45,22 +47,22 @@ enum ColorOutput {
 /// surface), only one rendering output is supported.
 enum OutputConfiguration<'surf> {
     // We intend to render to a surface of the given configuration.
-    Surface((wgpu::Surface<'surf>, wgpu::SurfaceConfiguration, Camera)),
+    Surface(wgpu::Surface<'surf>, wgpu::SurfaceConfiguration, Camera),
 
     // We intend to render to a 2D array texture, whose layers will be cut up
     // as described in the ViewportConfiguration.
-    Texture(Vec<ViewportConfiguration>),
+    Texture(Vec<ViewportConfiguration>, wgpu::TextureFormat),
 
     // We intend to render to a user-provided 2D texture.
-    UserTarget((DeviceTexture, Camera)),
+    UserTarget(DeviceTexture, Camera),
 }
 
 impl<'surf> OutputConfiguration<'surf> {
     /// Calculate the maximum width of all viewports.
     fn max_width(&self) -> u32 {
         match self {
-            OutputConfiguration::Surface((_, config, _)) => config.width,
-            OutputConfiguration::Texture(viewports) => {
+            OutputConfiguration::Surface(_, config, _) => config.width,
+            OutputConfiguration::Texture(viewports, _) => {
                 let mut max = 0;
 
                 for viewport in viewports {
@@ -69,15 +71,15 @@ impl<'surf> OutputConfiguration<'surf> {
 
                 max
             }
-            OutputConfiguration::UserTarget((texture, _)) => texture.texture().width(),
+            OutputConfiguration::UserTarget(texture, _) => texture.texture().width(),
         }
     }
 
     /// Calculate the maximum height of all viewports.
     fn max_height(&self) -> u32 {
         match self {
-            OutputConfiguration::Surface((_, config, _)) => config.height,
-            OutputConfiguration::Texture(viewports) => {
+            OutputConfiguration::Surface(_, config, _) => config.height,
+            OutputConfiguration::Texture(viewports, _) => {
                 let mut max = 0;
 
                 for viewport in viewports {
@@ -86,21 +88,21 @@ impl<'surf> OutputConfiguration<'surf> {
 
                 max
             }
-            OutputConfiguration::UserTarget((texture, _)) => texture.texture().height(),
+            OutputConfiguration::UserTarget(texture, _) => texture.texture().height(),
         }
     }
 
     /// Calculate the number of required layers for rendering.
     fn layers(&self) -> u32 {
         match self {
-            OutputConfiguration::Surface(_) | OutputConfiguration::UserTarget(_) => 1,
-            OutputConfiguration::Texture(viewports) => viewports.len() as u32,
+            OutputConfiguration::Surface(_, _, _) | OutputConfiguration::UserTarget(_, _) => 1,
+            OutputConfiguration::Texture(viewports, _) => viewports.len() as u32,
         }
     }
 
-    fn as_viewport_config(&self) -> Vec<Viewport> {
+    fn as_viewport_config(&self, output: Option<&RenderOutput>) -> Vec<Viewport> {
         match self {
-            OutputConfiguration::Surface((_, config, camera)) => {
+            OutputConfiguration::Surface(_, config, camera) => {
                 vec![Viewport {
                     projection: camera
                         .to_view_proj_matrix(Vec2::new(config.width as f32, config.height as f32))
@@ -109,7 +111,7 @@ impl<'surf> OutputConfiguration<'surf> {
                     scissor_origin_br: [config.width as f32, config.height as f32],
                 }]
             }
-            OutputConfiguration::UserTarget((target, camera)) => {
+            OutputConfiguration::UserTarget(target, camera) => {
                 vec![Viewport {
                     projection: camera
                         .to_view_proj_matrix(Vec2::new(
@@ -124,14 +126,71 @@ impl<'surf> OutputConfiguration<'surf> {
                     ],
                 }]
             }
-            OutputConfiguration::Texture(viewports) => {
+            OutputConfiguration::Texture(viewports, _) => {
+                let embedded_size = if let Some(output) = output {
+                    let ColorOutput::Texture(tex) = &output.color_target else {
+                        unreachable!()
+                    };
+                    Vec2::new(tex.texture().width() as f32, tex.texture().height() as f32)
+                } else {
+                    Vec2::new(self.max_width() as f32, self.max_height() as f32)
+                };
                 let mut out = vec![];
 
                 for viewport in viewports {
-                    out.push(viewport.as_shader_viewport())
+                    out.push(viewport.as_shader_viewport(embedded_size))
                 }
 
                 out
+            }
+        }
+    }
+
+    /// Get the position and size of a given viewport.
+    fn as_origin_and_extent(&self, viewport: usize) -> Option<(wgpu::Origin3d, wgpu::Extent3d)> {
+        match self {
+            OutputConfiguration::Surface(_, config, _) => {
+                if viewport > 0 {
+                    return None;
+                }
+
+                Some((
+                    wgpu::Origin3d::ZERO,
+                    wgpu::Extent3d {
+                        width: config.width,
+                        height: config.height,
+                        depth_or_array_layers: 1,
+                    },
+                ))
+            }
+            OutputConfiguration::Texture(config, _) => {
+                let config = config.get(viewport)?;
+                Some((
+                    wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: viewport as u32,
+                    },
+                    wgpu::Extent3d {
+                        width: config.size.0,
+                        height: config.size.1,
+                        depth_or_array_layers: 1,
+                    },
+                ))
+            }
+            OutputConfiguration::UserTarget(texture, _) => {
+                if viewport > 0 {
+                    return None;
+                }
+
+                Some((
+                    wgpu::Origin3d::ZERO,
+                    wgpu::Extent3d {
+                        width: texture.texture().width(),
+                        height: texture.texture().height(),
+                        depth_or_array_layers: 1,
+                    },
+                ))
             }
         }
     }
@@ -164,20 +223,18 @@ impl RenderOutput {
 
         let me = Self {
             color_target: match config {
-                OutputConfiguration::Surface(_) => ColorOutput::Surface,
-                OutputConfiguration::Texture(_) => {
+                OutputConfiguration::Surface(_, _, _) => ColorOutput::Surface,
+                OutputConfiguration::Texture(_, format) => {
                     ColorOutput::Texture(DeviceTexture::empty_render_target(
                         device,
                         &mut encoder,
                         width,
                         height,
                         layers,
-                        wgpu::TextureFormat::Rgba8Unorm,
+                        *format,
                     ))
                 }
-                OutputConfiguration::UserTarget((target, _)) => {
-                    ColorOutput::Texture(target.clone())
-                }
+                OutputConfiguration::UserTarget(target, _) => ColorOutput::Texture(target.clone()),
             },
             stencil_target: DepthStencilTexture::empty_render_target(
                 device,
@@ -218,19 +275,20 @@ impl RenderOutput {
         let reqd_layers = config.layers();
 
         (match config {
-            OutputConfiguration::Surface(_config) => {
+            OutputConfiguration::Surface(_, _, _) => {
                 matches!(self.color_target, ColorOutput::Surface)
             }
-            OutputConfiguration::Texture(_viewports) => match &self.color_target {
+            OutputConfiguration::Texture(_, format) => match &self.color_target {
                 ColorOutput::Surface => false,
                 ColorOutput::Texture(texture) => {
                     self.stencil_target.texture().width() == texture.texture().width()
                         && self.stencil_target.texture().height() == texture.texture().height()
                         && self.stencil_target.texture().depth_or_array_layers()
                             == texture.texture().depth_or_array_layers()
+                        && texture.texture().format() == *format
                 }
             },
-            OutputConfiguration::UserTarget((target, _)) => match &self.color_target {
+            OutputConfiguration::UserTarget(target, _) => match &self.color_target {
                 ColorOutput::Surface => false,
                 ColorOutput::Texture(tex) => {
                     tex.texture() == target.texture()
@@ -314,14 +372,16 @@ impl<'surf> RenderTarget<'surf> {
 
         RenderTarget {
             outputs: None,
-            config: OutputConfiguration::Surface((surface, config, Camera::default())),
+            config: OutputConfiguration::Surface(surface, config, Camera::default()),
             viewports_buffer: None,
         }
     }
 
     pub fn new_texture_target() -> Self {
         RenderTarget {
-            config: OutputConfiguration::Texture(vec![]),
+            // NOTE: Rgba8Unorm is assumed as a "standard" texture type; but
+            // this is not guaranteed to be a good format for all use cases.
+            config: OutputConfiguration::Texture(vec![], wgpu::TextureFormat::Rgba8Unorm),
             outputs: None,
             viewports_buffer: None,
         }
@@ -346,11 +406,11 @@ impl<'surf> RenderTarget<'surf> {
     ) -> Result<(), WgpuRendererError> {
         if width > 0 && height > 0 {
             match &mut self.config {
-                OutputConfiguration::Surface((_, config, _)) => {
+                OutputConfiguration::Surface(_, config, _) => {
                     config.width = width;
                     config.height = height;
                 }
-                OutputConfiguration::Texture(viewports) => {
+                OutputConfiguration::Texture(viewports, _) => {
                     if let Some(viewport) = viewports.get_mut(viewport) {
                         viewport.size = (width, height);
                     } else if viewports.len() == viewport {
@@ -361,7 +421,7 @@ impl<'surf> RenderTarget<'surf> {
                     }
                 }
                 // User target size is defined by the provided texture.
-                OutputConfiguration::UserTarget(_) => {}
+                OutputConfiguration::UserTarget(_, _) => {}
             }
 
             Ok(())
@@ -381,9 +441,11 @@ impl<'surf> RenderTarget<'surf> {
     /// previously defined by a call to `resize` may have its camera altered.
     pub fn viewport_camera(&self, viewport: usize) -> Option<&Camera> {
         match &self.config {
-            OutputConfiguration::Surface(_) => None,
-            OutputConfiguration::UserTarget((_, camera)) => Some(camera),
-            OutputConfiguration::Texture(viewports) => viewports.get(viewport).map(|vp| &vp.view),
+            OutputConfiguration::Surface(_, _, _) => None,
+            OutputConfiguration::UserTarget(_, camera) => Some(camera),
+            OutputConfiguration::Texture(viewports, _) => {
+                viewports.get(viewport).map(|vp| &vp.view)
+            }
         }
     }
 
@@ -398,12 +460,20 @@ impl<'surf> RenderTarget<'surf> {
     /// previously defined by a call to `resize` may have its camera altered.
     pub fn viewport_camera_mut(&mut self, viewport: usize) -> Option<&mut Camera> {
         match &mut self.config {
-            OutputConfiguration::Surface(_) => None,
-            OutputConfiguration::UserTarget((_, camera)) => Some(camera),
-            OutputConfiguration::Texture(viewports) => {
+            OutputConfiguration::Surface(_, _, _) => None,
+            OutputConfiguration::UserTarget(_, camera) => Some(camera),
+            OutputConfiguration::Texture(viewports, _) => {
                 viewports.get_mut(viewport).map(|vp| &mut vp.view)
             }
         }
+    }
+
+    /// Get the position and size of a given viewport.
+    pub fn viewport_origin_and_extent(
+        &self,
+        viewport: usize,
+    ) -> Option<(wgpu::Origin3d, wgpu::Extent3d)> {
+        self.config.as_origin_and_extent(viewport)
     }
 
     /// Provide a user-specified texture as a render target.
@@ -414,7 +484,7 @@ impl<'surf> RenderTarget<'surf> {
     pub fn set_render_target(&mut self, target: wgpu::Texture) -> Result<(), WgpuRendererError> {
         let camera = self.viewport_camera(0).cloned().unwrap_or_default();
         self.config =
-            OutputConfiguration::UserTarget((DeviceTexture::user_render_target(target)?, camera));
+            OutputConfiguration::UserTarget(DeviceTexture::user_render_target(target)?, camera);
 
         Ok(())
     }
@@ -434,7 +504,7 @@ impl<'surf> RenderTarget<'surf> {
         //TODO: We should have a flag to check if the viewport configuration
         //was actually mutated or not.
 
-        let viewports_config = self.config.as_viewport_config();
+        let viewports_config = self.config.as_viewport_config(self.outputs.as_ref());
         let viewports_config = Viewports {
             active_viewports: viewports_config.len() as u32,
             viewports: viewports_config,
@@ -462,7 +532,7 @@ impl<'surf> RenderTarget<'surf> {
     /// Retrieve the current surface, if surface rendering is enabled.
     pub fn surface(&self) -> Option<&wgpu::Surface<'surf>> {
         match &self.config {
-            OutputConfiguration::Surface((surface, _, _)) => Some(surface),
+            OutputConfiguration::Surface(surface, _, _) => Some(surface),
             _ => None,
         }
     }
@@ -470,14 +540,14 @@ impl<'surf> RenderTarget<'surf> {
     /// Get the color target view for rendering.
     pub fn color_target(&self) -> Result<wgpu::Texture, WgpuRendererError> {
         match &self.config {
-            OutputConfiguration::Surface((surface, _, _)) => Ok(surface
+            OutputConfiguration::Surface(surface, _, _) => Ok(surface
                 .get_current_texture()
                 .as_surface_texture()?
                 .texture
                 .texture
                 .clone()),
-            OutputConfiguration::UserTarget((target, _)) => Ok(target.texture().clone()),
-            OutputConfiguration::Texture(_) => {
+            OutputConfiguration::UserTarget(target, _) => Ok(target.texture().clone()),
+            OutputConfiguration::Texture(_, _) => {
                 match &self
                     .outputs
                     .as_ref()
@@ -494,14 +564,14 @@ impl<'surf> RenderTarget<'surf> {
     /// Get the color target view for rendering.
     pub fn color_target_view(&self) -> Result<wgpu::TextureView, WgpuRendererError> {
         match &self.config {
-            OutputConfiguration::Surface((surface, _, _)) => Ok(surface
+            OutputConfiguration::Surface(surface, _, _) => Ok(surface
                 .get_current_texture()
                 .as_surface_texture()?
                 .texture
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default())),
-            OutputConfiguration::UserTarget((target, _)) => Ok(target.view().clone()),
-            OutputConfiguration::Texture(_) => {
+            OutputConfiguration::UserTarget(target, _) => Ok(target.view().clone()),
+            OutputConfiguration::Texture(_, _) => {
                 match &self
                     .outputs
                     .as_ref()
@@ -512,6 +582,31 @@ impl<'surf> RenderTarget<'surf> {
                     ColorOutput::Texture(target) => Ok(target.view().clone()),
                 }
             }
+        }
+    }
+
+    pub fn color_target_format(&self) -> wgpu::TextureFormat {
+        match &self.config {
+            OutputConfiguration::Surface(_, config, _) => config.format,
+            OutputConfiguration::Texture(_, format) => *format,
+            OutputConfiguration::UserTarget(texture, _) => texture.texture().format(),
+        }
+    }
+
+    /// Set the color format that this renders to.
+    ///
+    /// Note that this has no effect for user-specified texture targets (see
+    /// `set_render_target`); you must allocate and provide a different texture
+    /// in that case.
+    pub fn set_color_target_format(&mut self, format: wgpu::TextureFormat) {
+        match &mut self.config {
+            OutputConfiguration::Surface(_, config, _) => {
+                config.format = format;
+            }
+            OutputConfiguration::Texture(_, my_format) => {
+                *my_format = format;
+            }
+            OutputConfiguration::UserTarget(_, _) => {}
         }
     }
 
@@ -551,7 +646,7 @@ impl<'surf> RenderTarget<'surf> {
         &self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> Result<(), WgpuRendererError> {
+    ) -> Result<wgpu::SubmissionIndex, WgpuRendererError> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("WGPURenderer::clear"),
         });
@@ -567,9 +662,50 @@ impl<'surf> RenderTarget<'surf> {
             },
         );
 
-        queue.submit(std::iter::once(encoder.finish()));
+        Ok(queue.submit(std::iter::once(encoder.finish())))
+    }
 
-        Ok(())
+    /// Issues a copy command for the given viewport to a target texture.
+    ///
+    /// The given target texture must be the same size or larger than the
+    /// selected viewport, and of the same texture format. If the target is not
+    /// large enough to receive the copy, the copied pixels will be cropped to
+    /// fit.
+    pub fn copy(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::Texture,
+        viewport: usize,
+    ) -> Result<wgpu::SubmissionIndex, WgpuRendererError> {
+        let (origin, extent) = self
+            .viewport_origin_and_extent(viewport)
+            .ok_or(WgpuRendererError::ViewportNotInitialized)?;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Output copy"),
+        });
+
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.color_target()?,
+                mip_level: 0,
+                origin,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: target,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d {
+                width: min(extent.width, target.width()),
+                height: min(extent.height, target.height()),
+                depth_or_array_layers: 1,
+            },
+        );
+
+        Ok(queue.submit(std::iter::once(encoder.finish())))
     }
 
     /// Get the buffer containing the viewport configuration data for shaders.

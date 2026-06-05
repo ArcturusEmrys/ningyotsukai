@@ -340,7 +340,7 @@ impl WgpuAreaImp {
                 ..Default::default()
             })
             .await?;
-        let (dd, label) = me.preferred_device_descriptor();
+        let (dd, label) = me.preferred_device_descriptor(&adapter);
         let dd_label = wgpu::DeviceDescriptor {
             label: Some(&label),
             ..dd
@@ -372,12 +372,18 @@ impl WgpuArea {
     /// Retrieve the WgpuArea's preferred device features.
     ///
     /// This may be overridden by subclasses in the WgpuAreaImpl trait.
-    fn preferred_device_descriptor(&self) -> (wgpu::DeviceDescriptor<'static>, String) {
+    fn preferred_device_descriptor(
+        &self,
+        adapter: &wgpu::Adapter,
+    ) -> (wgpu::DeviceDescriptor<'static>, String) {
         if let Some(add) = self.class().as_ref().preferred_device_descriptor {
             let value: glib::Value = unsafe {
                 //glib::Value doesn't seem to have an "owned Gvalue" case
                 //so lets transmute it lol
-                std::mem::transmute(add(self.as_ptr() as *mut glib::gobject_ffi::GObject))
+                std::mem::transmute(add(
+                    self.as_ptr() as *mut glib::gobject_ffi::GObject,
+                    adapter,
+                ))
             };
 
             let boxed_dd = value.get::<BoxedWgpuDeviceDescriptor>().unwrap();

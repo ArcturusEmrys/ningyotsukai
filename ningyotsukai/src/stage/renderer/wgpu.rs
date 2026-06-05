@@ -88,9 +88,12 @@ impl WidgetImpl for StageRendererImp {
 }
 
 impl WgpuAreaImpl for StageRendererImp {
-    fn preferred_device_descriptor(&self) -> (wgpu::DeviceDescriptor<'static>, glib::GString) {
+    fn preferred_device_descriptor(
+        &self,
+        adapter: &wgpu::Adapter,
+    ) -> (wgpu::DeviceDescriptor<'static>, glib::GString) {
         (
-            WgpuResources::preferred_device_descriptor(),
+            WgpuResources::preferred_device_descriptor(adapter),
             "WGPU Renderer".into(),
         )
     }

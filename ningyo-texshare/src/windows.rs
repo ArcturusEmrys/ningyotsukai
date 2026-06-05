@@ -8,7 +8,7 @@ use windows::Win32::Graphics::Direct3D11on12::{
     D3D11_RESOURCE_FLAGS, D3D11On12CreateDevice, ID3D11On12Device,
 };
 use windows::Win32::Graphics::Direct3D12::{
-    D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT, ID3D12Resource,
+    D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PRESENT, ID3D12Device, ID3D12Resource,
 };
 use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
 use windows::core::Interface;
@@ -25,6 +25,7 @@ use crate::wgpu::map_texture_usage_for_texture;
 #[derive(Clone, Debug)]
 pub struct ExtendedDevice {
     inner: wgpu::Device,
+    d3d12_dev: ID3D12Device,
     d3d11on12_dev: ID3D11On12Device,
     d3d11_dev: ID3D11Device,
     d3d11_context: ID3D11DeviceContext,
@@ -55,6 +56,7 @@ impl ExtendedDevice {
 
         Self {
             inner: device,
+            d3d12_dev: dx12_device.clone(),
             d3d11on12_dev: dx11_device.clone().unwrap().cast().unwrap(),
             d3d11_dev: dx11_device.unwrap(),
             d3d11_context: dx11_immediate_context.unwrap(),
@@ -63,6 +65,10 @@ impl ExtendedDevice {
 
     pub fn device(&self) -> &wgpu::Device {
         &self.inner
+    }
+
+    pub fn d3d12_device(&self) -> ID3D12Device {
+        self.d3d12_dev.clone()
     }
 
     pub fn d3d11_device(&self) -> ID3D11Device {

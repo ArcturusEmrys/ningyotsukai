@@ -478,9 +478,9 @@ impl DrawCommandList {
                             .bind_composite_vert(&draw_session.resources, viewports_config);
                         let frag_binding = draw_session.binding_cache.bind_composite_frag(
                             &draw_session.resources,
-                            composite.albedo().view(),
-                            composite.emissive().view(),
-                            composite.bump().view(),
+                            composite.albedo().array_view(),
+                            composite.emissive().array_view(),
+                            composite.bump().array_view(),
                             draw_session.composite_frag_buffer.as_ref().unwrap(),
                             viewports_config,
                         );

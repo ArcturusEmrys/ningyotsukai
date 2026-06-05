@@ -89,7 +89,7 @@ impl WgpuResources {
     ///
     /// Externally-created devices must have, at minimum, all of the features
     /// listed in this device descriptor.
-    pub fn preferred_device_descriptor() -> wgpu::DeviceDescriptor<'static> {
+    pub fn preferred_device_descriptor(adapter: &wgpu::Adapter) -> wgpu::DeviceDescriptor<'static> {
         #[allow(unused_mut)]
         let mut dd = wgpu::DeviceDescriptor {
             required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
@@ -99,6 +99,7 @@ impl WgpuResources {
                 | wgpu::Features::MULTIVIEW,
             required_limits: wgpu::Limits {
                 max_color_attachment_bytes_per_sample: 48,
+                max_multiview_view_count: adapter.limits().max_multiview_view_count,
                 ..Default::default()
             },
             ..Default::default()
@@ -116,7 +117,7 @@ impl WgpuResources {
     /// into it.
     pub async fn new(adapter: &wgpu::Adapter) -> Result<Self, WgpuRendererError> {
         let (device, queue) = adapter
-            .request_device(&Self::preferred_device_descriptor())
+            .request_device(&Self::preferred_device_descriptor(adapter))
             .await?;
 
         Ok(Self::new_with_user_device(device, queue))

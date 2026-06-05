@@ -1,6 +1,4 @@
 use windows::Win32::Graphics::Direct3D11::{ID3D11RenderTargetView, ID3D11Resource};
-use windows::Win32::Graphics::Direct3D11on12::D3D11_RESOURCE_FLAGS;
-use windows::Win32::Graphics::Direct3D12::D3D12_RESOURCE_STATE_COMMON;
 use windows::Win32::Graphics::Dxgi::IDXGIResource;
 use windows::Win32::Graphics::{
     Direct3D11::ID3D11Texture2D, Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
@@ -53,6 +51,8 @@ impl SinkPlugin for SpoutPlugin {
         device: &ExtendedDevice,
         queue: &wgpu::Queue,
         texture: wgpu::Texture,
+        origin: wgpu::Origin3d,
+        extent: wgpu::Extent3d,
     ) {
         // TODO: Detect a texture size change.
         if self.d3d12_buffer_texture.is_none()
@@ -60,22 +60,17 @@ impl SinkPlugin for SpoutPlugin {
                 .d3d12_buffer_texture
                 .as_ref()
                 .map(|t| {
-                    t.texture().width() != texture.width()
-                        || t.texture().height() != texture.height()
+                    t.texture().width() != extent.width || t.texture().height() != extent.height
                 })
                 .unwrap_or(false)
         {
             let desc = wgpu::TextureDescriptor {
                 label: Some("Internal Spout2 Buffer"),
-                size: wgpu::Extent3d {
-                    width: texture.width() as u32,
-                    height: texture.height() as u32,
-                    depth_or_array_layers: 1,
-                },
+                size: extent,
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: texture.format(),
                 usage: wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             };
@@ -103,70 +98,44 @@ impl SinkPlugin for SpoutPlugin {
             }
         }
 
-        let wrapped_d3d11_texture =
-            if let Some(d3d12tex) = unsafe { texture.as_hal::<wgpu_hal::dx12::Api>() } {
-                let dx12 = unsafe { d3d12tex.raw_resource() }.clone();
-                let mut dx11 = None;
+        // Since we're rendering to an array texture now, we HAVE to first do
+        // an extraction copy into a 2D texture BEFORE we can have D3D11 copy
+        // its texture into one we can safely send through Spout.
+        let internal_texture = self.d3d12_buffer_texture.clone().unwrap();
+        let mut encoder = device
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("First Spout2 Buffer Copy"),
+            });
 
-                unsafe {
-                    device
-                        .d3d11on12_device()
-                        .CreateWrappedResource(
-                            &dx12,
-                            &D3D11_RESOURCE_FLAGS::default(),
-                            D3D12_RESOURCE_STATE_COMMON,
-                            D3D12_RESOURCE_STATE_COMMON,
-                            &mut dx11,
-                        )
-                        .unwrap();
-                }
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &internal_texture.texture(),
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            extent,
+        );
 
-                dx11.unwrap()
-            } else {
-                //NOTE: This should never happen.
-                //Our WGPU wrappers specifically force DX12 on everything
-                let internal_texture = self.d3d12_buffer_texture.clone().unwrap();
-                let mut encoder =
-                    device
-                        .device()
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                            label: Some("Internal Spout2 Buffer Copy"),
-                        });
+        let submission_index = queue.submit(std::iter::once(encoder.finish()));
 
-                encoder.copy_texture_to_texture(
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::TexelCopyTextureInfo {
-                        texture: &internal_texture.texture(),
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    wgpu::Extent3d {
-                        width: texture.width(),
-                        height: texture.height(),
-                        depth_or_array_layers: 0,
-                    },
-                );
+        device
+            .device()
+            .poll(wgpu::PollType::Wait {
+                submission_index: Some(submission_index),
+                timeout: None,
+            })
+            .unwrap();
 
-                let submission_index = queue.submit(std::iter::once(encoder.finish()));
-
-                device
-                    .device()
-                    .poll(wgpu::PollType::Wait {
-                        submission_index: Some(submission_index),
-                        timeout: None,
-                    })
-                    .unwrap();
-
-                // TODO: Figure out how to get rid of the double-copy.
-                self.d3d12_wrapped_resource.clone().unwrap()
-            };
-
+        // Now D3D11 has to do its own copy :/
+        let wrapped_d3d11_texture = self.d3d12_wrapped_resource.clone().unwrap();
         let internal_dx11_texture = self.internal_dx11_texture.clone().unwrap();
 
         unsafe {
@@ -188,8 +157,9 @@ impl SinkPlugin for SpoutPlugin {
 
         if let Some(reg) = &mut self.registration {
             reg.publish_dx11_texture(
-                texture.width(),
-                texture.height(),
+                extent.width,
+                extent.height,
+                //TODO: What if GTK wants a different format?
                 DXGI_FORMAT_R8G8B8A8_UNORM.0 as u32,
                 share_handle,
             )

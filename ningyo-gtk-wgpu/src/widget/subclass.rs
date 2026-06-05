@@ -20,7 +20,10 @@ pub trait WgpuAreaImpl:
     ///
     /// You may also return a string that will be placed inside the descriptor
     /// as the device's label. Do not populate the label field directly.
-    fn preferred_device_descriptor(&self) -> (wgpu::DeviceDescriptor<'static>, glib::GString) {
+    fn preferred_device_descriptor(
+        &self,
+        _adapter: &wgpu::Adapter,
+    ) -> (wgpu::DeviceDescriptor<'static>, glib::GString) {
         (wgpu::DeviceDescriptor::default(), "".into())
     }
 
@@ -52,6 +55,7 @@ unsafe extern "C" fn ng_wgpu_area_preferred_device_descriptor_trampoline<
     T: ObjectSubclass + WgpuAreaImpl,
 >(
     ptr: *mut glib::gobject_ffi::GObject,
+    adapter: &wgpu::Adapter,
 ) -> glib::gobject_ffi::GValue {
     //SAFETY: The returned GValue is owned by the caller.
     unsafe {
@@ -61,7 +65,7 @@ unsafe extern "C" fn ng_wgpu_area_preferred_device_descriptor_trampoline<
                 .downcast_ref::<T::Type>()
                 .unwrap()
                 .imp()
-                .preferred_device_descriptor(),
+                .preferred_device_descriptor(adapter),
         ))
         .into_raw()
     }
@@ -122,8 +126,12 @@ unsafe extern "C" fn ng_wgpu_area_resize_trampoline<T: ObjectSubclass + WgpuArea
 pub struct WgpuAreaClass {
     pub parent_class: gtk4::ffi::GtkWidgetClass,
 
-    pub preferred_device_descriptor:
-        Option<unsafe extern "C" fn(*mut glib::gobject_ffi::GObject) -> glib::gobject_ffi::GValue>,
+    pub preferred_device_descriptor: Option<
+        unsafe extern "C" fn(
+            *mut glib::gobject_ffi::GObject,
+            &wgpu::Adapter,
+        ) -> glib::gobject_ffi::GValue,
+    >,
     pub preferred_texture_usage:
         Option<unsafe extern "C" fn(*mut glib::gobject_ffi::GObject) -> glib::gobject_ffi::GValue>,
     pub resize: Option<

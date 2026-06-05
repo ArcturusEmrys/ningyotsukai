@@ -15,7 +15,7 @@ pub struct ExportableTexture {
     pub(crate) size: u64,
     pub(crate) row_stride: u64,
 
-    #[cfg_attr(target_os = "linux", allow(unused))]
+    #[allow(unused)]
     pub(crate) alignment: u64,
 }
 

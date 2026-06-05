@@ -105,7 +105,9 @@ impl RenderThread {
     ) {
         for renderer in &mut self.renderers {
             if renderer.is_for_document(&document) {
-                renderer.viewport_change(texture.clone(), center_x, center_y, scale);
+                renderer
+                    .viewport_change(texture.clone(), center_x, center_y, scale)
+                    .unwrap();
             }
         }
     }
@@ -260,7 +262,7 @@ impl RenderThread {
                 if renderer.is_for_document(doc) {
                     send.send(RenderResponse::RenderComplete(
                         renderer.document().upgrade().unwrap(),
-                        Some(renderer.viewport_copy()),
+                        renderer.viewport_copy(),
                     ))
                     .unwrap();
                 }
@@ -277,16 +279,23 @@ impl RenderThread {
         #[cfg(feature = "timing")]
         self.lap("Update");
 
-        for renderer in self.renderers.iter_mut() {
-            //TODO: Force an allocation every frame so that plugins
-            //don't ever see intermediate results.
-            //Ideally, this should be a ring buffer.
-            renderer.alloc_texture();
-            renderer.render();
+        let last_viewport_unlock = self.last_viewport_unlock.take();
+
+        if let Some((document, texture, center_x, center_y, scale)) = last_viewport_unlock {
+            self.viewport_change(document, texture, center_x, center_y, scale);
         }
 
         #[cfg(feature = "timing")]
-        self.lap("Artboard render");
+        self.lap("Viewport alloc");
+
+        for renderer in self.renderers.iter_mut() {
+            if let Err(e) = renderer.render() {
+                eprintln!("Renderer error: {}", e);
+            }
+        }
+
+        #[cfg(feature = "timing")]
+        self.lap("Render");
 
         if let (Some(device), Some(queue)) =
             (self.extended_device.as_ref(), self.wgpu_queue.as_ref())
@@ -301,32 +310,23 @@ impl RenderThread {
 
             for plugin in &mut self.plugins {
                 for renderer in &mut self.renderers {
-                    plugin.update_stream_image(
-                        renderer.document().upgrade().unwrap(),
-                        self.wgpu_adapter.as_ref().unwrap(),
-                        self.extended_device.as_ref().unwrap(),
-                        queue,
-                        renderer.texture().clone(),
-                    );
+                    if let Some((texture, offset, extent)) = renderer.artboard_texture() {
+                        plugin.update_stream_image(
+                            renderer.document().upgrade().unwrap(),
+                            self.wgpu_adapter.as_ref().unwrap(),
+                            self.extended_device.as_ref().unwrap(),
+                            queue,
+                            texture,
+                            offset,
+                            extent,
+                        );
+                    }
                 }
             }
         }
 
         #[cfg(feature = "timing")]
         self.lap("Plugin update");
-
-        let last_viewport_unlock = self.last_viewport_unlock.take();
-
-        if let Some((document, texture, center_x, center_y, scale)) = last_viewport_unlock {
-            self.viewport_change(document, texture, center_x, center_y, scale);
-        }
-
-        for renderer in self.renderers.iter_mut() {
-            renderer.render_viewport();
-        }
-
-        #[cfg(feature = "timing")]
-        self.lap("Viewport render");
 
         self.end_frame();
 

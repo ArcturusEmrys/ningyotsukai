@@ -13,6 +13,7 @@ use crate::shaders::mipmap_gen_vert;
 pub struct DeviceTexture {
     device_texture: wgpu::Texture,
     view: wgpu::TextureView,
+    array_view: wgpu::TextureView,
 }
 
 impl DeviceTexture {
@@ -170,10 +171,16 @@ impl DeviceTexture {
         resources.queue.submit(std::iter::once(encoder.finish()));
 
         let view = device_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let array_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(1),
+            ..Default::default()
+        });
 
         Self {
             device_texture,
             view,
+            array_view,
         }
     }
 
@@ -181,6 +188,7 @@ impl DeviceTexture {
         wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC // TODO: Add a way to specify texture usages
     }
 
     pub fn empty_render_target(
@@ -208,9 +216,15 @@ impl DeviceTexture {
         });
 
         let view = device_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let array_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
+
         let empty = Self {
             device_texture,
             view,
+            array_view,
         };
 
         empty.clear(encoder);
@@ -232,9 +246,16 @@ impl DeviceTexture {
         }
 
         let view = device_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let array_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            array_layer_count: Some(1),
+            ..Default::default()
+        });
+
         let empty = Self {
             device_texture,
             view,
+            array_view,
         };
 
         Ok(empty)
@@ -260,6 +281,12 @@ impl DeviceTexture {
 
     pub fn view(&self) -> &wgpu::TextureView {
         &self.view
+    }
+
+    /// Get a view of this texture that forces it to be interpreted as a 2D
+    /// array texture.
+    pub fn array_view(&self) -> &wgpu::TextureView {
+        &self.array_view
     }
 
     pub fn as_color_attachment(&self) -> wgpu::RenderPassColorAttachment<'_> {

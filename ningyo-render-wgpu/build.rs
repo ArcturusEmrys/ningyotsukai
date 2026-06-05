@@ -1,8 +1,8 @@
 use shaderc::{self, IncludeType, ResolvedInclude};
 use spirv_reflect;
 use spirv_reflect::types::{
-    ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectEntryPoint,
-    ReflectFormat, ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags,
+    ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectDimension,
+    ReflectEntryPoint, ReflectFormat, ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags,
 };
 
 use std::borrow::Cow;
@@ -428,10 +428,30 @@ fn gen_shader_new(
                         "                        ty: wgpu::BindingType::Texture {{"
                     )?;
                     writeln!(out, "                            multisampled: false,")?;
-                    writeln!(
-                        out,
-                        "                            view_dimension: wgpu::TextureViewDimension::D2,"
-                    )?; //TODO: Support 1D/3D textures
+
+                    match (binding.image.dim, binding.image.arrayed) {
+                        (ReflectDimension::Type1d, _) => writeln!(
+                            out,
+                            "                            view_dimension: wgpu::TextureViewDimension::D1,"
+                        )?,
+                        (ReflectDimension::Type2d, 1) => writeln!(
+                            out,
+                            "                            view_dimension: wgpu::TextureViewDimension::D2Array,"
+                        )?,
+                        (ReflectDimension::Type2d, _) => writeln!(
+                            out,
+                            "                            view_dimension: wgpu::TextureViewDimension::D2,"
+                        )?,
+                        (ReflectDimension::Type3d, _) => writeln!(
+                            out,
+                            "                            view_dimension: wgpu::TextureViewDimension::D3,"
+                        )?,
+                        (d, a) => writeln!(
+                            out,
+                            "                            view_dimension: //TODO: unknown dim {:?} / arrayed {},",
+                            d, a
+                        )?,
+                    }
 
                     writeln!(
                         out,

@@ -2,6 +2,9 @@ use crate::document::Document;
 use ningyo_texshare::ExtendedDevice;
 
 pub trait SinkPlugin {
+    /// Publish a new stream.
+    ///
+    /// Streams are identified by their Document.
     fn publish_stream(
         &mut self,
         document: Document,
@@ -10,6 +13,11 @@ pub trait SinkPlugin {
         framerate: (u32, u32),
     );
 
+    /// Update an existing stream's image.
+    ///
+    /// The document given will match a previously published stream with the
+    /// same name. The texture, origin, and extent combination refers
+    /// to a portion of the texture that we wish to publish to the stream.
     fn update_stream_image(
         &mut self,
         document: Document,
@@ -17,5 +25,7 @@ pub trait SinkPlugin {
         device: &ExtendedDevice,
         queue: &wgpu::Queue,
         texture: wgpu::Texture,
+        origin: wgpu::Origin3d,
+        extent: wgpu::Extent3d,
     );
 }
