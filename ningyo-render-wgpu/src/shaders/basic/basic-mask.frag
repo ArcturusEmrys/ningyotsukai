@@ -27,9 +27,9 @@ layout(set = 1, binding = 3) readonly buffer Viewports {
 } viewports_in;
 
 void main() {
-    if (gl_ViewIndex < viewports_in.active_viewports && gl_ViewIndex < viewports_in.viewports.length()) {
-        vec2 scissor_origin_tl = viewports_in.viewports[gl_ViewIndex].scissor_origin_tl;
-        vec2 scissor_origin_br = viewports_in.viewports[gl_ViewIndex].scissor_origin_br;
+    if (my_ViewIndex < viewports_in.active_viewports && my_ViewIndex < viewports_in.viewports.length()) {
+        vec2 scissor_origin_tl = viewports_in.viewports[my_ViewIndex].scissor_origin_tl;
+        vec2 scissor_origin_br = viewports_in.viewports[my_ViewIndex].scissor_origin_br;
         if (gl_FragCoord.x < scissor_origin_tl.x || scissor_origin_br.x < gl_FragCoord.x) {
             discard;
         }

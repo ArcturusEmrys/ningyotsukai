@@ -1,7 +1,7 @@
 #extension GL_EXT_spirv_intrinsics : require
 
 // shaderc emits the wrong definition of gl_ViewIndex if I don't do this.
-uint gl_ViewIndex;
+spirv_decorate(extensions = ["SPV_KHR_multiview"], capabilities = [4439], 11, 4440) uint my_ViewIndex;
 
 struct Viewport {
   mat4 projection;
