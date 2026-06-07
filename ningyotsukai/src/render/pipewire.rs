@@ -222,6 +222,8 @@ pub enum PipewireMessage {
     UpdateStreamImage {
         document: Document,
         texture: wgpu::Texture,
+        origin: wgpu::Origin3d,
+        extent: wgpu::Extent3d,
     },
 }
 
@@ -247,7 +249,7 @@ impl OwnedPod {
 pub struct PipewireStream {
     _stream: StreamRc,
     _listener: StreamListener<()>,
-    last_tex: Option<wgpu::Texture>,
+    last_tex: Option<(wgpu::Texture, wgpu::Origin3d, wgpu::Extent3d)>,
     copy_buffer: Option<wgpu::Buffer>,
 }
 
@@ -307,8 +309,13 @@ impl PipewireThread {
                 let state = self.0.borrow();
                 state.sender.send(PipewireResponse::Ack).unwrap();
             }
-            PipewireMessage::UpdateStreamImage { document, texture } => {
-                self.update_stream_image(document.clone(), texture);
+            PipewireMessage::UpdateStreamImage {
+                document,
+                texture,
+                origin,
+                extent,
+            } => {
+                self.update_stream_image(document.clone(), texture, origin, extent);
                 let state = self.0.borrow();
                 state.sender.send(PipewireResponse::Ack).unwrap();
             }
@@ -577,7 +584,7 @@ impl PipewireThread {
                 let spa_buffer = unsafe { &mut *(*raw_buffer).buffer };
                 let data = unsafe { &mut *(*spa_buffer).datas };
 
-                if let Some(last_tex) = stream_data.last_tex.take() {
+                if let Some((last_tex, last_tex_origin, last_tex_extent)) = stream_data.last_tex.take() {
                     let mut encoder = device.device().create_command_encoder(&wgpu::CommandEncoderDescriptor {
                         label: Some("Pipewire Texture Copy")
                     });
@@ -590,23 +597,19 @@ impl PipewireThread {
                             texture: &last_tex,
                             mip_level: 0,
                             aspect: wgpu::TextureAspect::All,
-                            origin: wgpu::Origin3d::ZERO
+                            origin: last_tex_origin
                         }, wgpu::TexelCopyTextureInfo {
                             texture,
                             mip_level: 0,
                             aspect: wgpu::TextureAspect::All,
                             origin: wgpu::Origin3d::ZERO
-                        }, wgpu::Extent3d {
-                            width: last_tex.width(),
-                            height: last_tex.height(),
-                            depth_or_array_layers: 1
-                        });
+                        }, last_tex_extent);
                     } else {
                         encoder.copy_texture_to_buffer(wgpu::TexelCopyTextureInfo {
                             texture: &last_tex,
                             mip_level: 0,
                             aspect: wgpu::TextureAspect::All,
-                            origin: wgpu::Origin3d::ZERO
+                            origin: last_tex_origin
                         }, wgpu::TexelCopyBufferInfo {
                             buffer: stream_data.copy_buffer.as_ref().unwrap(),
                             layout: wgpu::TexelCopyBufferLayout {
@@ -614,11 +617,7 @@ impl PipewireThread {
                                 bytes_per_row: Some(download_row_stride as u32),
                                 rows_per_image: None
                             }
-                        }, wgpu::Extent3d {
-                            width: last_tex.width(),
-                            height: last_tex.height(),
-                            depth_or_array_layers: 1
-                        });
+                        }, last_tex_extent);
                     }
 
                     let index = queue.submit(std::iter::once(encoder.finish()));
@@ -706,12 +705,18 @@ impl PipewireThread {
         );
     }
 
-    fn update_stream_image(&self, document: Document, texture: wgpu::Texture) {
+    fn update_stream_image(
+        &self,
+        document: Document,
+        texture: wgpu::Texture,
+        origin: wgpu::Origin3d,
+        extent: wgpu::Extent3d,
+    ) {
         let mut state = self.0.borrow_mut();
         let stream = state.streams.get_mut(&document);
 
         if let Some(stream) = stream {
-            stream.last_tex = Some(texture);
+            stream.last_tex = Some((texture, origin, extent));
         }
     }
 }
@@ -746,9 +751,16 @@ impl SinkPlugin for PipewirePlugin {
         _device: &ExtendedDevice,
         _queue: &wgpu::Queue,
         texture: wgpu::Texture,
+        origin: wgpu::Origin3d,
+        extent: wgpu::Extent3d,
     ) {
         self.msg_send
-            .send(PipewireMessage::UpdateStreamImage { document, texture })
+            .send(PipewireMessage::UpdateStreamImage {
+                document,
+                texture,
+                origin,
+                extent,
+            })
             .unwrap_or_else(|_| panic!("Poisoned"));
     }
 }
