@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::num::NonZero;
 
 use wgpu;
 
@@ -144,6 +145,7 @@ impl DeviceTexture {
                 [Some(wgpu::BlendState::REPLACE)],
                 [wgpu::ColorWrites::all()],
                 None,
+                None
             );
 
             render_pass.set_vertex_buffer(
@@ -373,6 +375,7 @@ impl DepthStencilTexture {
         render_pass: &mut wgpu::RenderPass<'_>,
         resources: &WgpuResources,
         color_attachments: &[Option<wgpu::RenderPassColorAttachment>],
+        multiview_mask: Option<NonZero<u32>>,
     ) {
         let formats = [
             color_attachments[0]
@@ -394,6 +397,7 @@ impl DepthStencilTexture {
             [replace, replace, replace],
             [none, none, none],
             Some(clear),
+            multiview_mask
         );
 
         render_pass.set_pipeline(pipeline.pipeline());

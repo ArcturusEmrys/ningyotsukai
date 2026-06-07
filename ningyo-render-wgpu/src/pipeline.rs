@@ -3,6 +3,7 @@ use wgpu;
 use crate::shader::{FragmentShader, VertexShader};
 use std::collections::HashMap;
 use std::marker::PhantomData;
+use std::num::NonZero;
 
 #[derive(Clone, Debug)]
 pub struct Pipeline<V, F>
@@ -28,6 +29,7 @@ where
         blend: F::TargetArray<Option<wgpu::BlendState>>,
         write_mask: F::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>
     ) -> Self {
         let name = format!("Pipeline of {} + {}", vert.label(), frag.label());
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -75,7 +77,7 @@ where
                 },
                 depth_stencil,
                 multisample: wgpu::MultisampleState::default(),
-                multiview_mask: None,
+                multiview_mask,
                 cache: None,
             }),
             phantom_frag: PhantomData::default(),
@@ -127,6 +129,7 @@ where
             F::TargetArray<Option<wgpu::BlendState>>,
             F::TargetArray<wgpu::ColorWrites>,
             Option<wgpu::DepthStencilState>,
+            Option<NonZero<u32>>,
         ),
         Pipeline<V, F>,
     >,
@@ -156,9 +159,10 @@ where
         blend: F::TargetArray<Option<wgpu::BlendState>>,
         write_mask: F::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> Option<Pipeline<V, F>> {
         self.cache
-            .get(&(formats, blend, write_mask, depth_stencil))
+            .get(&(formats, blend, write_mask, depth_stencil, multiview_mask))
             .cloned()
     }
 
@@ -170,10 +174,11 @@ where
         blend: F::TargetArray<Option<wgpu::BlendState>>,
         write_mask: F::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> Pipeline<V, F> {
         self.cache
-            .entry((formats, blend, write_mask, depth_stencil))
-            .or_insert_with_key(|(formats, blend, write_mask, depth_stencil)| {
+            .entry((formats, blend, write_mask, depth_stencil, multiview_mask))
+            .or_insert_with_key(|(formats, blend, write_mask, depth_stencil, multiview_mask)| {
                 Pipeline::new(
                     device,
                     &self.vert,
@@ -182,6 +187,7 @@ where
                     blend.clone(),
                     write_mask.clone(),
                     depth_stencil.clone(),
+                    *multiview_mask,
                 )
             })
             .clone()

@@ -4,6 +4,7 @@
 //! and pipelines.
 
 use std::fmt::Debug;
+use std::num::NonZero;
 use std::sync::RwLock;
 
 use glam::Vec2;
@@ -325,13 +326,14 @@ impl WgpuResources {
         blend: <null_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
         write_mask: <null_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> pipeline::Pipeline<mipmap_gen_vert::Shader, null_frag::Shader> {
         if let Some(premade_entry) = self
             .pipelines
             .read()
             .unwrap()
             .clear_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone())
+            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
         {
             premade_entry
         } else {
@@ -339,7 +341,7 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .clear_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil)
+                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
         }
     }
 
@@ -352,13 +354,14 @@ impl WgpuResources {
         blend: <mipmap_gen_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
         write_mask: <mipmap_gen_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> pipeline::Pipeline<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader> {
         if let Some(premade_entry) = self
             .pipelines
             .read()
             .unwrap()
             .mipmap_gen_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone())
+            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
         {
             premade_entry
         } else {
@@ -366,7 +369,7 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .mipmap_gen_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil)
+                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
         }
     }
 
@@ -377,13 +380,14 @@ impl WgpuResources {
         blend: <basic_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
         write_mask: <basic_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> pipeline::Pipeline<basic_vert::Shader, basic_frag::Shader> {
         if let Some(premade_entry) = self
             .pipelines
             .read()
             .unwrap()
             .part_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone())
+            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
         {
             premade_entry
         } else {
@@ -391,7 +395,7 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .part_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil)
+                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
         }
     }
 
@@ -404,13 +408,14 @@ impl WgpuResources {
         blend: <basic_mask_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
         write_mask: <basic_mask_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> pipeline::Pipeline<basic_vert::Shader, basic_mask_frag::Shader> {
         if let Some(premade_entry) = self
             .pipelines
             .read()
             .unwrap()
             .part_mask_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone())
+            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
         {
             premade_entry
         } else {
@@ -418,7 +423,7 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .part_mask_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil)
+                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
         }
     }
 
@@ -431,13 +436,14 @@ impl WgpuResources {
         blend: <composite_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
         write_mask: <composite_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
+        multiview_mask: Option<NonZero<u32>>,
     ) -> pipeline::Pipeline<composite_vert::Shader, composite_frag::Shader> {
         if let Some(premade_entry) = self
             .pipelines
             .read()
             .unwrap()
             .composite_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone())
+            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
         {
             premade_entry
         } else {
@@ -445,7 +451,7 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .composite_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil)
+                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
         }
     }
 

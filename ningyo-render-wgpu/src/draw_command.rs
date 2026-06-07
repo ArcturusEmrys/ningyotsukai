@@ -139,6 +139,7 @@ impl DrawCommandList {
         let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
 
         let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
+        let multiview_mask = draw_session.multiview_mask;
 
         for command in me.commands.drain(..) {
             match command {
@@ -153,6 +154,7 @@ impl DrawCommandList {
                             render_pass,
                             &mut draw_session.resources,
                             &composite.as_color_attachments(),
+                            multiview_mask,
                         );
                     }
                 }
@@ -180,6 +182,7 @@ impl DrawCommandList {
                                 None,
                                 None,
                             ],
+                            multiview_mask,
                         );
                     }
                 }
@@ -237,7 +240,7 @@ impl DrawCommandList {
                                 depth_stencil_attachment,
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
-                                multiview_mask: None,
+                                multiview_mask
                             },
                         ));
                     }
@@ -307,6 +310,7 @@ impl DrawCommandList {
                                     wgpu::ColorWrites::empty(),
                                 ],
                                 Some(mask_depthstencil.clone()),
+                                multiview_mask,
                             );
                         render_pass.set_pipeline(pipeline.pipeline());
                         pipeline.bind_frag(
@@ -340,6 +344,7 @@ impl DrawCommandList {
                                 [blend, blend, blend],
                                 [all, all, all],
                                 Some(masked_depthstencil.clone()),
+                                multiview_mask,
                             )
                         } else {
                             draw_session.resources.part_pipeline_with_configuration(
@@ -348,6 +353,7 @@ impl DrawCommandList {
                                 [blend, blend, blend],
                                 [all, all, all],
                                 Some(ignore_depthstencil.clone()),
+                                multiview_mask,
                             )
                         };
 
@@ -433,7 +439,7 @@ impl DrawCommandList {
                                 depth_stencil_attachment,
                                 occlusion_query_set: None,
                                 timestamp_writes: None,
-                                multiview_mask: None,
+                                multiview_mask
                             });
 
                     render_pass.set_vertex_buffer(
@@ -493,6 +499,7 @@ impl DrawCommandList {
                                 [blend, blend, blend],
                                 [all, all, all],
                                 depth_stencil,
+                                multiview_mask,
                             );
 
                         render_pass.set_pipeline(pipeline.pipeline());
