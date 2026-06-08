@@ -31,6 +31,7 @@ impl ViewportConfiguration {
                 .to_cols_array_2d(),
             scissor_origin_tl: [0.0; 2],
             scissor_origin_br: [self.size.0 as f32, self.size.1 as f32],
+            padding: Default::default(),
         }
     }
 }
@@ -109,6 +110,7 @@ impl<'surf> OutputConfiguration<'surf> {
                         .to_cols_array_2d(),
                     scissor_origin_tl: [0.0; 2],
                     scissor_origin_br: [config.width as f32, config.height as f32],
+                    padding: Default::default(),
                 }]
             }
             OutputConfiguration::UserTarget(target, camera) => {
@@ -124,6 +126,7 @@ impl<'surf> OutputConfiguration<'surf> {
                         target.texture().width() as f32,
                         target.texture().height() as f32,
                     ],
+                    padding: Default::default(),
                 }]
             }
             OutputConfiguration::Texture(viewports, _) => {
@@ -506,7 +509,6 @@ impl<'surf> RenderTarget<'surf> {
 
         let viewports_config = self.config.as_viewport_config(self.outputs.as_ref());
         let viewports_config = Viewports {
-            active_viewports: viewports_config.len() as u32,
             viewports: viewports_config,
         };
 

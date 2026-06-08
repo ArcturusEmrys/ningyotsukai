@@ -15,7 +15,6 @@ layout(set = 0, binding = 0) uniform Input {
 } uni_in;
 
 layout(set = 0, binding = 1) readonly buffer Viewports {
-  uint active_viewports;
   Viewport viewports[];
 } viewports_in;
 
@@ -26,7 +25,7 @@ layout(location = 0) out vec2 texUVs;
 
 void main() {
   mat4 viewport_proj = mat4(1.0);
-  if (my_ViewIndex < viewports_in.active_viewports && my_ViewIndex < viewports_in.viewports.length()) {
+  if (my_ViewIndex < viewports_in.viewports.length()) {
     viewport_proj = viewports_in.viewports[my_ViewIndex].projection;
   }
 

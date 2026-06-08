@@ -10,6 +10,37 @@ use crate::WgpuResources;
 use crate::error::WgpuRendererError;
 use crate::shaders::mipmap_gen_vert;
 
+pub trait TextureViewExt {
+    fn as_color_attachment(&self) -> wgpu::RenderPassColorAttachment<'_>;
+
+    fn as_depth_stencil_attachment(&self) -> wgpu::RenderPassDepthStencilAttachment<'_>;
+}
+
+impl TextureViewExt for wgpu::TextureView {
+    fn as_color_attachment(&self) -> wgpu::RenderPassColorAttachment<'_> {
+        wgpu::RenderPassColorAttachment {
+            view: self,
+            resolve_target: None,
+            depth_slice: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        }
+    }
+
+    fn as_depth_stencil_attachment(&self) -> wgpu::RenderPassDepthStencilAttachment<'_> {
+        wgpu::RenderPassDepthStencilAttachment {
+            view: self,
+            depth_ops: None,
+            stencil_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            }),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct DeviceTexture {
     device_texture: wgpu::Texture,
@@ -145,7 +176,7 @@ impl DeviceTexture {
                 [Some(wgpu::BlendState::REPLACE)],
                 [wgpu::ColorWrites::all()],
                 None,
-                None
+                None,
             );
 
             render_pass.set_vertex_buffer(
@@ -291,16 +322,21 @@ impl DeviceTexture {
         &self.array_view
     }
 
+    /// Construct a view of a given layer of the texture.
+    ///
+    /// This does not cache the layer so you will need to cache it yourself.
+    pub fn layer_view(&self, layer: u32) -> wgpu::TextureView {
+        self.device_texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+    }
+
     pub fn as_color_attachment(&self) -> wgpu::RenderPassColorAttachment<'_> {
-        wgpu::RenderPassColorAttachment {
-            view: &self.view,
-            resolve_target: None,
-            depth_slice: None,
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            },
-        }
+        self.view.as_color_attachment()
     }
 }
 
@@ -397,7 +433,7 @@ impl DepthStencilTexture {
             [replace, replace, replace],
             [none, none, none],
             Some(clear),
-            multiview_mask
+            multiview_mask,
         );
 
         render_pass.set_pipeline(pipeline.pipeline());
@@ -418,15 +454,21 @@ impl DepthStencilTexture {
         &self.device_texture
     }
 
-    pub fn as_depth_stencil_attachment_rw(&self) -> wgpu::RenderPassDepthStencilAttachment<'_> {
-        wgpu::RenderPassDepthStencilAttachment {
-            view: &self.view,
-            depth_ops: None,
-            stencil_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Load,
-                store: wgpu::StoreOp::Store,
-            }),
-        }
+    /// Construct a view of a given layer of the texture.
+    ///
+    /// This does not cache the layer so you will need to cache it yourself.
+    pub fn layer_view(&self, layer: u32) -> wgpu::TextureView {
+        self.device_texture
+            .create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            })
+    }
+
+    pub fn as_depth_stencil_attachment(&self) -> wgpu::RenderPassDepthStencilAttachment<'_> {
+        self.view.as_depth_stencil_attachment()
     }
 }
 

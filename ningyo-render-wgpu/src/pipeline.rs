@@ -29,7 +29,7 @@ where
         blend: F::TargetArray<Option<wgpu::BlendState>>,
         write_mask: F::TargetArray<wgpu::ColorWrites>,
         depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>
+        multiview_mask: Option<NonZero<u32>>,
     ) -> Self {
         let name = format!("Pipeline of {} + {}", vert.label(), frag.label());
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -178,18 +178,20 @@ where
     ) -> Pipeline<V, F> {
         self.cache
             .entry((formats, blend, write_mask, depth_stencil, multiview_mask))
-            .or_insert_with_key(|(formats, blend, write_mask, depth_stencil, multiview_mask)| {
-                Pipeline::new(
-                    device,
-                    &self.vert,
-                    &self.frag,
-                    formats.clone(),
-                    blend.clone(),
-                    write_mask.clone(),
-                    depth_stencil.clone(),
-                    *multiview_mask,
-                )
-            })
+            .or_insert_with_key(
+                |(formats, blend, write_mask, depth_stencil, multiview_mask)| {
+                    Pipeline::new(
+                        device,
+                        &self.vert,
+                        &self.frag,
+                        formats.clone(),
+                        blend.clone(),
+                        write_mask.clone(),
+                        depth_stencil.clone(),
+                        *multiview_mask,
+                    )
+                },
+            )
             .clone()
     }
 }

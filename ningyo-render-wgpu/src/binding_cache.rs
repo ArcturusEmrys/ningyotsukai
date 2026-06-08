@@ -95,7 +95,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
-                size: None,
+                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
@@ -141,7 +141,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
-                size: None,
+                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
@@ -182,7 +182,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer: viewport,
                 offset: 0,
-                size: None,
+                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
@@ -209,7 +209,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
-                size: None,
+                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
@@ -254,7 +254,7 @@ impl BindingCache {
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
-                size: None,
+                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 

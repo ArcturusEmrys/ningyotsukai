@@ -3,6 +3,7 @@
 //! This type enables having multiple renderers share resources such as shaders,
 //! and pipelines.
 
+use std::cmp::min;
 use std::fmt::Debug;
 use std::num::NonZero;
 use std::sync::RwLock;
@@ -96,11 +97,14 @@ impl WgpuResources {
             required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
                 | wgpu::Features::CLEAR_TEXTURE
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                | wgpu::Features::DEPTH_CLIP_CONTROL
-                | wgpu::Features::MULTIVIEW,
+                | wgpu::Features::DEPTH_CLIP_CONTROL,
             required_limits: wgpu::Limits {
                 max_color_attachment_bytes_per_sample: 48,
                 max_multiview_view_count: adapter.limits().max_multiview_view_count,
+                min_storage_buffer_offset_alignment: min(
+                    adapter.limits().min_storage_buffer_offset_alignment,
+                    32,
+                ),
                 ..Default::default()
             },
             ..Default::default()
@@ -139,9 +143,9 @@ impl WgpuResources {
         .unwrap();
 
         // Compile all our shaders now.
-        let part_shader_vert = basic_vert::Shader::new(&device, true, false);
-        let part_shader_frag = basic_frag::Shader::new(&device, true, false);
-        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true, false);
+        let part_shader_vert = basic_vert::Shader::new(&device, true, true);
+        let part_shader_frag = basic_frag::Shader::new(&device, true, true);
+        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true, true);
 
         let masked_depthstencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
@@ -243,8 +247,8 @@ impl WgpuResources {
         let part_mask_pipeline =
             pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
 
-        let composite_shader_vert = composite_vert::Shader::new(&device, false);
-        let composite_shader_frag = composite_frag::Shader::new(&device, true, false);
+        let composite_shader_vert = composite_vert::Shader::new(&device, true);
+        let composite_shader_frag = composite_frag::Shader::new(&device, true, true);
 
         let composite_pipeline = pipeline::PipelineGroup::new(
             composite_shader_vert.clone(),
@@ -333,7 +337,13 @@ impl WgpuResources {
             .read()
             .unwrap()
             .clear_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
+            .with_configuration_cached(
+                formats,
+                blend,
+                write_mask,
+                depth_stencil.clone(),
+                multiview_mask,
+            )
         {
             premade_entry
         } else {
@@ -341,7 +351,14 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .clear_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
+                .with_configuration(
+                    device,
+                    formats,
+                    blend,
+                    write_mask,
+                    depth_stencil,
+                    multiview_mask,
+                )
         }
     }
 
@@ -361,7 +378,13 @@ impl WgpuResources {
             .read()
             .unwrap()
             .mipmap_gen_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
+            .with_configuration_cached(
+                formats,
+                blend,
+                write_mask,
+                depth_stencil.clone(),
+                multiview_mask,
+            )
         {
             premade_entry
         } else {
@@ -369,7 +392,14 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .mipmap_gen_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
+                .with_configuration(
+                    device,
+                    formats,
+                    blend,
+                    write_mask,
+                    depth_stencil,
+                    multiview_mask,
+                )
         }
     }
 
@@ -387,7 +417,13 @@ impl WgpuResources {
             .read()
             .unwrap()
             .part_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
+            .with_configuration_cached(
+                formats,
+                blend,
+                write_mask,
+                depth_stencil.clone(),
+                multiview_mask,
+            )
         {
             premade_entry
         } else {
@@ -395,7 +431,14 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .part_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
+                .with_configuration(
+                    device,
+                    formats,
+                    blend,
+                    write_mask,
+                    depth_stencil,
+                    multiview_mask,
+                )
         }
     }
 
@@ -415,7 +458,13 @@ impl WgpuResources {
             .read()
             .unwrap()
             .part_mask_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
+            .with_configuration_cached(
+                formats,
+                blend,
+                write_mask,
+                depth_stencil.clone(),
+                multiview_mask,
+            )
         {
             premade_entry
         } else {
@@ -423,7 +472,14 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .part_mask_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
+                .with_configuration(
+                    device,
+                    formats,
+                    blend,
+                    write_mask,
+                    depth_stencil,
+                    multiview_mask,
+                )
         }
     }
 
@@ -443,7 +499,13 @@ impl WgpuResources {
             .read()
             .unwrap()
             .composite_pipeline
-            .with_configuration_cached(formats, blend, write_mask, depth_stencil.clone(), multiview_mask)
+            .with_configuration_cached(
+                formats,
+                blend,
+                write_mask,
+                depth_stencil.clone(),
+                multiview_mask,
+            )
         {
             premade_entry
         } else {
@@ -451,7 +513,14 @@ impl WgpuResources {
                 .write()
                 .unwrap()
                 .composite_pipeline
-                .with_configuration(device, formats, blend, write_mask, depth_stencil, multiview_mask)
+                .with_configuration(
+                    device,
+                    formats,
+                    blend,
+                    write_mask,
+                    depth_stencil,
+                    multiview_mask,
+                )
         }
     }
 

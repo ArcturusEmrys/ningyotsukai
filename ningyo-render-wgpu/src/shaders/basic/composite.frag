@@ -16,9 +16,9 @@ layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outEmissive;
 layout(location = 2) out vec4 outBump;
 
-layout(set = 1, binding = 0) uniform texture2DArray albedo_tex;
-layout(set = 1, binding = 1) uniform texture2DArray emissive_tex;
-layout(set = 1, binding = 2) uniform texture2DArray bumpmap_tex;
+layout(set = 1, binding = 0) uniform texture2D albedo_tex;
+layout(set = 1, binding = 1) uniform texture2D emissive_tex;
+layout(set = 1, binding = 2) uniform texture2D bumpmap_tex;
 layout(set = 1, binding = 3) uniform sampler samp;
 
 layout(set = 1, binding = 4) uniform Input {
@@ -28,12 +28,11 @@ layout(set = 1, binding = 4) uniform Input {
 } uni_in;
 
 layout(set = 1, binding = 5) readonly buffer Viewports {
-    uint active_viewports;
     Viewport viewports[];
 } viewports_in;
 
 void main() {
-    if (my_ViewIndex < viewports_in.active_viewports && my_ViewIndex < viewports_in.viewports.length()) {
+    if (my_ViewIndex < viewports_in.viewports.length()) {
         vec2 scissor_origin_tl = viewports_in.viewports[my_ViewIndex].scissor_origin_tl;
         vec2 scissor_origin_br = viewports_in.viewports[my_ViewIndex].scissor_origin_br;
         if (gl_FragCoord.x < scissor_origin_tl.x || scissor_origin_br.x < gl_FragCoord.x) {
@@ -46,7 +45,7 @@ void main() {
     }
 
     // Sample texture
-    vec4 texColor = texture(sampler2DArray(albedo_tex, samp), vec3(texUVs, my_ViewIndex));
+    vec4 texColor = texture(sampler2D(albedo_tex, samp), texUVs);
 
     // Screen color math
     vec3 screenOut = vec3(1.0) - ((vec3(1.0) - (texColor.xyz)) *
@@ -57,8 +56,8 @@ void main() {
         vec4(screenOut.xyz, texColor.a) * vec4(uni_in.multColor.xyz, 1) * uni_in.opacity;
 
     // Emissive
-    outEmissive = texture(sampler2DArray(emissive_tex, samp), vec3(texUVs, my_ViewIndex)) * outAlbedo.a;
+    outEmissive = texture(sampler2D(emissive_tex, samp), texUVs) * outAlbedo.a;
 
     // Bumpmap
-    outBump = texture(sampler2DArray(bumpmap_tex, samp), vec3(texUVs, my_ViewIndex)) * outAlbedo.a;
+    outBump = texture(sampler2D(bumpmap_tex, samp), texUVs) * outAlbedo.a;
 }

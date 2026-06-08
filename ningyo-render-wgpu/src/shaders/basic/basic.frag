@@ -29,12 +29,11 @@ layout(set = 1, binding = 4) uniform Input {
 } uni_in;
 
 layout(set = 1, binding = 5) readonly buffer Viewports {
-    uint active_viewports;
     Viewport viewports[];
 } viewports_in;
 
 void main() {
-    if (my_ViewIndex < viewports_in.active_viewports && my_ViewIndex < viewports_in.viewports.length()) {
+    if (my_ViewIndex < viewports_in.viewports.length()) {
         vec2 scissor_origin_tl = viewports_in.viewports[my_ViewIndex].scissor_origin_tl;
         vec2 scissor_origin_br = viewports_in.viewports[my_ViewIndex].scissor_origin_br;
         if (gl_FragCoord.x < scissor_origin_tl.x || scissor_origin_br.x < gl_FragCoord.x) {

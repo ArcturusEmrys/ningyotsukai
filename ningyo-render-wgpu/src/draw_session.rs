@@ -5,7 +5,6 @@ use inox2d::render::CompositeRenderCtx;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession};
 use std::error::Error;
-use std::num::NonZero;
 use wgpu;
 
 use crate::WgpuRenderer;
@@ -47,7 +46,10 @@ pub struct WgpuDrawSession<'a> {
     pub(crate) encoder: wgpu::CommandEncoder,
 
     /// The output texture to render.
-    pub(crate) view: wgpu::TextureView,
+    pub(crate) color: wgpu::Texture,
+
+    /// A texture view that covers all of the color texture.
+    pub(crate) color_view: wgpu::TextureView,
 
     /// Corresponding stencil buffer for the output texture.
     pub(crate) stencil: DepthStencilTexture,
@@ -79,9 +81,6 @@ pub struct WgpuDrawSession<'a> {
 
     pub(crate) viewports_config: wgpu::Buffer,
 
-    /// The multiview mask indicating which layers we want to render to.
-    pub(crate) multiview_mask: Option<NonZero<u32>>,
-
     last_mask_threshold: f32,
     is_in_mask: bool,
     is_in_composite: bool,
@@ -111,7 +110,8 @@ impl<'a> WgpuDrawSession<'a> {
         #[cfg(feature = "tracy")]
         let encoder_query = resources.start_query(&mut encoder);
 
-        let view = renderer.render_target.lock().unwrap().color_target_view()?;
+        let color = renderer.render_target.lock().unwrap().color_target()?;
+        let color_view = renderer.render_target.lock().unwrap().color_target_view()?;
         let composite = renderer.render_target.lock().unwrap().composite()?.clone();
         let stencil = renderer.render_target.lock().unwrap().stencil()?.clone();
 
@@ -126,9 +126,6 @@ impl<'a> WgpuDrawSession<'a> {
 
         let device = resources.device.clone();
 
-        let layer_count = renderer.render_target.lock().unwrap().color_target()?.depth_or_array_layers();
-        let multiview_mask = NonZero::new((1 << layer_count) - 1);
-
         let mut session = WgpuDrawSession {
             resources,
             uploads: &renderer.uploads,
@@ -139,7 +136,8 @@ impl<'a> WgpuDrawSession<'a> {
             builder_composite_frag: &mut renderer.builder_composite_frag,
             device,
             encoder,
-            view,
+            color,
+            color_view,
             composite,
             stencil,
             artboard_matrix,
@@ -162,7 +160,6 @@ impl<'a> WgpuDrawSession<'a> {
                 .unwrap()
                 .viewports_config()?
                 .clone(),
-            multiview_mask,
 
             #[cfg(feature = "tracy")]
             encoder_query,
