@@ -87,6 +87,12 @@ pub struct WgpuDrawSession<'a> {
 
     #[cfg(feature = "tracy")]
     encoder_query: wgpu_profiler::GpuProfilerQuery,
+
+    #[cfg(feature = "timing")]
+    start_time: std::time::Instant,
+
+    #[cfg(feature = "timing")]
+    last_lap_time: std::time::Instant,
 }
 
 impl<'a> WgpuDrawSession<'a> {
@@ -94,6 +100,9 @@ impl<'a> WgpuDrawSession<'a> {
         renderer: &'a mut WgpuRenderer<'_>,
         puppet: &inox2d::puppet::Puppet,
     ) -> Result<Self, Box<dyn Error>> {
+        #[cfg(feature = "timing")]
+        let start_time = std::time::Instant::now();
+
         let resources = &*renderer.resources;
 
         #[allow(unused_mut)]
@@ -156,11 +165,34 @@ impl<'a> WgpuDrawSession<'a> {
 
             #[cfg(feature = "tracy")]
             encoder_query,
+
+            #[cfg(feature = "timing")]
+            last_lap_time: start_time.clone(),
+
+            #[cfg(feature = "timing")]
+            start_time,
         };
 
         session.buffer_prepass(puppet);
 
+        #[cfg(feature = "timing")]
+        session.lap("Buffer prepass");
+
         Ok(session)
+    }
+
+    #[cfg(feature = "timing")]
+    fn lap(&mut self, feature: &str) {
+        let this_lap_time = std::time::Instant::now();
+        let duration = this_lap_time - self.last_lap_time;
+
+        self.last_lap_time = this_lap_time;
+
+        eprintln!(
+            "    {}: {}ms",
+            feature,
+            duration.as_micros() as f32 / 1000.0
+        );
     }
 
     /// Fill our uniform buffers with all the data we will need during
@@ -376,7 +408,13 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
     }
 
     fn on_end_draw(mut self, puppet: &inox2d::puppet::Puppet) {
+        #[cfg(feature = "timing")]
+        self.lap("Tree walk");
+
         DrawCommandList::flush(&mut self, puppet);
+
+        #[cfg(feature = "timing")]
+        self.lap("Command encoding");
 
         #[cfg(feature = "tracy")]
         {
@@ -386,5 +424,15 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
 
         let end = self.encoder.finish();
         *self.last_submission_index = Some(self.resources.queue.submit(std::iter::once(end)));
+
+        #[cfg(feature = "timing")]
+        {
+            let this_lap_time = std::time::Instant::now();
+            let lap_time = this_lap_time - self.last_lap_time;
+            eprintln!("    Submission: {}ms", lap_time.as_micros() as f32 / 1000.0);
+
+            let total_time = this_lap_time - self.start_time;
+            eprintln!("    (Total): {}ms", total_time.as_micros() as f32 / 1000.0);
+        }
     }
 }

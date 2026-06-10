@@ -288,6 +288,9 @@ impl RenderThread {
         #[cfg(feature = "timing")]
         self.lap("Viewport alloc");
 
+        #[cfg(feature = "timing")]
+        eprintln!("  Render:");
+
         for renderer in self.renderers.iter_mut() {
             if let Err(e) = renderer.render() {
                 eprintln!("Renderer error: {}", e);
