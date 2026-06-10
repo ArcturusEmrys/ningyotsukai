@@ -48,9 +48,6 @@ pub struct WgpuDrawSession<'a> {
     /// The output texture to render.
     pub(crate) color: wgpu::Texture,
 
-    /// A texture view that covers all of the color texture.
-    pub(crate) color_view: wgpu::TextureView,
-
     /// Corresponding stencil buffer for the output texture.
     pub(crate) stencil: DepthStencilTexture,
 
@@ -111,11 +108,8 @@ impl<'a> WgpuDrawSession<'a> {
         let encoder_query = resources.start_query(&mut encoder);
 
         let color = renderer.render_target.lock().unwrap().color_target()?;
-        let color_view = renderer.render_target.lock().unwrap().color_target_view()?;
         let composite = renderer.render_target.lock().unwrap().composite()?.clone();
         let stencil = renderer.render_target.lock().unwrap().stencil()?.clone();
-
-        //TODO: read & translate OpenGLRenderer's `on_begin_draw` / `on_end_draw`
 
         let node_names = puppet
             .nodes()
@@ -137,7 +131,6 @@ impl<'a> WgpuDrawSession<'a> {
             device,
             encoder,
             color,
-            color_view,
             composite,
             stencil,
             artboard_matrix,
@@ -310,7 +303,8 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         }
 
         if !masks_are_equal {
-            self.draw_commands.clear_current_stencil();
+            self.draw_commands
+                .clear_current_stencil(self.is_in_composite);
 
             self.last_mask_threshold = masks.threshold;
             self.last_mask = masks
@@ -354,6 +348,7 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
             self.stencil_reference_value,
             id,
             render_ctx,
+            self.is_in_composite,
         );
     }
 
@@ -375,6 +370,7 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         _render_ctx: &render::CompositeRenderCtx,
         id: InoxNodeUuid,
     ) {
+        self.is_in_composite = false;
         self.draw_commands
             .end_composite(render_mask, self.is_in_mask, id);
     }

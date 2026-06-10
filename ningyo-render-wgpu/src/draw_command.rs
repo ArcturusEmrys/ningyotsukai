@@ -1,5 +1,3 @@
-use std::num::NonZero;
-
 use inox2d::node::InoxNodeUuid;
 use inox2d::node::components;
 use inox2d::node::drawables::DrawableKind;
@@ -14,13 +12,16 @@ use crate::texture::TextureViewExt;
 use crate::uploads::WgpuUploads;
 
 pub enum DrawCommand {
-    ClearCurrentStencil,
+    ClearCurrentStencil {
+        to_composite: bool,
+    },
     DrawPart {
         render_mask: bool,
         using_mask: bool,
         stencil_reference: u32,
         id: InoxNodeUuid,
         render_ctx: render::TexturedMeshRenderCtx,
+        to_composite: bool,
     },
     BeginComposite,
     EndComposite {
@@ -81,8 +82,9 @@ impl DrawCommandList {
         }
     }
 
-    pub fn clear_current_stencil(&mut self) {
-        self.commands.push(DrawCommand::ClearCurrentStencil);
+    pub fn clear_current_stencil(&mut self, to_composite: bool) {
+        self.commands
+            .push(DrawCommand::ClearCurrentStencil { to_composite });
     }
 
     pub fn draw_part(
@@ -92,6 +94,7 @@ impl DrawCommandList {
         stencil_reference: u32,
         id: InoxNodeUuid,
         render_ctx: &render::TexturedMeshRenderCtx,
+        to_composite: bool,
     ) {
         self.commands.push(DrawCommand::DrawPart {
             render_mask,
@@ -104,6 +107,7 @@ impl DrawCommandList {
                 vert_offset: render_ctx.vert_offset,
                 vert_len: render_ctx.vert_len,
             },
+            to_composite,
         });
     }
 
@@ -131,7 +135,6 @@ impl DrawCommandList {
     }
 
     pub fn flush(draw_session: &mut WgpuDrawSession<'_>, puppet: &inox2d::puppet::Puppet) {
-        let mut is_in_composite = false;
         let me = &mut draw_session.draw_commands;
 
         let color = &draw_session.color;
@@ -165,7 +168,7 @@ impl DrawCommandList {
 
             for command in me.commands.iter() {
                 match command {
-                    DrawCommand::ClearCurrentStencil if is_in_composite => {
+                    DrawCommand::ClearCurrentStencil { to_composite: true } => {
                         if render_pass.is_none() {
                             render_pass = None; //Borrowck can't tell otherwise
                             composite.stencil().clear(&mut draw_session.encoder);
@@ -174,14 +177,15 @@ impl DrawCommandList {
                             composite.stencil().clear_with_render_pass(
                                 &draw_session.device,
                                 render_pass,
-                                &mut draw_session.resources,
+                                &draw_session.resources,
                                 &composite.as_color_attachments(), //NOTE: this does not actually write to these
                                 multiview_mask,
                             );
                         }
                     }
-                    DrawCommand::ClearCurrentStencil => {
-                        // !is_in_composite
+                    DrawCommand::ClearCurrentStencil {
+                        to_composite: false,
+                    } => {
                         if render_pass.is_none() {
                             render_pass = None;
                             stencil.clear(&mut draw_session.encoder);
@@ -190,7 +194,7 @@ impl DrawCommandList {
                             stencil.clear_with_render_pass(
                                 &draw_session.device,
                                 render_pass,
-                                &mut draw_session.resources,
+                                &draw_session.resources,
                                 &[Some(color_view.as_color_attachment()), None, None],
                                 multiview_mask,
                             );
@@ -202,6 +206,7 @@ impl DrawCommandList {
                         stencil_reference,
                         id,
                         render_ctx,
+                        to_composite,
                     } => {
                         let comps = puppet.world();
                         let drawable = DrawableKind::new(*id, comps, false).unwrap();
@@ -217,14 +222,14 @@ impl DrawCommandList {
                             Some(composite_bump_view.as_color_attachment()),
                         ];
                         let unmasked_attach = [surface_color_attach, None, None];
-                        let color_attachments = if is_in_composite {
+                        let color_attachments = if *to_composite {
                             gbuffer_color.as_slice()
                         } else {
                             unmasked_attach.as_slice()
                         };
 
                         if render_pass.is_none() {
-                            let depth_stencil_attachment = if is_in_composite {
+                            let depth_stencil_attachment = if *to_composite {
                                 Some(composite_stencil_view.as_depth_stencil_attachment())
                             } else {
                                 Some(stencil_view.as_depth_stencil_attachment())
@@ -402,7 +407,6 @@ impl DrawCommandList {
                     DrawCommand::BeginComposite => {
                         render_pass = None;
                         composite.clear(&mut draw_session.encoder);
-                        is_in_composite = true;
                     }
                     DrawCommand::EndComposite {
                         render_mask,
@@ -415,9 +419,6 @@ impl DrawCommandList {
                             DrawableKind::Composite(components) => components,
                             DrawableKind::TexturedMesh(_) => unreachable!(),
                         };
-
-                        assert!(is_in_composite);
-                        is_in_composite = false;
 
                         let depth_stencil_attachment =
                             Some(stencil_view.as_depth_stencil_attachment());
