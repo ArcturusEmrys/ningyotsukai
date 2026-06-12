@@ -10,8 +10,6 @@ use std::sync::RwLock;
 
 use glam::Vec2;
 use wgpu;
-#[cfg(feature = "tracy")]
-use wgpu::CommandEncoder;
 use wgpu::util::DeviceExt;
 
 use crate::error::WgpuRendererError;
@@ -83,6 +81,19 @@ impl Debug for WgpuResourcesMutable {
             .field("part_mask_pipeline", &self.part_mask_pipeline)
             .field("composite_pipeline", &self.composite_pipeline)
             .finish()
+    }
+}
+
+pub struct CommandEncoderWrapper {
+    encoder: wgpu::CommandEncoder,
+
+    #[cfg(feature = "tracy")]
+    perf_query: wgpu_profiler::GpuProfilerQuery,
+}
+
+impl CommandEncoderWrapper {
+    pub fn encoder(&mut self) -> &mut wgpu::CommandEncoder {
+        &mut self.encoder
     }
 }
 
@@ -524,26 +535,34 @@ impl WgpuResources {
         }
     }
 
-    #[cfg(feature = "tracy")]
-    pub fn start_query(&self, encoder: &mut CommandEncoder) -> wgpu_profiler::GpuProfilerQuery {
-        self.pipelines
+    pub fn create_encoder(&self, desc: &wgpu::CommandEncoderDescriptor) -> CommandEncoderWrapper {
+        let mut encoder = self.device.create_command_encoder(desc);
+
+        #[cfg(feature = "tracy")]
+        let perf_query = self
+            .pipelines
             .write()
             .unwrap()
             .profiler
-            .begin_query("WgpuDrawSession::begin", encoder)
+            .begin_query("WgpuDrawSession::begin", &mut encoder);
+
+        CommandEncoderWrapper {
+            encoder,
+
+            #[cfg(feature = "tracy")]
+            perf_query,
+        }
     }
 
-    #[cfg(feature = "tracy")]
-    pub fn end_query(
-        &self,
-        encoder: &mut CommandEncoder,
-        encoder_query: wgpu_profiler::GpuProfilerQuery,
-    ) {
+    pub fn finish_encoding(&self, mut encoder: CommandEncoderWrapper) -> wgpu::CommandBuffer {
+        #[cfg(feature = "tracy")]
         self.pipelines
             .write()
             .unwrap()
             .profiler
-            .end_query(encoder, encoder_query);
+            .end_query(&mut encoder.encoder, encoder.perf_query);
+
+        encoder.encoder.finish()
     }
 
     /// End the current profiler frame.

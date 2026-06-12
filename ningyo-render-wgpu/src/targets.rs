@@ -200,7 +200,7 @@ impl<'surf> OutputConfiguration<'surf> {
 }
 
 /// An allocated set of output textures for a given renderer context.
-struct RenderOutput {
+pub struct RenderOutput {
     /// The output render target for color.
     ///
     /// Note that if we are rendering to a surface, we can only render one
@@ -212,10 +212,32 @@ struct RenderOutput {
 
     /// All targets for composite rendering.
     composite_target: GBuffer,
+
+    /// Individual layer views for the color texture.
+    color_layer_views: Vec<wgpu::TextureView>,
+
+    /// Individual layer views for the stencil target.
+    stencil_layer_views: Vec<wgpu::TextureView>,
+
+    /// Individual layer views for the composite buffer's albedo target.
+    composite_albedo_layer_views: Vec<wgpu::TextureView>,
+
+    /// Individual layer views for the composite buffer's emissive target.
+    composite_emissive_layer_views: Vec<wgpu::TextureView>,
+
+    /// Individual layer views for the composite buffer's bump target.
+    composite_bump_layer_views: Vec<wgpu::TextureView>,
+
+    /// Individual layer views for the composite buffer's stencil target.
+    composite_stencil_layer_views: Vec<wgpu::TextureView>,
 }
 
 impl RenderOutput {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue, config: &OutputConfiguration) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config: &OutputConfiguration,
+    ) -> Result<Self, WgpuRendererError> {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Ningyo WGPU Render Output Texture Creation"),
         });
@@ -224,45 +246,88 @@ impl RenderOutput {
         let height = config.max_height();
         let layers = config.layers();
 
+        let (color_target, color_texture) = match config {
+            OutputConfiguration::Surface(surface, _, _) => (
+                ColorOutput::Surface,
+                surface
+                    .get_current_texture()
+                    .as_surface_texture()?
+                    .texture
+                    .texture
+                    .clone(),
+            ),
+            OutputConfiguration::Texture(_, format) => {
+                let texture = DeviceTexture::empty_render_target(
+                    device,
+                    &mut encoder,
+                    width,
+                    height,
+                    layers,
+                    *format,
+                );
+                let out_tex = texture.texture().clone();
+                (ColorOutput::Texture(texture), out_tex)
+            }
+            OutputConfiguration::UserTarget(target, _) => (
+                ColorOutput::Texture(target.clone()),
+                target.texture().clone(),
+            ),
+        };
+        let stencil_target = DepthStencilTexture::empty_render_target(
+            device,
+            &mut encoder,
+            width,
+            height,
+            layers,
+            wgpu::TextureFormat::Depth24PlusStencil8,
+        );
+        let composite_target = GBuffer::new(
+            device,
+            &mut encoder,
+            width,
+            height,
+            layers,
+            //TODO: Wait, why? Nothing we work with is HDR.
+            wgpu::TextureFormat::Rgba16Float,
+            //TODO: You know wgpu has a stencil only format, right?
+            wgpu::TextureFormat::Depth24PlusStencil8,
+        );
+        let mut color_layer_views = vec![];
+        let mut stencil_layer_views = vec![];
+        let mut composite_albedo_layer_views = vec![];
+        let mut composite_emissive_layer_views = vec![];
+        let mut composite_bump_layer_views = vec![];
+        let mut composite_stencil_layer_views = vec![];
+
+        for layer in 0..layers {
+            color_layer_views.push(color_texture.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2),
+                base_array_layer: layer,
+                array_layer_count: Some(1),
+                ..Default::default()
+            }));
+            stencil_layer_views.push(stencil_target.layer_view(layer));
+            composite_albedo_layer_views.push(composite_target.albedo().layer_view(layer));
+            composite_emissive_layer_views.push(composite_target.emissive().layer_view(layer));
+            composite_bump_layer_views.push(composite_target.bump().layer_view(layer));
+            composite_stencil_layer_views.push(composite_target.stencil().layer_view(layer));
+        }
+
         let me = Self {
-            color_target: match config {
-                OutputConfiguration::Surface(_, _, _) => ColorOutput::Surface,
-                OutputConfiguration::Texture(_, format) => {
-                    ColorOutput::Texture(DeviceTexture::empty_render_target(
-                        device,
-                        &mut encoder,
-                        width,
-                        height,
-                        layers,
-                        *format,
-                    ))
-                }
-                OutputConfiguration::UserTarget(target, _) => ColorOutput::Texture(target.clone()),
-            },
-            stencil_target: DepthStencilTexture::empty_render_target(
-                device,
-                &mut encoder,
-                width,
-                height,
-                layers,
-                wgpu::TextureFormat::Depth24PlusStencil8,
-            ),
-            composite_target: GBuffer::new(
-                device,
-                &mut encoder,
-                width,
-                height,
-                layers,
-                //TODO: Wait, why? Nothing we work with is HDR.
-                wgpu::TextureFormat::Rgba16Float,
-                //TODO: You know wgpu has a stencil only format, right?
-                wgpu::TextureFormat::Depth24PlusStencil8,
-            ),
+            color_target,
+            stencil_target,
+            composite_target,
+            color_layer_views,
+            stencil_layer_views,
+            composite_albedo_layer_views,
+            composite_emissive_layer_views,
+            composite_bump_layer_views,
+            composite_stencil_layer_views,
         };
 
         queue.submit(std::iter::once(encoder.finish()));
 
-        me
+        Ok(me)
     }
 
     /// Determine if the given render configuration is compatible with the
@@ -314,6 +379,74 @@ impl RenderOutput {
             && self.stencil_target.texture().width() >= reqd_width
             && self.stencil_target.texture().height() >= reqd_height
             && self.stencil_target.texture().depth_or_array_layers() >= reqd_layers
+    }
+
+    pub fn composite(&self) -> &GBuffer {
+        &self.composite_target
+    }
+
+    pub fn stencil(&self) -> &DepthStencilTexture {
+        &self.stencil_target
+    }
+
+    /// Retrieve a view for a single layer of the color target.
+    pub fn color_target_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.color_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
+    }
+
+    /// Retrieve a view for a single layer of the stencil target.
+    pub fn stencil_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.stencil_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
+    }
+
+    /// Retrieve a view for a single layer of the composite albedo target.
+    pub fn composite_albedo_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.composite_albedo_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
+    }
+
+    /// Retrieve a view for a single layer of the composite emissive target.
+    pub fn composite_emissive_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.composite_emissive_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
+    }
+
+    /// Retrieve a view for a single layer of the composite bump target.
+    pub fn composite_bump_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.composite_bump_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
+    }
+
+    /// Retrieve a view for a single layer of the composite stencil target.
+    pub fn composite_stencil_layer_view(
+        &self,
+        layer: usize,
+    ) -> Result<&wgpu::TextureView, WgpuRendererError> {
+        self.composite_stencil_layer_views
+            .get(layer)
+            .ok_or(WgpuRendererError::InvalidViewportId(layer))
     }
 }
 
@@ -493,7 +626,11 @@ impl<'surf> RenderTarget<'surf> {
     }
 
     /// Apply prior configuration changes.
-    pub fn apply(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    pub fn apply(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), WgpuRendererError> {
         if self.outputs.is_none()
             || !self
                 .outputs
@@ -501,7 +638,7 @@ impl<'surf> RenderTarget<'surf> {
                 .unwrap()
                 .is_compatible_with_configuration(&self.config)
         {
-            self.outputs = Some(RenderOutput::new(device, queue, &self.config));
+            self.outputs = Some(RenderOutput::new(device, queue, &self.config)?);
         }
 
         //TODO: We should have a flag to check if the viewport configuration
@@ -518,7 +655,7 @@ impl<'surf> RenderTarget<'surf> {
         if let Some(buffer) = self.viewports_buffer.as_ref() {
             if buffer.size() >= viewports_config.required_size() as u64 {
                 queue.write_buffer(buffer, 0, &data[..]);
-                return;
+                return Ok(());
             }
         }
 
@@ -529,6 +666,8 @@ impl<'surf> RenderTarget<'surf> {
                 usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             },
         ));
+
+        Ok(())
     }
 
     /// Retrieve the current surface, if surface rendering is enabled.
@@ -625,6 +764,13 @@ impl<'surf> RenderTarget<'surf> {
         self.outputs
             .as_ref()
             .map(|o| &o.stencil_target)
+            .ok_or(WgpuRendererError::ViewportNotInitialized)
+    }
+
+    /// Get the current set of output textures.
+    pub fn outputs(&self) -> Result<&RenderOutput, WgpuRendererError> {
+        self.outputs
+            .as_ref()
             .ok_or(WgpuRendererError::ViewportNotInitialized)
     }
 

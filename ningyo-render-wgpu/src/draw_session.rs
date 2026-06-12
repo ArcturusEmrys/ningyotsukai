@@ -5,14 +5,14 @@ use inox2d::render::CompositeRenderCtx;
 //hey wait a second that's just a u32 newtype! UUIDs are four of those!
 use inox2d::render::{self, DrawSession};
 use std::error::Error;
+use std::sync::MutexGuard;
 use wgpu;
 
-use crate::WgpuRenderer;
 use crate::buffer_builder::BufferBuilder;
 use crate::camera::CameraExt;
 use crate::draw_command::DrawCommandList;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
-use crate::texture::{DepthStencilTexture, GBuffer};
+use crate::{RenderTarget, WgpuRenderer};
 
 use std::collections::HashMap;
 
@@ -21,7 +21,7 @@ use crate::renderer::BufferIndices;
 use crate::resources::WgpuResources;
 use crate::uploads::WgpuUploads;
 
-pub struct WgpuDrawSession<'a> {
+pub struct WgpuDrawSession<'a, 'window> {
     /// The rendering resources for this draw session.
     ///
     /// We keep the resources locked throughout the draw session to avoid
@@ -37,22 +37,13 @@ pub struct WgpuDrawSession<'a> {
     pub(crate) builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
     pub(crate) builder_composite_frag: &'a mut BufferBuilder<composite_frag::Input>,
 
-    pub(crate) binding_cache: &'a mut BindingCache,
+    pub(crate) binding_cache: &'a mut BindingCache<'static>,
 
     /// Local clone of the device (to avoid overlapping borrows.)
     pub(crate) device: wgpu::Device,
 
-    /// The drawing session's command encoder.
-    pub(crate) encoder: wgpu::CommandEncoder,
-
-    /// The output texture to render.
-    pub(crate) color: wgpu::Texture,
-
-    /// Corresponding stencil buffer for the output texture.
-    pub(crate) stencil: DepthStencilTexture,
-
-    /// The compositing buffers.
-    pub(crate) composite: GBuffer,
+    /// The current render target.
+    pub(crate) render_target: MutexGuard<'a, RenderTarget<'window>>,
 
     /// The renderer's camera position as an artboard-space matrix
     pub(crate) artboard_matrix: glam::Mat4,
@@ -85,19 +76,16 @@ pub struct WgpuDrawSession<'a> {
 
     last_mask: Vec<(InoxNodeUuid, MaskMode)>,
 
-    #[cfg(feature = "tracy")]
-    encoder_query: wgpu_profiler::GpuProfilerQuery,
+    #[cfg(feature = "timing")]
+    pub start_time: std::time::Instant,
 
     #[cfg(feature = "timing")]
-    start_time: std::time::Instant,
-
-    #[cfg(feature = "timing")]
-    last_lap_time: std::time::Instant,
+    pub last_lap_time: std::time::Instant,
 }
 
-impl<'a> WgpuDrawSession<'a> {
+impl<'a, 'window> WgpuDrawSession<'a, 'window> {
     pub fn begin(
-        renderer: &'a mut WgpuRenderer<'_>,
+        renderer: &'a mut WgpuRenderer<'window>,
         puppet: &inox2d::puppet::Puppet,
     ) -> Result<Self, Box<dyn Error>> {
         #[cfg(feature = "timing")]
@@ -105,20 +93,7 @@ impl<'a> WgpuDrawSession<'a> {
 
         let resources = &*renderer.resources;
 
-        #[allow(unused_mut)]
-        let mut encoder =
-            resources
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("Inox2DWGPU"),
-                });
-
-        #[cfg(feature = "tracy")]
-        let encoder_query = resources.start_query(&mut encoder);
-
-        let color = renderer.render_target.lock().unwrap().color_target()?;
-        let composite = renderer.render_target.lock().unwrap().composite()?.clone();
-        let stencil = renderer.render_target.lock().unwrap().stencil()?.clone();
+        let render_target = renderer.render_target.lock().unwrap();
 
         let node_names = puppet
             .nodes()
@@ -138,10 +113,8 @@ impl<'a> WgpuDrawSession<'a> {
             builder_basic_mask_frag: &mut renderer.builder_basic_mask_frag,
             builder_composite_frag: &mut renderer.builder_composite_frag,
             device,
-            encoder,
-            color,
-            composite,
-            stencil,
+            viewports_config: render_target.viewports_config()?.clone(),
+            render_target,
             artboard_matrix,
             node_names,
             last_mask_threshold: 0.0,
@@ -156,15 +129,6 @@ impl<'a> WgpuDrawSession<'a> {
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
-            viewports_config: renderer
-                .render_target
-                .lock()
-                .unwrap()
-                .viewports_config()?
-                .clone(),
-
-            #[cfg(feature = "tracy")]
-            encoder_query,
 
             #[cfg(feature = "timing")]
             last_lap_time: start_time.clone(),
@@ -182,17 +146,22 @@ impl<'a> WgpuDrawSession<'a> {
     }
 
     #[cfg(feature = "timing")]
-    fn lap(&mut self, feature: &str) {
+    pub fn lap_time(feature: &str, last_lap_time: &mut std::time::Instant) {
         let this_lap_time = std::time::Instant::now();
-        let duration = this_lap_time - self.last_lap_time;
+        let duration = this_lap_time - *last_lap_time;
 
-        self.last_lap_time = this_lap_time;
+        *last_lap_time = this_lap_time;
 
         eprintln!(
             "    {}: {}ms",
             feature,
             duration.as_micros() as f32 / 1000.0
         );
+    }
+
+    #[cfg(feature = "timing")]
+    pub fn lap(&mut self, feature: &str) {
+        Self::lap_time(feature, &mut self.last_lap_time)
     }
 
     /// Fill our uniform buffers with all the data we will need during
@@ -322,7 +291,7 @@ impl<'a> WgpuDrawSession<'a> {
     }
 }
 
-impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
+impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
     fn on_begin_masks(&mut self, masks: &components::Masks) {
         let mut masks_are_equal = masks.threshold == self.last_mask_threshold
             && masks.masks.len() == self.last_mask.len();
@@ -411,26 +380,14 @@ impl<'a> DrawSession<'a> for WgpuDrawSession<'a> {
         #[cfg(feature = "timing")]
         self.lap("Tree walk");
 
-        DrawCommandList::flush(&mut self, puppet);
+        *self.last_submission_index = DrawCommandList::flush(&mut self, puppet);
 
         #[cfg(feature = "timing")]
-        self.lap("Command encoding");
-
-        #[cfg(feature = "tracy")]
-        {
-            self.resources
-                .end_query(&mut self.encoder, self.encoder_query);
-        }
-
-        let end = self.encoder.finish();
-        *self.last_submission_index = Some(self.resources.queue.submit(std::iter::once(end)));
+        self.lap("Misc");
 
         #[cfg(feature = "timing")]
         {
             let this_lap_time = std::time::Instant::now();
-            let lap_time = this_lap_time - self.last_lap_time;
-            eprintln!("    Submission: {}ms", lap_time.as_micros() as f32 / 1000.0);
-
             let total_time = this_lap_time - self.start_time;
             eprintln!("    (Total): {}ms", total_time.as_micros() as f32 / 1000.0);
         }

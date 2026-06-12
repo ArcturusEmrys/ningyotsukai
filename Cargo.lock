@@ -1751,6 +1751,7 @@ dependencies = [
  "glam",
  "inox2d",
  "ningyo-extensions",
+ "rayon",
  "shaderc",
  "spirv-reflect",
  "thiserror 1.0.69",

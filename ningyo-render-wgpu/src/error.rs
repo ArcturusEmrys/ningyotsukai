@@ -18,4 +18,7 @@ pub enum WgpuRendererError {
 
     #[error("Viewport not yet initialized")]
     ViewportNotInitialized,
+
+    #[error("The viewport ID {0} is not defined")]
+    InvalidViewportId(usize),
 }

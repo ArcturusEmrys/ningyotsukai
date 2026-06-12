@@ -63,7 +63,7 @@ pub struct WgpuRenderer<'window> {
     /// An index into the buffers for each node.
     pub(crate) buffer_indices: HashMap<u32, BufferIndices>,
 
-    pub(crate) bind_cache: BindingCache,
+    pub(crate) bind_cache: BindingCache<'static>,
 
     /// Static resources common to all renderers rendering the same puppet.
     pub(crate) uploads: WgpuUploads,
@@ -182,7 +182,7 @@ impl<'window> WgpuRenderer<'window> {
 
 impl<'window> InoxRenderer for WgpuRenderer<'window> {
     type Draw<'a>
-        = WgpuDrawSession<'a>
+        = WgpuDrawSession<'a, 'window>
     where
         Self: 'a;
 

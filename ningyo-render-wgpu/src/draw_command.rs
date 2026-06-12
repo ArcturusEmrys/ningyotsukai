@@ -2,6 +2,7 @@ use inox2d::node::InoxNodeUuid;
 use inox2d::node::components;
 use inox2d::node::drawables::DrawableKind;
 use inox2d::render;
+use rayon::current_num_threads;
 
 use crate::draw_session::WgpuDrawSession;
 use crate::shader::UniformBlock;
@@ -10,6 +11,10 @@ use crate::shaders::basic::basic_vert;
 use crate::texture::DeviceTexture;
 use crate::texture::TextureViewExt;
 use crate::uploads::WgpuUploads;
+
+use rayon::prelude::*;
+
+use std::cmp::max;
 
 pub enum DrawCommand {
     ClearCurrentStencil {
@@ -134,405 +139,459 @@ impl DrawCommandList {
         )
     }
 
-    pub fn flush(draw_session: &mut WgpuDrawSession<'_>, puppet: &inox2d::puppet::Puppet) {
+    pub fn flush(
+        draw_session: &mut WgpuDrawSession<'_, '_>,
+        puppet: &inox2d::puppet::Puppet,
+    ) -> Option<wgpu::SubmissionIndex> {
         let me = &mut draw_session.draw_commands;
-
-        let color = &draw_session.color;
-        let composite = &draw_session.composite;
-        let stencil = &draw_session.stencil;
         let viewports_config = &draw_session.viewports_config;
+        let outputs = draw_session.render_target.outputs().unwrap();
+        let composite = outputs.composite();
+        let stencil = outputs.stencil();
 
         let masked_depthstencil = draw_session.resources.masked_depthstencil.clone();
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
         let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
 
-        // Issue an entirely separate set of drawing commands for each layer in
-        // the target texture. We have to do this because wgpu's shader
-        // translation is breaking our access to the View Index parameter.
-        // The good news is, we'd have to do this anyway for atlassing, soooo
-        for current_layer in 0..color.depth_or_array_layers() {
-            let multiview_mask = None;
-            let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
+        let num_layers = draw_session
+            .render_target
+            .color_target()
+            .unwrap()
+            .depth_or_array_layers();
+        let optimal_chunk_size = max(me.commands.len() / current_num_threads() * 2, 1);
 
-            let color_view = color.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2),
-                base_array_layer: current_layer,
-                array_layer_count: Some(1),
-                ..Default::default()
-            });
-            let stencil_view = stencil.layer_view(current_layer);
-            let composite_albedo_view = composite.albedo().layer_view(current_layer);
-            let composite_emissive_view = composite.emissive().layer_view(current_layer);
-            let composite_bump_view = composite.bump().layer_view(current_layer);
-            let composite_stencil_view = composite.stencil().layer_view(current_layer);
+        let mut submission_index = None;
 
-            for command in me.commands.iter() {
-                match command {
-                    DrawCommand::ClearCurrentStencil { to_composite: true } => {
-                        if render_pass.is_none() {
-                            render_pass = None; //Borrowck can't tell otherwise
-                            composite.stencil().clear(&mut draw_session.encoder);
-                        } else {
-                            let render_pass = render_pass.as_mut().unwrap();
-                            composite.stencil().clear_with_render_pass(
-                                &draw_session.device,
-                                render_pass,
-                                &draw_session.resources,
-                                &composite.as_color_attachments(), //NOTE: this does not actually write to these
-                                multiview_mask,
-                            );
-                        }
-                    }
-                    DrawCommand::ClearCurrentStencil {
-                        to_composite: false,
-                    } => {
-                        if render_pass.is_none() {
-                            render_pass = None;
-                            stencil.clear(&mut draw_session.encoder);
-                        } else {
-                            let render_pass = render_pass.as_mut().unwrap();
-                            stencil.clear_with_render_pass(
-                                &draw_session.device,
-                                render_pass,
-                                &draw_session.resources,
-                                &[Some(color_view.as_color_attachment()), None, None],
-                                multiview_mask,
-                            );
-                        }
-                    }
-                    DrawCommand::DrawPart {
-                        render_mask,
-                        using_mask,
-                        stencil_reference,
-                        id,
-                        render_ctx,
-                        to_composite,
-                    } => {
-                        let comps = puppet.world();
-                        let drawable = DrawableKind::new(*id, comps, false).unwrap();
-                        let components = match &drawable {
-                            DrawableKind::Composite(_) => unreachable!(),
-                            DrawableKind::TexturedMesh(components) => components,
-                        };
+        let commands: Vec<_> = me
+            .commands
+            .par_chunks(optimal_chunk_size)
+            .map(|commands| {
+                let mut encoder =
+                    draw_session
+                        .resources
+                        .create_encoder(&wgpu::CommandEncoderDescriptor {
+                            label: Some("DrawCommandList::flush"),
+                        });
+                let mut binding_cache = draw_session.binding_cache.split();
+                let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
 
-                        let surface_color_attach = Some(color_view.as_color_attachment());
-                        let gbuffer_color = [
-                            Some(composite_albedo_view.as_color_attachment()),
-                            Some(composite_emissive_view.as_color_attachment()),
-                            Some(composite_bump_view.as_color_attachment()),
-                        ];
-                        let unmasked_attach = [surface_color_attach, None, None];
-                        let color_attachments = if *to_composite {
-                            gbuffer_color.as_slice()
-                        } else {
-                            unmasked_attach.as_slice()
-                        };
+                // Issue an entirely separate set of drawing commands for each layer in
+                // the target texture. We have to do this because wgpu's shader
+                // translation is breaking our access to the View Index parameter.
+                // The good news is, we'd have to do this anyway for atlassing, soooo
+                for current_layer in 0..num_layers as usize {
+                    let multiview_mask = None;
 
-                        if render_pass.is_none() {
-                            let depth_stencil_attachment = if *to_composite {
-                                Some(composite_stencil_view.as_depth_stencil_attachment())
-                            } else {
-                                Some(stencil_view.as_depth_stencil_attachment())
-                            };
+                    let color_view = outputs.color_target_layer_view(current_layer).unwrap();
+                    let stencil_view = outputs.stencil_layer_view(current_layer).unwrap();
+                    let composite_albedo_view =
+                        outputs.composite_albedo_layer_view(current_layer).unwrap();
+                    let composite_emissive_view = outputs
+                        .composite_emissive_layer_view(current_layer)
+                        .unwrap();
+                    let composite_bump_view =
+                        outputs.composite_bump_layer_view(current_layer).unwrap();
+                    let composite_stencil_view =
+                        outputs.composite_stencil_layer_view(current_layer).unwrap();
 
-                            drop(render_pass);
+                    for command in commands.iter() {
+                        match command {
+                            DrawCommand::ClearCurrentStencil { to_composite: true } => {
+                                if render_pass.is_none() {
+                                    render_pass = None; //Borrowck can't tell otherwise
+                                    composite.stencil().clear(encoder.encoder());
+                                } else {
+                                    let render_pass = render_pass.as_mut().unwrap();
+                                    composite.stencil().clear_with_render_pass(
+                                        &draw_session.device,
+                                        render_pass,
+                                        &draw_session.resources,
+                                        &composite.as_color_attachments(), //NOTE: this does not actually write to these
+                                        multiview_mask,
+                                    );
+                                }
+                            }
+                            DrawCommand::ClearCurrentStencil {
+                                to_composite: false,
+                            } => {
+                                if render_pass.is_none() {
+                                    render_pass = None;
+                                    stencil.clear(encoder.encoder());
+                                } else {
+                                    let render_pass = render_pass.as_mut().unwrap();
+                                    stencil.clear_with_render_pass(
+                                        &draw_session.device,
+                                        render_pass,
+                                        &draw_session.resources,
+                                        &[Some(color_view.as_color_attachment()), None, None],
+                                        multiview_mask,
+                                    );
+                                }
+                            }
+                            DrawCommand::DrawPart {
+                                render_mask,
+                                using_mask,
+                                stencil_reference,
+                                id,
+                                render_ctx,
+                                to_composite,
+                            } => {
+                                let comps = puppet.world();
+                                let drawable = DrawableKind::new(*id, comps, false).unwrap();
+                                let components = match &drawable {
+                                    DrawableKind::Composite(_) => unreachable!(),
+                                    DrawableKind::TexturedMesh(components) => components,
+                                };
 
-                            render_pass = Some(draw_session.encoder.begin_render_pass(
-                                &wgpu::RenderPassDescriptor {
-                                    label: Some(&format!(
-                                            "WgpuRenderer::draw_textured_mesh_content - {}",
+                                let surface_color_attach = Some(color_view.as_color_attachment());
+                                let gbuffer_color = [
+                                    Some(composite_albedo_view.as_color_attachment()),
+                                    Some(composite_emissive_view.as_color_attachment()),
+                                    Some(composite_bump_view.as_color_attachment()),
+                                ];
+                                let unmasked_attach = [surface_color_attach, None, None];
+                                let color_attachments = if *to_composite {
+                                    gbuffer_color.as_slice()
+                                } else {
+                                    unmasked_attach.as_slice()
+                                };
+
+                                if render_pass.is_none() {
+                                    let depth_stencil_attachment = if *to_composite {
+                                        Some(composite_stencil_view.as_depth_stencil_attachment())
+                                    } else {
+                                        Some(stencil_view.as_depth_stencil_attachment())
+                                    };
+
+                                    drop(render_pass);
+
+                                    render_pass = Some(encoder.encoder().begin_render_pass(
+                                        &wgpu::RenderPassDescriptor {
+                                            label: Some(&format!(
+                                                "WgpuRenderer::draw_textured_mesh_content - {}",
+                                                draw_session
+                                                    .node_names
+                                                    .get(&id)
+                                                    .map(|s| s.as_str())
+                                                    .unwrap_or("<NODE UNKNOWN>")
+                                            )),
+                                            color_attachments,
+                                            depth_stencil_attachment,
+                                            occlusion_query_set: None,
+                                            timestamp_writes: None,
+                                            multiview_mask,
+                                        },
+                                    ));
+                                }
+
+                                let render_pass = render_pass.as_mut().unwrap();
+
+                                let blend = Some(Self::blend_mode_to_state(
+                                    components.drawable.blending.mode,
+                                ));
+
+                                let (albedo, bumpmap, emissive) = Self::textures_for_part(
+                                    draw_session.uploads,
+                                    components.texture,
+                                );
+                                let (albedo, bumpmap, emissive) =
+                                    (albedo.clone(), bumpmap.clone(), emissive.clone());
+
+                                let index = draw_session.buffer_indices.get(&(*id).into()).unwrap();
+                                let vert_binding = binding_cache.bind_basic_vert(
+                                    &*draw_session.resources,
+                                    draw_session.basic_vert_buffer.as_ref().unwrap(),
+                                    viewports_config,
+                                );
+
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_VERTS,
+                                    draw_session.uploads.verts.slice(..),
+                                );
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_UVS,
+                                    draw_session.uploads.uvs.slice(..),
+                                );
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_DEFORM,
+                                    draw_session.uploads.deforms.slice(..),
+                                );
+                                render_pass.set_index_buffer(
+                                    draw_session.uploads.indices.slice(..),
+                                    wgpu::IndexFormat::Uint32,
+                                );
+
+                                let formats = [
+                                    color_attachments[0]
+                                        .as_ref()
+                                        .map(|ca| ca.view.texture().format()),
+                                    color_attachments[1]
+                                        .as_ref()
+                                        .map(|ca| ca.view.texture().format()),
+                                    color_attachments[2]
+                                        .as_ref()
+                                        .map(|ca| ca.view.texture().format()),
+                                ];
+
+                                if *render_mask {
+                                    //TODO: What happens if a mask is also masked?
+                                    let frag_binding = binding_cache.bind_basic_mask_frag(
+                                        &draw_session.resources,
+                                        albedo.view(),
+                                        draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
+                                        viewports_config,
+                                    );
+                                    let pipeline = draw_session
+                                        .resources
+                                        .part_mask_pipeline_with_configuration(
+                                            &draw_session.device,
+                                            formats,
+                                            [blend, blend, blend],
+                                            [
+                                                wgpu::ColorWrites::empty(),
+                                                wgpu::ColorWrites::empty(),
+                                                wgpu::ColorWrites::empty(),
+                                            ],
+                                            Some(mask_depthstencil.clone()),
+                                            multiview_mask,
+                                        );
+                                    render_pass.set_pipeline(pipeline.pipeline());
+                                    pipeline.bind_frag(
+                                        render_pass,
+                                        Some(&frag_binding),
+                                        &[
+                                            index.basic_mask_frag.unwrap() as u32,
+                                            (current_layer * Viewport::static_size()) as u32,
+                                        ],
+                                    );
+                                    pipeline.bind_vertex(
+                                        render_pass,
+                                        Some(&vert_binding),
+                                        &[
+                                            index.basic_vert.unwrap() as u32,
+                                            (current_layer * Viewport::static_size()) as u32,
+                                        ],
+                                    );
+
+                                    render_pass.set_stencil_reference(*stencil_reference);
+                                } else {
+                                    //Regular parts
+                                    let all = wgpu::ColorWrites::ALL;
+                                    let frag_binding = binding_cache.bind_basic_frag(
+                                        &draw_session.resources,
+                                        albedo.view(),
+                                        emissive.view(),
+                                        bumpmap.view(),
+                                        draw_session.basic_frag_buffer.as_ref().unwrap(),
+                                        viewports_config,
+                                    );
+
+                                    let pipeline = if *using_mask {
+                                        draw_session.resources.part_pipeline_with_configuration(
+                                            &draw_session.device,
+                                            formats,
+                                            [blend, blend, blend],
+                                            [all, all, all],
+                                            Some(masked_depthstencil.clone()),
+                                            multiview_mask,
+                                        )
+                                    } else {
+                                        draw_session.resources.part_pipeline_with_configuration(
+                                            &draw_session.device,
+                                            formats,
+                                            [blend, blend, blend],
+                                            [all, all, all],
+                                            Some(ignore_depthstencil.clone()),
+                                            multiview_mask,
+                                        )
+                                    };
+
+                                    render_pass.set_pipeline(pipeline.pipeline());
+                                    pipeline.bind_frag(
+                                        render_pass,
+                                        Some(&frag_binding),
+                                        &[
+                                            index.basic_frag.unwrap() as u32,
+                                            (current_layer * Viewport::static_size()) as u32,
+                                        ],
+                                    );
+                                    pipeline.bind_vertex(
+                                        render_pass,
+                                        Some(&vert_binding),
+                                        &[
+                                            index.basic_vert.unwrap() as u32,
+                                            (current_layer * Viewport::static_size()) as u32,
+                                        ],
+                                    );
+
+                                    render_pass.set_stencil_reference(1);
+                                    render_pass.set_pipeline(pipeline.pipeline());
+                                }
+
+                                render_pass.draw_indexed(
+                                    render_ctx.index_offset as u32
+                                        ..(render_ctx.index_offset + render_ctx.index_len as u32),
+                                    0,
+                                    0..1,
+                                );
+                            }
+                            DrawCommand::BeginComposite => {
+                                render_pass = None;
+                                composite.clear(encoder.encoder());
+                            }
+                            DrawCommand::EndComposite {
+                                render_mask,
+                                using_mask,
+                                id,
+                            } => {
+                                let comps = puppet.world();
+                                let drawable = DrawableKind::new(*id, comps, false).unwrap();
+                                let components = match &drawable {
+                                    DrawableKind::Composite(components) => components,
+                                    DrawableKind::TexturedMesh(_) => unreachable!(),
+                                };
+
+                                let depth_stencil_attachment =
+                                    Some(stencil_view.as_depth_stencil_attachment());
+
+                                //TODO: Do we even want blending on in Normal mode?
+                                let blend = Some(Self::blend_mode_to_state(
+                                    components.drawable.blending.mode,
+                                ));
+
+                                let color_attachments =
+                                    [Some(color_view.as_color_attachment()), None, None];
+
+                                // Strictly speaking, we will never be able to batch the end of a
+                                // composite operation. (Or so I think?!)
+                                render_pass = None;
+                                let mut render_pass = encoder.encoder().begin_render_pass(
+                                    &wgpu::RenderPassDescriptor {
+                                        label: Some(&format!(
+                                            "WgpuRenderer::finish_composite_content - {}",
                                             draw_session
                                                 .node_names
                                                 .get(&id)
                                                 .map(|s| s.as_str())
                                                 .unwrap_or("<NODE UNKNOWN>")
                                         )),
-                                    color_attachments,
-                                    depth_stencil_attachment,
-                                    occlusion_query_set: None,
-                                    timestamp_writes: None,
-                                    multiview_mask,
-                                },
-                            ));
-                        }
-
-                        let render_pass = render_pass.as_mut().unwrap();
-
-                        let blend =
-                            Some(Self::blend_mode_to_state(components.drawable.blending.mode));
-
-                        let (albedo, bumpmap, emissive) =
-                            Self::textures_for_part(draw_session.uploads, components.texture);
-                        let (albedo, bumpmap, emissive) =
-                            (albedo.clone(), bumpmap.clone(), emissive.clone());
-
-                        let index = draw_session.buffer_indices.get(&(*id).into()).unwrap();
-                        let vert_binding = draw_session.binding_cache.bind_basic_vert(
-                            &*draw_session.resources,
-                            draw_session.basic_vert_buffer.as_ref().unwrap(),
-                            viewports_config,
-                        );
-
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_VERTS,
-                            draw_session.uploads.verts.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_UVS,
-                            draw_session.uploads.uvs.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_DEFORM,
-                            draw_session.uploads.deforms.slice(..),
-                        );
-                        render_pass.set_index_buffer(
-                            draw_session.uploads.indices.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-
-                        let formats = [
-                            color_attachments[0]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                            color_attachments[1]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                            color_attachments[2]
-                                .as_ref()
-                                .map(|ca| ca.view.texture().format()),
-                        ];
-
-                        if *render_mask {
-                            //TODO: What happens if a mask is also masked?
-                            let frag_binding = draw_session.binding_cache.bind_basic_mask_frag(
-                                &draw_session.resources,
-                                albedo.view(),
-                                draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
-                                viewports_config,
-                            );
-                            let pipeline = draw_session
-                                .resources
-                                .part_mask_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    [blend, blend, blend],
-                                    [
-                                        wgpu::ColorWrites::empty(),
-                                        wgpu::ColorWrites::empty(),
-                                        wgpu::ColorWrites::empty(),
-                                    ],
-                                    Some(mask_depthstencil.clone()),
-                                    multiview_mask,
-                                );
-                            render_pass.set_pipeline(pipeline.pipeline());
-                            pipeline.bind_frag(
-                                render_pass,
-                                Some(&frag_binding),
-                                &[
-                                    index.basic_mask_frag.unwrap() as u32,
-                                    current_layer * Viewport::static_size() as u32,
-                                ],
-                            );
-                            pipeline.bind_vertex(
-                                render_pass,
-                                Some(&vert_binding),
-                                &[
-                                    index.basic_vert.unwrap() as u32,
-                                    current_layer * Viewport::static_size() as u32,
-                                ],
-                            );
-
-                            render_pass.set_stencil_reference(*stencil_reference);
-                        } else {
-                            //Regular parts
-                            let all = wgpu::ColorWrites::ALL;
-                            let frag_binding = draw_session.binding_cache.bind_basic_frag(
-                                &draw_session.resources,
-                                albedo.view(),
-                                emissive.view(),
-                                bumpmap.view(),
-                                draw_session.basic_frag_buffer.as_ref().unwrap(),
-                                viewports_config,
-                            );
-
-                            let pipeline = if *using_mask {
-                                draw_session.resources.part_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    [blend, blend, blend],
-                                    [all, all, all],
-                                    Some(masked_depthstencil.clone()),
-                                    multiview_mask,
-                                )
-                            } else {
-                                draw_session.resources.part_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    [blend, blend, blend],
-                                    [all, all, all],
-                                    Some(ignore_depthstencil.clone()),
-                                    multiview_mask,
-                                )
-                            };
-
-                            render_pass.set_pipeline(pipeline.pipeline());
-                            pipeline.bind_frag(
-                                render_pass,
-                                Some(&frag_binding),
-                                &[
-                                    index.basic_frag.unwrap() as u32,
-                                    current_layer * Viewport::static_size() as u32,
-                                ],
-                            );
-                            pipeline.bind_vertex(
-                                render_pass,
-                                Some(&vert_binding),
-                                &[
-                                    index.basic_vert.unwrap() as u32,
-                                    current_layer * Viewport::static_size() as u32,
-                                ],
-                            );
-
-                            render_pass.set_stencil_reference(1);
-                            render_pass.set_pipeline(pipeline.pipeline());
-                        }
-
-                        render_pass.draw_indexed(
-                            render_ctx.index_offset as u32
-                                ..(render_ctx.index_offset + render_ctx.index_len as u32),
-                            0,
-                            0..1,
-                        );
-                    }
-                    DrawCommand::BeginComposite => {
-                        render_pass = None;
-                        composite.clear(&mut draw_session.encoder);
-                    }
-                    DrawCommand::EndComposite {
-                        render_mask,
-                        using_mask,
-                        id,
-                    } => {
-                        let comps = puppet.world();
-                        let drawable = DrawableKind::new(*id, comps, false).unwrap();
-                        let components = match &drawable {
-                            DrawableKind::Composite(components) => components,
-                            DrawableKind::TexturedMesh(_) => unreachable!(),
-                        };
-
-                        let depth_stencil_attachment =
-                            Some(stencil_view.as_depth_stencil_attachment());
-
-                        //TODO: Do we even want blending on in Normal mode?
-                        let blend =
-                            Some(Self::blend_mode_to_state(components.drawable.blending.mode));
-
-                        let color_attachments =
-                            [Some(color_view.as_color_attachment()), None, None];
-
-                        // Strictly speaking, we will never be able to batch the end of a
-                        // composite operation. (Or so I think?!)
-                        render_pass = None;
-                        let mut render_pass =
-                            draw_session
-                                .encoder
-                                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                                    label: Some(&format!(
-                                        "WgpuRenderer::finish_composite_content - {}",
-                                        draw_session
-                                            .node_names
-                                            .get(&id)
-                                            .map(|s| s.as_str())
-                                            .unwrap_or("<NODE UNKNOWN>")
-                                    )),
-                                    color_attachments: &color_attachments,
-                                    depth_stencil_attachment,
-                                    occlusion_query_set: None,
-                                    timestamp_writes: None,
-                                    multiview_mask,
-                                });
-
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_VERTS,
-                            draw_session.uploads.verts.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_UVS,
-                            draw_session.uploads.uvs.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_DEFORM,
-                            draw_session.uploads.deforms.slice(..),
-                        );
-                        render_pass.set_index_buffer(
-                            draw_session.uploads.indices.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
-
-                        if *render_mask {
-                            // LOL, the OpenGL renderer didn't handle the "mask by composite" case.
-                            // I may want to see what Inochi2D's D library does.
-                            todo!();
-                        } else {
-                            let all = wgpu::ColorWrites::ALL;
-                            let depth_stencil = if *using_mask {
-                                Some(masked_depthstencil.clone())
-                            } else {
-                                Some(ignore_depthstencil.clone())
-                            };
-                            let formats = [
-                                color_attachments[0]
-                                    .as_ref()
-                                    .map(|ca| ca.view.texture().format()),
-                                None,
-                                None,
-                            ];
-
-                            let index = draw_session.buffer_indices.get(&(*id).into()).unwrap();
-                            let vert_binding = draw_session
-                                .binding_cache
-                                .bind_composite_vert(&draw_session.resources, viewports_config);
-                            let frag_binding = draw_session.binding_cache.bind_composite_frag(
-                                &draw_session.resources,
-                                &composite_albedo_view,
-                                &composite_emissive_view,
-                                &composite_bump_view,
-                                draw_session.composite_frag_buffer.as_ref().unwrap(),
-                                viewports_config,
-                            );
-
-                            let pipeline = draw_session
-                                .resources
-                                .composite_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    [blend, blend, blend],
-                                    [all, all, all],
-                                    depth_stencil,
-                                    multiview_mask,
+                                        color_attachments: &color_attachments,
+                                        depth_stencil_attachment,
+                                        occlusion_query_set: None,
+                                        timestamp_writes: None,
+                                        multiview_mask,
+                                    },
                                 );
 
-                            render_pass.set_pipeline(pipeline.pipeline());
-                            pipeline.bind_frag(
-                                &mut render_pass,
-                                Some(&frag_binding),
-                                &[
-                                    index.composite_frag.unwrap() as u32,
-                                    current_layer * Viewport::static_size() as u32,
-                                ],
-                            );
-                            pipeline.bind_vertex(
-                                &mut render_pass,
-                                Some(&vert_binding),
-                                &[current_layer * Viewport::static_size() as u32],
-                            );
-                            render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_VERTS,
+                                    draw_session.uploads.verts.slice(..),
+                                );
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_UVS,
+                                    draw_session.uploads.uvs.slice(..),
+                                );
+                                render_pass.set_vertex_buffer(
+                                    basic_vert::INPUT_INDEX_DEFORM,
+                                    draw_session.uploads.deforms.slice(..),
+                                );
+                                render_pass.set_index_buffer(
+                                    draw_session.uploads.indices.slice(..),
+                                    wgpu::IndexFormat::Uint32,
+                                );
+
+                                if *render_mask {
+                                    // LOL, the OpenGL renderer didn't handle the "mask by composite" case.
+                                    // I may want to see what Inochi2D's D library does.
+                                    todo!();
+                                } else {
+                                    let all = wgpu::ColorWrites::ALL;
+                                    let depth_stencil = if *using_mask {
+                                        Some(masked_depthstencil.clone())
+                                    } else {
+                                        Some(ignore_depthstencil.clone())
+                                    };
+                                    let formats = [
+                                        color_attachments[0]
+                                            .as_ref()
+                                            .map(|ca| ca.view.texture().format()),
+                                        None,
+                                        None,
+                                    ];
+
+                                    let index =
+                                        draw_session.buffer_indices.get(&(*id).into()).unwrap();
+                                    let vert_binding = binding_cache.bind_composite_vert(
+                                        &draw_session.resources,
+                                        viewports_config,
+                                    );
+                                    let frag_binding = binding_cache.bind_composite_frag(
+                                        &draw_session.resources,
+                                        &composite_albedo_view,
+                                        &composite_emissive_view,
+                                        &composite_bump_view,
+                                        draw_session.composite_frag_buffer.as_ref().unwrap(),
+                                        viewports_config,
+                                    );
+
+                                    let pipeline = draw_session
+                                        .resources
+                                        .composite_pipeline_with_configuration(
+                                            &draw_session.device,
+                                            formats,
+                                            [blend, blend, blend],
+                                            [all, all, all],
+                                            depth_stencil,
+                                            multiview_mask,
+                                        );
+
+                                    render_pass.set_pipeline(pipeline.pipeline());
+                                    pipeline.bind_frag(
+                                        &mut render_pass,
+                                        Some(&frag_binding),
+                                        &[
+                                            index.composite_frag.unwrap() as u32,
+                                            (current_layer * Viewport::static_size()) as u32,
+                                        ],
+                                    );
+                                    pipeline.bind_vertex(
+                                        &mut render_pass,
+                                        Some(&vert_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
+                                    );
+                                    render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
+                                }
+                            }
                         }
                     }
+
+                    render_pass = None;
                 }
-            }
+
+                (
+                    draw_session.resources.finish_encoding(encoder),
+                    binding_cache.untether(),
+                )
+            })
+            .collect();
+
+        #[cfg(feature = "timing")]
+        WgpuDrawSession::lap_time("Encode", &mut draw_session.last_lap_time);
+
+        for (buffer, binding_cache) in commands {
+            submission_index = Some(draw_session.resources.queue.submit(std::iter::once(buffer)));
+
+            draw_session.binding_cache.merge(binding_cache);
         }
 
+        #[cfg(feature = "timing")]
+        WgpuDrawSession::lap_time("Submit", &mut draw_session.last_lap_time);
+
         me.commands.drain(..);
+
+        #[cfg(feature = "timing")]
+        WgpuDrawSession::lap_time("Queue drain", &mut draw_session.last_lap_time);
+
+        submission_index
     }
 }

@@ -10,7 +10,9 @@ use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_f
 ///
 /// Ideally, we should never allocate a BindGroup during a rendering call.
 #[derive(Debug, Clone, Default)]
-pub struct BindingCache {
+pub struct BindingCache<'a> {
+    tether: Option<&'a BindingCache<'a>>,
+
     /// The bind group used for basic_vert.
     ///
     /// The associated Buffer object is the buffer bound to the shader in the
@@ -72,13 +74,66 @@ pub struct BindingCache {
     )>,
 }
 
-impl BindingCache {
+impl<'a> BindingCache<'a> {
+    /// Create a subsidiary BindingCache that borrows data from another one.
+    ///
+    /// Bindings stored in the borrowed binding cache will be accessible in the
+    /// returned cache, but any new data will be stored in the subsidiary cache.
+    /// You will need to merge the cache items back into the parent in order to
+    /// retain them.
+    ///
+    /// This is primarily intended for multithreaded rendering scenarios; you
+    /// can create multiple split binding caches and then merge them later. You
+    /// can also use this for immutable access to a single binding cache.
+    pub fn split<'b>(&'b self) -> BindingCache<'b>
+    where
+        'b: 'a,
+    {
+        Self {
+            tether: Some(self),
+            basic_vert_bind: None,
+            basic_frag_bind: HashMap::new(),
+            last_basic_frag_bind_buffer: None,
+            basic_mask_frag_bind: HashMap::new(),
+            last_basic_mask_frag_bind_buffer: None,
+            composite_vert_bind: None,
+            composite_frag_bind: None,
+        }
+    }
+
+    /// Remove connection to the borrowed binding cache and its lifetime.
+    pub fn untether(mut self) -> BindingCache<'static> {
+        // For reasons I don't totally understand, pulling all the owned
+        // variables out of a struct with a lifetime on it does NOT erase the
+        // lifetime I'm trying to get rid of, so we have to do this.
+        let mut new_cache = BindingCache::default();
+        let old_self = std::mem::replace(&mut self, BindingCache::default());
+
+        new_cache.basic_vert_bind = old_self.basic_vert_bind;
+        new_cache.basic_frag_bind = old_self.basic_frag_bind;
+        new_cache.last_basic_frag_bind_buffer = old_self.last_basic_frag_bind_buffer;
+        new_cache.basic_mask_frag_bind = old_self.basic_mask_frag_bind;
+        new_cache.last_basic_mask_frag_bind_buffer = old_self.last_basic_mask_frag_bind_buffer;
+        new_cache.composite_vert_bind = old_self.composite_vert_bind;
+        new_cache.composite_frag_bind = old_self.composite_frag_bind;
+
+        new_cache
+    }
+
     pub fn bind_basic_vert(
         &mut self,
         resources: &WgpuResources,
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        if let Some(tether) = self.tether {
+            if let Some((bg, my_buffer, my_viewports)) = &tether.basic_vert_bind {
+                if buffer == my_buffer && viewports == my_viewports {
+                    return bg.clone();
+                }
+            }
+        }
+
         if let Some((bg, my_buffer, my_viewports)) = &self.basic_vert_bind {
             if buffer == my_buffer && viewports == my_viewports {
                 return bg.clone();
@@ -116,9 +171,20 @@ impl BindingCache {
         // Fun wrinkle of the Rust HashMap API is that I have to bump the
         // reference count every time I want to query these texture views
         let key = (albedo.clone(), emissive.clone(), bumpmap.clone());
+
+        if let Some(tether) = self.tether {
+            if let Some(bg) = tether.basic_frag_bind.get(&key) {
+                // NOTE: Not recording the buffer is an internal logic error,
+                // so a panic is appropriate
+                let (last_buffer, last_viewports) =
+                    tether.last_basic_frag_bind_buffer.as_ref().unwrap();
+                if buffer == last_buffer && viewports == last_viewports {
+                    return bg.clone();
+                }
+            }
+        }
+
         if let Some(bg) = self.basic_frag_bind.get(&key) {
-            // NOTE: Not recording the buffer is an internal logic error,
-            // so a panic is appropriate
             let (last_buffer, last_viewports) = self.last_basic_frag_bind_buffer.as_ref().unwrap();
             if buffer == last_buffer && viewports == last_viewports {
                 return bg.clone();
@@ -158,9 +224,19 @@ impl BindingCache {
         buffer: &wgpu::Buffer,
         viewport: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        if let Some(tether) = self.tether {
+            if let Some(bg) = tether.basic_mask_frag_bind.get(albedo) {
+                // NOTE: Not recording the buffer is an internal logic error,
+                // so a panic is appropriate
+                let (last_buffer, last_viewport) =
+                    tether.last_basic_mask_frag_bind_buffer.as_ref().unwrap();
+                if buffer == last_buffer && viewport == last_viewport {
+                    return bg.clone();
+                }
+            }
+        }
+
         if let Some(bg) = self.basic_mask_frag_bind.get(albedo) {
-            // NOTE: Not recording the buffer is an internal logic error,
-            // so a panic is appropriate
             let (last_buffer, last_viewport) =
                 self.last_basic_mask_frag_bind_buffer.as_ref().unwrap();
             if buffer == last_buffer && viewport == last_viewport {
@@ -198,6 +274,14 @@ impl BindingCache {
         resources: &WgpuResources,
         viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        if let Some(tether) = self.tether {
+            if let Some((bg, my_viewports)) = &tether.composite_vert_bind {
+                if viewports == my_viewports {
+                    return bg.clone();
+                }
+            }
+        }
+
         if let Some((bg, my_viewports)) = &self.composite_vert_bind {
             if viewports == my_viewports {
                 return bg.clone();
@@ -227,6 +311,21 @@ impl BindingCache {
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
+        if let Some(tether) = self.tether {
+            if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
+                &tether.composite_frag_bind
+            {
+                if buffer == my_buffer
+                    && albedo == my_albedo
+                    && emissive == my_emissive
+                    && bump == my_bump
+                    && viewports == my_viewports
+                {
+                    return bg.clone();
+                }
+            }
+        }
+
         if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
             &self.composite_frag_bind
         {
@@ -268,5 +367,45 @@ impl BindingCache {
         ));
 
         new_bg
+    }
+
+    /// Merge in another binding cache into this one.
+    ///
+    /// This allows multithreaded access to the binding cache to account for
+    /// new objects that were created during processing.
+    pub fn merge(&mut self, other: BindingCache<'_>) {
+        if let Some(other_bvb) = other.basic_vert_bind {
+            self.basic_vert_bind = Some(other_bvb);
+        }
+
+        if other.last_basic_frag_bind_buffer == self.last_basic_frag_bind_buffer
+            && other.last_basic_frag_bind_buffer.is_some()
+        {
+            for (kv, bg) in other.basic_frag_bind {
+                self.basic_frag_bind.insert(kv, bg);
+            }
+        } else {
+            self.basic_frag_bind = other.basic_frag_bind;
+            self.last_basic_frag_bind_buffer = other.last_basic_frag_bind_buffer;
+        }
+
+        if other.last_basic_mask_frag_bind_buffer == self.last_basic_mask_frag_bind_buffer
+            && other.last_basic_mask_frag_bind_buffer.is_some()
+        {
+            for (k, bg) in other.basic_mask_frag_bind {
+                self.basic_mask_frag_bind.insert(k, bg);
+            }
+        } else {
+            self.basic_mask_frag_bind = other.basic_mask_frag_bind;
+            self.last_basic_mask_frag_bind_buffer = other.last_basic_mask_frag_bind_buffer;
+        }
+
+        if let Some(other_cvb) = other.composite_vert_bind {
+            self.composite_vert_bind = Some(other_cvb);
+        }
+
+        if let Some(other_cfb) = other.composite_frag_bind {
+            self.composite_frag_bind = Some(other_cfb);
+        }
     }
 }
