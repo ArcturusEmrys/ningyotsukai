@@ -15,12 +15,11 @@ pub struct BindingCache<'a> {
 
     /// The bind group used for basic_vert.
     ///
-    /// The associated Buffer object is the buffer bound to the shader in the
-    /// given bindgroup. If the buffer changes, the previous binding is
-    /// invalidated.
+    /// The two associated Buffer objects are the buffers bound to the shader
+    /// in the given bindgroup. The first one is the per-draw uniforms buffer;
+    /// the second is the viewport configuration buffer.
     ///
-    /// There is additionally a second Buffer object for the viewports. This is
-    /// intended to be used whole - i.e. not suballocated with a BufferBuilder.
+    /// If either buffer changes, the previous binding is invalidated.
     basic_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer, wgpu::Buffer)>,
 
     /// The cache of bind groups used for basic_frag.
@@ -137,6 +136,9 @@ impl<'a> BindingCache<'a> {
         if let Some((bg, my_buffer, my_viewports)) = &self.basic_vert_bind {
             if buffer == my_buffer && viewports == my_viewports {
                 return bg.clone();
+            } else {
+                #[cfg(feature = "timing")]
+                eprintln!("      (basic_vert buffer changed!)");
             }
         }
 
@@ -189,6 +191,8 @@ impl<'a> BindingCache<'a> {
             if buffer == last_buffer && viewports == last_viewports {
                 return bg.clone();
             } else {
+                #[cfg(feature = "timing")]
+                eprintln!("      (basic_frag_bind buffers changed!)");
                 self.basic_frag_bind = HashMap::new();
             }
         }
@@ -242,6 +246,8 @@ impl<'a> BindingCache<'a> {
             if buffer == last_buffer && viewport == last_viewport {
                 return bg.clone();
             } else {
+                #[cfg(feature = "timing")]
+                eprintln!("      (basic_mask_frag_bind buffers changed!)");
                 self.basic_mask_frag_bind = HashMap::new();
             }
         }
@@ -285,6 +291,9 @@ impl<'a> BindingCache<'a> {
         if let Some((bg, my_viewports)) = &self.composite_vert_bind {
             if viewports == my_viewports {
                 return bg.clone();
+            } else {
+                #[cfg(feature = "timing")]
+                eprintln!("      (composite_vert buffer changed!)");
             }
         }
 
@@ -336,6 +345,9 @@ impl<'a> BindingCache<'a> {
                 && viewports == my_viewports
             {
                 return bg.clone();
+            } else {
+                #[cfg(feature = "timing")]
+                eprintln!("      (composite_frag buffer or textures changed!)");
             }
         }
 
@@ -378,26 +390,26 @@ impl<'a> BindingCache<'a> {
             self.basic_vert_bind = Some(other_bvb);
         }
 
-        if other.last_basic_frag_bind_buffer == self.last_basic_frag_bind_buffer
-            && other.last_basic_frag_bind_buffer.is_some()
-        {
-            for (kv, bg) in other.basic_frag_bind {
-                self.basic_frag_bind.insert(kv, bg);
+        if other.last_basic_frag_bind_buffer.is_some() {
+            if other.last_basic_frag_bind_buffer == self.last_basic_frag_bind_buffer {
+                for (kv, bg) in other.basic_frag_bind {
+                    self.basic_frag_bind.insert(kv, bg);
+                }
+            } else {
+                self.basic_frag_bind = other.basic_frag_bind;
+                self.last_basic_frag_bind_buffer = other.last_basic_frag_bind_buffer;
             }
-        } else {
-            self.basic_frag_bind = other.basic_frag_bind;
-            self.last_basic_frag_bind_buffer = other.last_basic_frag_bind_buffer;
         }
 
-        if other.last_basic_mask_frag_bind_buffer == self.last_basic_mask_frag_bind_buffer
-            && other.last_basic_mask_frag_bind_buffer.is_some()
-        {
-            for (k, bg) in other.basic_mask_frag_bind {
-                self.basic_mask_frag_bind.insert(k, bg);
+        if other.last_basic_mask_frag_bind_buffer.is_some() {
+            if other.last_basic_mask_frag_bind_buffer == self.last_basic_mask_frag_bind_buffer {
+                for (k, bg) in other.basic_mask_frag_bind {
+                    self.basic_mask_frag_bind.insert(k, bg);
+                }
+            } else {
+                self.basic_mask_frag_bind = other.basic_mask_frag_bind;
+                self.last_basic_mask_frag_bind_buffer = other.last_basic_mask_frag_bind_buffer;
             }
-        } else {
-            self.basic_mask_frag_bind = other.basic_mask_frag_bind;
-            self.last_basic_mask_frag_bind_buffer = other.last_basic_mask_frag_bind_buffer;
         }
 
         if let Some(other_cvb) = other.composite_vert_bind {
@@ -407,5 +419,18 @@ impl<'a> BindingCache<'a> {
         if let Some(other_cfb) = other.composite_frag_bind {
             self.composite_frag_bind = Some(other_cfb);
         }
+    }
+
+    /// Measure how many BindGroup creations this BindingCache had to process.
+    ///
+    /// This isn't particularly meaningful outside of split operation.
+    pub fn delta_len(&self) -> (usize, usize, usize, usize, usize) {
+        (
+            self.basic_vert_bind.iter().len(),
+            self.basic_frag_bind.len(),
+            self.basic_mask_frag_bind.len(),
+            self.composite_vert_bind.iter().len(),
+            self.composite_frag_bind.iter().len(),
+        )
     }
 }

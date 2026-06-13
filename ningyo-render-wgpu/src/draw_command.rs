@@ -578,14 +578,59 @@ impl DrawCommandList {
         #[cfg(feature = "timing")]
         WgpuDrawSession::lap_time("Encode", &mut draw_session.last_lap_time);
 
+        #[cfg(feature = "timing")]
+        let mut bind_count = (0, 0, 0, 0, 0);
+
         for (buffer, binding_cache) in commands {
             submission_index = Some(draw_session.resources.queue.submit(std::iter::once(buffer)));
+
+            #[cfg(feature = "timing")]
+            {
+                let this_bind_count = binding_cache.delta_len();
+
+                bind_count.0 += this_bind_count.0;
+                bind_count.1 += this_bind_count.1;
+                bind_count.2 += this_bind_count.2;
+                bind_count.3 += this_bind_count.3;
+                bind_count.4 += this_bind_count.4;
+            }
 
             draw_session.binding_cache.merge(binding_cache);
         }
 
         #[cfg(feature = "timing")]
-        WgpuDrawSession::lap_time("Submit", &mut draw_session.last_lap_time);
+        {
+            if bind_count.0 > 0 {
+                eprintln!("      ({} basic_vert BindGroup creations...)", bind_count.0);
+            }
+
+            if bind_count.1 > 0 {
+                eprintln!("      ({} basic_frag BindGroup creations...)", bind_count.1);
+            }
+
+            if bind_count.2 > 0 {
+                eprintln!(
+                    "      ({} basic_mask_frag BindGroup creations...)",
+                    bind_count.2
+                );
+            }
+
+            if bind_count.3 > 0 {
+                eprintln!(
+                    "      ({} composite_vert BindGroup creations...)",
+                    bind_count.3
+                );
+            }
+
+            if bind_count.4 > 0 {
+                eprintln!(
+                    "      ({} composite_frag BindGroup creations...)",
+                    bind_count.4
+                );
+            }
+
+            WgpuDrawSession::lap_time("Submit", &mut draw_session.last_lap_time);
+        }
 
         me.commands.drain(..);
 
