@@ -183,7 +183,7 @@ impl OffscreenRender {
         }
 
         render_target.set_color_target_format(texture.format());
-        render_target.apply(&self.device, &self.queue);
+        render_target.apply(&self.device, &self.queue).unwrap();
 
         if let Some(camera) = render_target.viewport_camera_mut(0) {
             camera.position.x = center_x / zoom;
