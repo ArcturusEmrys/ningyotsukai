@@ -34,3 +34,17 @@ pub trait UniformBlock {
 
     fn write_buffer(&self, out: &mut [u8]);
 }
+
+impl UniformBlock for wgpu::util::DrawIndexedIndirectArgs {
+    fn static_size() -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    fn required_size(&self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+
+    fn write_buffer(&self, out: &mut [u8]) {
+        out.copy_from_slice(self.as_bytes());
+    }
+}

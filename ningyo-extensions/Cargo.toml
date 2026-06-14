@@ -16,7 +16,7 @@ gl46 = "0.2.1"
 wgpu = "29.0.0"
 thiserror = "1.0.39"
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.62.2", features = ["Win32_Graphics_OpenGL"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

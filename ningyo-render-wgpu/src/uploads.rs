@@ -36,7 +36,8 @@ pub struct WgpuUploads {
     pub(crate) deforms: wgpu::Buffer,
     pub(crate) indices: wgpu::Buffer,
 
-    pub(crate) model_textures: Vec<DeviceTexture>,
+    /// A texture array containing all textures in the model.
+    pub(crate) model_textures: DeviceTexture,
 }
 
 impl WgpuUploads {
@@ -102,19 +103,16 @@ impl WgpuUploads {
         });
 
         let decoded_textures = decode_model_textures(model.textures.iter());
-        let mut texture_handles = vec![];
-        for (index, texture) in decoded_textures.iter().enumerate() {
-            texture_handles.push(DeviceTexture::new_from_model(
-                resources, model, index, texture,
-            ));
-        }
+        let model_textures =
+            DeviceTexture::new_from_model(resources, model, decoded_textures.as_slice())
+                .ok_or(WgpuRendererError::NonUniformModelTextureSizes)?;
 
         Ok(WgpuUploads {
             verts,
             uvs,
             deforms,
             indices,
-            model_textures: texture_handles,
+            model_textures,
         })
     }
 }

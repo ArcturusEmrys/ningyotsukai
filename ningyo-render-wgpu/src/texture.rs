@@ -49,21 +49,33 @@ pub struct DeviceTexture {
 }
 
 impl DeviceTexture {
-    /// Submit a texture to be uploaded to the given WGPU device.
+    /// Submit an array of asset textures to be uploaded to the given WGPU
+    /// device.
     ///
     /// Note that the upload will not complete until the next queue submission.
+    ///
+    /// All textures provided must be of the same size and at least one texture
+    /// must be provided, else texture creation will fail.
     pub fn new_from_model(
         resources: &WgpuResources,
         model: &Model,
-        index: usize,
-        texture: &ShallowTexture,
-    ) -> Self {
+        textures: &[ShallowTexture],
+    ) -> Option<Self> {
+        if textures.len() == 0 {
+            return None;
+        }
+
         let size = wgpu::Extent3d {
-            width: texture.width(),
-            height: texture.height(),
+            width: textures[0].width(),
+            height: textures[0].height(),
+            depth_or_array_layers: textures.len() as u32,
+        };
+        let layer_size = wgpu::Extent3d {
+            width: textures[0].width(),
+            height: textures[0].height(),
             depth_or_array_layers: 1,
         };
-        let mip_level_count = (min(texture.width(), texture.height()) as f64)
+        let mip_level_count = (min(textures[0].width(), textures[0].height()) as f64)
             .log2()
             .floor() as u32;
         let device_texture = resources.device.create_texture(&wgpu::TextureDescriptor {
@@ -76,33 +88,43 @@ impl DeviceTexture {
                 | wgpu::TextureUsages::COPY_DST
                 | wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: Some(&format!(
-                "Puppet texture: {}::{}",
+                "Puppet textures: {} ({} layers)",
                 model
                     .puppet
                     .meta
                     .name
                     .as_deref()
                     .unwrap_or("<NAME NOT PROVIDED>"),
-                index
+                textures.len()
             )),
             view_formats: &[],
         });
 
-        resources.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &device_texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            texture.pixels(),
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * texture.width()),
-                rows_per_image: Some(texture.height()),
-            },
-            size,
-        );
+        for (index, texture) in textures.iter().enumerate() {
+            if texture.width() != size.width || texture.height() != size.height {
+                return None;
+            }
+
+            resources.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &device_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: index as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                texture.pixels(),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * texture.width()),
+                    rows_per_image: Some(texture.height()),
+                },
+                layer_size,
+            );
+        }
 
         let mut encoder =
             resources
@@ -111,94 +133,99 @@ impl DeviceTexture {
                     label: Some("DeviceTexture::new_from_model - internal mipmap generation"),
                 });
 
-        let mut input_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
-            label: Some("DeviceTexture::new_from_model - mipmap target view 0"),
-            format: None,
-            dimension: None,
-            usage: None,
-            aspect: wgpu::TextureAspect::All,
-            base_mip_level: 0,
-            mip_level_count: Some(1),
-            base_array_layer: 0,
-            array_layer_count: None,
-        });
-
-        for level in 1..mip_level_count {
-            let output_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
-                label: Some(&format!(
-                    "DeviceTexture::new_from_model - mipmap target view {}",
-                    level
-                )),
+        // NOTE: We cannot use multiview to scale the textures down as we can't
+        // generate proper UVWs without a working multiview view index ID in
+        // the fragment shader.
+        for texture_id in 0..textures.len() {
+            let mut input_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
+                label: Some("DeviceTexture::new_from_model - mipmap target view 0"),
                 format: None,
-                dimension: None,
+                dimension: Some(wgpu::TextureViewDimension::D2),
                 usage: None,
                 aspect: wgpu::TextureAspect::All,
-                base_mip_level: level,
+                base_mip_level: 0,
                 mip_level_count: Some(1),
-                base_array_layer: 0,
-                array_layer_count: None,
+                base_array_layer: texture_id as u32,
+                array_layer_count: Some(1),
             });
 
-            let input_sampler = resources.device.create_sampler(&wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::ClampToBorder,
-                address_mode_v: wgpu::AddressMode::ClampToBorder,
-                address_mode_w: wgpu::AddressMode::ClampToBorder,
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                mipmap_filter: wgpu::MipmapFilterMode::Linear,
-                lod_max_clamp: (level - 1) as f32,
-                ..Default::default()
-            });
+            for level in 1..mip_level_count {
+                let output_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
+                    label: Some(&format!(
+                        "DeviceTexture::new_from_model - mipmap target view {}",
+                        level
+                    )),
+                    format: None,
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    usage: None,
+                    aspect: wgpu::TextureAspect::All,
+                    base_mip_level: level,
+                    mip_level_count: Some(1),
+                    base_array_layer: texture_id as u32,
+                    array_layer_count: Some(1),
+                });
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&format!(
-                    "DeviceTexture::new_from_model - mipmap scale pass for level {}",
-                    level
-                )),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &output_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::DontCare(wgpu::LoadOpDontCare::default()),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+                let input_sampler = resources.device.create_sampler(&wgpu::SamplerDescriptor {
+                    address_mode_u: wgpu::AddressMode::ClampToBorder,
+                    address_mode_v: wgpu::AddressMode::ClampToBorder,
+                    address_mode_w: wgpu::AddressMode::ClampToBorder,
+                    mag_filter: wgpu::FilterMode::Linear,
+                    min_filter: wgpu::FilterMode::Linear,
+                    mipmap_filter: wgpu::MipmapFilterMode::Linear,
+                    lod_max_clamp: (level - 1) as f32,
+                    ..Default::default()
+                });
 
-            let pipeline = resources.mipmap_gen_pipeline_with_configuration(
-                &resources.device,
-                [Some(device_texture.format())],
-                [Some(wgpu::BlendState::REPLACE)],
-                [wgpu::ColorWrites::all()],
-                None,
-                None,
-            );
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some(&format!(
+                        "DeviceTexture::new_from_model - mipmap scale pass for level {}",
+                        level
+                    )),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &output_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::DontCare(wgpu::LoadOpDontCare::default()),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
 
-            render_pass.set_vertex_buffer(
-                mipmap_gen_vert::INPUT_LOCATION_VERTS,
-                resources.mipmap_gen_triangles.slice(..),
-            );
-            render_pass.set_pipeline(pipeline.pipeline());
-            // NOTE: We cannot cache this bindgroup, becuase we need to source
-            // a different mipmap layer each loop through.
-            pipeline.bind_frag(
-                &mut render_pass,
-                Some(&resources.mipmap_gen_frag.bind(
+                let pipeline = resources.mipmap_gen_pipeline_with_configuration(
                     &resources.device,
-                    &input_view,
-                    &input_sampler,
-                )),
-                &[],
-            );
-            pipeline.bind_vertex(&mut render_pass, Some(&resources.mipmap_gen_vert_bind), &[]);
-            render_pass.draw(0..6, 0..1);
+                    [Some(device_texture.format())],
+                    [Some(wgpu::BlendState::REPLACE)],
+                    [wgpu::ColorWrites::all()],
+                    None,
+                    None,
+                );
 
-            input_view = output_view;
+                render_pass.set_vertex_buffer(
+                    mipmap_gen_vert::INPUT_LOCATION_VERTS,
+                    resources.mipmap_gen_triangles.slice(..),
+                );
+                render_pass.set_pipeline(pipeline.pipeline());
+                // NOTE: We cannot cache this bindgroup, becuase we need to source
+                // a different mipmap layer each loop through.
+                pipeline.bind_frag(
+                    &mut render_pass,
+                    Some(&resources.mipmap_gen_frag.bind(
+                        &resources.device,
+                        &input_view,
+                        &input_sampler,
+                    )),
+                    &[],
+                );
+                pipeline.bind_vertex(&mut render_pass, Some(&resources.mipmap_gen_vert_bind), &[]);
+                render_pass.draw(0..6, 0..1);
+
+                input_view = output_view;
+            }
         }
 
         resources.queue.submit(std::iter::once(encoder.finish()));
@@ -210,11 +237,11 @@ impl DeviceTexture {
             ..Default::default()
         });
 
-        Self {
+        Some(Self {
             device_texture,
             view,
             array_view,
-        }
+        })
     }
 
     pub fn required_render_target_uses() -> wgpu::TextureUsages {

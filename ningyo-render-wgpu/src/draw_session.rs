@@ -1,9 +1,7 @@
 use inox2d::node::components::MaskMode;
 use inox2d::node::drawables::DrawableKind;
 use inox2d::node::{InoxNodeUuid, components, drawables};
-use inox2d::render::CompositeRenderCtx;
-//hey wait a second that's just a u32 newtype! UUIDs are four of those!
-use inox2d::render::{self, DrawSession};
+use inox2d::render::{self, CompositeRenderCtx, DrawSession};
 use std::error::Error;
 use std::sync::MutexGuard;
 use wgpu;
@@ -36,6 +34,7 @@ pub struct WgpuDrawSession<'a, 'window> {
     pub(crate) builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
     pub(crate) builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
     pub(crate) builder_composite_frag: &'a mut BufferBuilder<composite_frag::Input>,
+    pub(crate) builder_indirect: &'a mut BufferBuilder<wgpu::util::DrawIndexedIndirectArgs>,
 
     pub(crate) binding_cache: &'a mut BindingCache<'static>,
 
@@ -62,6 +61,9 @@ pub struct WgpuDrawSession<'a, 'window> {
 
     /// The currently active set of composite deferred pass uniforms
     pub(crate) composite_frag_buffer: Option<wgpu::Buffer>,
+
+    /// The current set of indirect draw parameters we wish to use.
+    pub(crate) indirect_buffer: Option<wgpu::Buffer>,
 
     pub(crate) draw_commands: &'a mut DrawCommandList,
 
@@ -112,6 +114,7 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             builder_basic_frag: &mut renderer.builder_basic_frag,
             builder_basic_mask_frag: &mut renderer.builder_basic_mask_frag,
             builder_composite_frag: &mut renderer.builder_composite_frag,
+            builder_indirect: &mut renderer.builder_indirect,
             device,
             viewports_config: render_target.viewports_config()?.clone(),
             render_target,
@@ -126,6 +129,7 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             basic_frag_buffer: None,
             basic_mask_frag_buffer: None,
             composite_frag_buffer: None,
+            indirect_buffer: None,
             draw_commands: &mut renderer.draw_commands,
             binding_cache: &mut renderer.bind_cache,
             last_submission_index: &mut renderer.last_submission_index,
@@ -272,6 +276,7 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
                         index.basic_mask_frag =
                             Some(self.builder_basic_mask_frag.insert(basic_mask_frag::Input {
                                 threshold: self.last_mask_threshold,
+                                tex_albedo: components.texture.tex_albedo.raw() as u32,
                             }));
                     }
                 } else {
@@ -282,6 +287,9 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
                                 multColor: components.drawable.blending.tint.into(),
                                 screenColor: components.drawable.blending.screen_tint.into(),
                                 emissionStrength: 1.0, //NOTE: OpenGL never sets this.
+                                tex_albedo: components.texture.tex_albedo.raw() as u32,
+                                tex_emissive: components.texture.tex_emissive.raw() as u32,
+                                tex_bumpmap: components.texture.tex_bumpmap.raw() as u32,
                             }));
                     }
                 }
@@ -343,12 +351,22 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
         render_ctx: &render::TexturedMeshRenderCtx,
         id: InoxNodeUuid,
     ) {
+        let indirect_offset = self
+            .builder_indirect
+            .insert(wgpu::util::DrawIndexedIndirectArgs {
+                first_index: render_ctx.index_offset,
+                index_count: render_ctx.index_len as u32,
+                base_vertex: 0,
+                first_instance: 0,
+                instance_count: 1,
+            });
+
         self.draw_commands.draw_part(
             render_mask,
             self.is_in_mask,
             self.stencil_reference_value,
             id,
-            render_ctx,
+            indirect_offset as u64,
             self.is_in_composite,
         );
     }
@@ -379,6 +397,14 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
     fn on_end_draw(mut self, puppet: &inox2d::puppet::Puppet) {
         #[cfg(feature = "timing")]
         self.lap("Tree walk");
+
+        self.indirect_buffer = Some(
+            self.builder_indirect
+                .commit(&self.device, &self.resources.queue),
+        );
+
+        #[cfg(feature = "timing")]
+        self.lap("Indirect buffer");
 
         *self.last_submission_index = DrawCommandList::flush(&mut self, puppet);
 

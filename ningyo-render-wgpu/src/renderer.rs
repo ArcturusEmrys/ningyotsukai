@@ -60,6 +60,9 @@ pub struct WgpuRenderer<'window> {
     /// Builder for composite frag uniforms
     pub(crate) builder_composite_frag: BufferBuilder<composite_frag::Input>,
 
+    /// Builder for indirect rendering buffer
+    pub(crate) builder_indirect: BufferBuilder<wgpu::util::DrawIndexedIndirectArgs>,
+
     /// An index into the buffers for each node.
     pub(crate) buffer_indices: HashMap<u32, BufferIndices>,
 
@@ -155,10 +158,26 @@ impl<'window> WgpuRenderer<'window> {
             render_target: target,
             uploads,
             resources,
-            builder_basic_frag: BufferBuilder::new(wgpu::Limits::default()),
-            builder_basic_mask_frag: BufferBuilder::new(wgpu::Limits::default()),
-            builder_basic_vert: BufferBuilder::new(wgpu::Limits::default()),
-            builder_composite_frag: BufferBuilder::new(wgpu::Limits::default()),
+            builder_basic_frag: BufferBuilder::new(
+                wgpu::Limits::default(),
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            builder_basic_mask_frag: BufferBuilder::new(
+                wgpu::Limits::default(),
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            builder_basic_vert: BufferBuilder::new(
+                wgpu::Limits::default(),
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            builder_composite_frag: BufferBuilder::new(
+                wgpu::Limits::default(),
+                wgpu::BufferUsages::UNIFORM,
+            ),
+            builder_indirect: BufferBuilder::new(
+                wgpu::Limits::defaults(),
+                wgpu::BufferUsages::INDIRECT,
+            ),
             buffer_indices: Default::default(),
             draw_commands: Default::default(),
             bind_cache: Default::default(),

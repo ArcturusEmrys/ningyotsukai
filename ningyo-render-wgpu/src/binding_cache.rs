@@ -28,8 +28,7 @@ pub struct BindingCache<'a> {
     /// do not permit multiple uniform buffers to live in the cache at the same
     /// time. All bindgroups must reference the same buffer, and if the buffer
     /// changes, the old bind groups are invalidated.
-    basic_frag_bind:
-        HashMap<(wgpu::TextureView, wgpu::TextureView, wgpu::TextureView), wgpu::BindGroup>,
+    basic_frag_bind: HashMap<wgpu::TextureView, wgpu::BindGroup>,
 
     /// The last uniform and viewport settings buffer used to access the
     /// basic_frag cache.
@@ -164,18 +163,12 @@ impl<'a> BindingCache<'a> {
     pub fn bind_basic_frag(
         &mut self,
         resources: &WgpuResources,
-        albedo: &wgpu::TextureView,
-        emissive: &wgpu::TextureView,
-        bumpmap: &wgpu::TextureView,
+        model_textures: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
-        // Fun wrinkle of the Rust HashMap API is that I have to bump the
-        // reference count every time I want to query these texture views
-        let key = (albedo.clone(), emissive.clone(), bumpmap.clone());
-
         if let Some(tether) = self.tether {
-            if let Some(bg) = tether.basic_frag_bind.get(&key) {
+            if let Some(bg) = tether.basic_frag_bind.get(&model_textures) {
                 // NOTE: Not recording the buffer is an internal logic error,
                 // so a panic is appropriate
                 let (last_buffer, last_viewports) =
@@ -186,7 +179,7 @@ impl<'a> BindingCache<'a> {
             }
         }
 
-        if let Some(bg) = self.basic_frag_bind.get(&key) {
+        if let Some(bg) = self.basic_frag_bind.get(&model_textures) {
             let (last_buffer, last_viewports) = self.last_basic_frag_bind_buffer.as_ref().unwrap();
             if buffer == last_buffer && viewports == last_viewports {
                 return bg.clone();
@@ -199,9 +192,7 @@ impl<'a> BindingCache<'a> {
 
         let new_bg = resources.part_shader_frag.bind(
             &resources.device,
-            albedo,
-            emissive,
-            bumpmap,
+            model_textures,
             &resources.model_sampler,
             wgpu::BufferBinding {
                 buffer,
@@ -215,7 +206,8 @@ impl<'a> BindingCache<'a> {
             },
         );
 
-        self.basic_frag_bind.insert(key, new_bg.clone());
+        self.basic_frag_bind
+            .insert(model_textures.clone(), new_bg.clone());
         self.last_basic_frag_bind_buffer = Some((buffer.clone(), viewports.clone()));
 
         new_bg

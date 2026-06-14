@@ -20,6 +20,9 @@ where
     ///
     /// We attempt to reuse our buffer allocation whenever possible.
     buffer: Option<wgpu::Buffer>,
+
+    /// Any additional usages we want on our buffer.
+    required_usages: wgpu::BufferUsages,
 }
 
 impl<B> BufferBuilder<B>
@@ -28,12 +31,13 @@ where
 {
     /// Create a new Buffer Builder that can generate buffers compliant with
     /// the specified GPU limits.
-    pub fn new(limits: wgpu::Limits) -> Self {
+    pub fn new(limits: wgpu::Limits, usages: wgpu::BufferUsages) -> Self {
         Self {
             phantom: PhantomData::default(),
             data: Vec::new(),
             alignment_requirement: limits.min_uniform_buffer_offset_alignment,
             buffer: None,
+            required_usages: usages,
         }
     }
 
@@ -80,7 +84,7 @@ where
             let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("BufferBuilder<{}>::commit", type_name::<B>())),
                 contents: self.data.as_ref(),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                usage: wgpu::BufferUsages::COPY_DST | self.required_usages,
             });
 
             self.buffer = Some(new_buffer);

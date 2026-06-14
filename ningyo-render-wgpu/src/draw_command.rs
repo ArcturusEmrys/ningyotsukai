@@ -1,7 +1,6 @@
 use inox2d::node::InoxNodeUuid;
 use inox2d::node::components;
 use inox2d::node::drawables::DrawableKind;
-use inox2d::render;
 use rayon::current_num_threads;
 
 use crate::draw_session::WgpuDrawSession;
@@ -25,7 +24,7 @@ pub enum DrawCommand {
         using_mask: bool,
         stencil_reference: u32,
         id: InoxNodeUuid,
-        render_ctx: render::TexturedMeshRenderCtx,
+        indirect_offset: wgpu::BufferAddress,
         to_composite: bool,
     },
     BeginComposite,
@@ -98,7 +97,7 @@ impl DrawCommandList {
         using_mask: bool,
         stencil_reference: u32,
         id: InoxNodeUuid,
-        render_ctx: &render::TexturedMeshRenderCtx,
+        indirect_offset: wgpu::BufferAddress,
         to_composite: bool,
     ) {
         self.commands.push(DrawCommand::DrawPart {
@@ -106,12 +105,7 @@ impl DrawCommandList {
             using_mask,
             stencil_reference,
             id,
-            render_ctx: render::TexturedMeshRenderCtx {
-                index_offset: render_ctx.index_offset,
-                index_len: render_ctx.index_len,
-                vert_offset: render_ctx.vert_offset,
-                vert_len: render_ctx.vert_len,
-            },
+            indirect_offset,
             to_composite,
         });
     }
@@ -128,17 +122,6 @@ impl DrawCommandList {
         });
     }
 
-    pub fn textures_for_part<'a>(
-        uploads: &'a WgpuUploads,
-        part: &components::TexturedMesh,
-    ) -> (&'a DeviceTexture, &'a DeviceTexture, &'a DeviceTexture) {
-        (
-            &uploads.model_textures[part.tex_albedo.raw()],
-            &uploads.model_textures[part.tex_bumpmap.raw()],
-            &uploads.model_textures[part.tex_emissive.raw()],
-        )
-    }
-
     pub fn flush(
         draw_session: &mut WgpuDrawSession<'_, '_>,
         puppet: &inox2d::puppet::Puppet,
@@ -152,6 +135,8 @@ impl DrawCommandList {
         let masked_depthstencil = draw_session.resources.masked_depthstencil.clone();
         let mask_depthstencil = draw_session.resources.mask_depthstencil.clone();
         let ignore_depthstencil = draw_session.resources.ignore_depthstencil.clone();
+
+        let indirect_buffer = draw_session.indirect_buffer.as_ref().unwrap();
 
         let num_layers = draw_session
             .render_target
@@ -174,6 +159,12 @@ impl DrawCommandList {
                         });
                 let mut binding_cache = draw_session.binding_cache.split();
                 let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
+
+                #[cfg(feature = "timing")]
+                let mut num_render_passes_constructed = 0;
+
+                #[cfg(feature = "timing")]
+                let start_time = std::time::Instant::now();
 
                 // Issue an entirely separate set of drawing commands for each layer in
                 // the target texture. We have to do this because wgpu's shader
@@ -233,7 +224,7 @@ impl DrawCommandList {
                                 using_mask,
                                 stencil_reference,
                                 id,
-                                render_ctx,
+                                indirect_offset,
                                 to_composite,
                             } => {
                                 let comps = puppet.world();
@@ -263,6 +254,11 @@ impl DrawCommandList {
                                         Some(stencil_view.as_depth_stencil_attachment())
                                     };
 
+                                    #[cfg(feature = "timing")]
+                                    {
+                                        num_render_passes_constructed += 1;
+                                    }
+
                                     drop(render_pass);
 
                                     render_pass = Some(encoder.encoder().begin_render_pass(
@@ -290,13 +286,6 @@ impl DrawCommandList {
                                     components.drawable.blending.mode,
                                 ));
 
-                                let (albedo, bumpmap, emissive) = Self::textures_for_part(
-                                    draw_session.uploads,
-                                    components.texture,
-                                );
-                                let (albedo, bumpmap, emissive) =
-                                    (albedo.clone(), bumpmap.clone(), emissive.clone());
-
                                 let index = draw_session.buffer_indices.get(&(*id).into()).unwrap();
                                 let vert_binding = binding_cache.bind_basic_vert(
                                     &*draw_session.resources,
@@ -304,6 +293,10 @@ impl DrawCommandList {
                                     viewports_config,
                                 );
 
+                                // NOTE: It seems like we could do this with
+                                // the render pass once, but we actually have
+                                // to reset these every draw call for whatever
+                                // reason.
                                 render_pass.set_vertex_buffer(
                                     basic_vert::INPUT_INDEX_VERTS,
                                     draw_session.uploads.verts.slice(..),
@@ -337,7 +330,7 @@ impl DrawCommandList {
                                     //TODO: What happens if a mask is also masked?
                                     let frag_binding = binding_cache.bind_basic_mask_frag(
                                         &draw_session.resources,
-                                        albedo.view(),
+                                        draw_session.uploads.model_textures.array_view(),
                                         draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
                                         viewports_config,
                                     );
@@ -379,9 +372,7 @@ impl DrawCommandList {
                                     let all = wgpu::ColorWrites::ALL;
                                     let frag_binding = binding_cache.bind_basic_frag(
                                         &draw_session.resources,
-                                        albedo.view(),
-                                        emissive.view(),
-                                        bumpmap.view(),
+                                        draw_session.uploads.model_textures.array_view(),
                                         draw_session.basic_frag_buffer.as_ref().unwrap(),
                                         viewports_config,
                                     );
@@ -428,12 +419,8 @@ impl DrawCommandList {
                                     render_pass.set_pipeline(pipeline.pipeline());
                                 }
 
-                                render_pass.draw_indexed(
-                                    render_ctx.index_offset as u32
-                                        ..(render_ctx.index_offset + render_ctx.index_len as u32),
-                                    0,
-                                    0..1,
-                                );
+                                render_pass
+                                    .draw_indexed_indirect(indirect_buffer, *indirect_offset);
                             }
                             DrawCommand::BeginComposite => {
                                 render_pass = None;
@@ -568,10 +555,25 @@ impl DrawCommandList {
                     render_pass = None;
                 }
 
-                (
-                    draw_session.resources.finish_encoding(encoder),
-                    binding_cache.untether(),
-                )
+                #[cfg(feature = "timing")]
+                {
+                    let total_time = std::time::Instant::now() - start_time;
+
+                    (
+                        draw_session.resources.finish_encoding(encoder),
+                        binding_cache.untether(),
+                        num_render_passes_constructed,
+                        total_time,
+                    )
+                }
+
+                #[cfg(not(feature = "timing"))]
+                {
+                    (
+                        draw_session.resources.finish_encoding(encoder),
+                        binding_cache.untether(),
+                    )
+                }
             })
             .collect();
 
@@ -581,11 +583,21 @@ impl DrawCommandList {
         #[cfg(feature = "timing")]
         let mut bind_count = (0, 0, 0, 0, 0);
 
-        for (buffer, binding_cache) in commands {
-            submission_index = Some(draw_session.resources.queue.submit(std::iter::once(buffer)));
+        let mut buffers = vec![];
+
+        for back in commands {
+            #[cfg(not(feature = "timing"))]
+            let (buffer, binding_cache) = back;
+
+            #[cfg(feature = "timing")]
+            let (buffer, binding_cache, num_render_passes_constructed, total_time) = back;
 
             #[cfg(feature = "timing")]
             {
+                eprintln!(
+                    "      (Thread time: {})",
+                    total_time.as_micros() as f32 / 1000.0
+                );
                 let this_bind_count = binding_cache.delta_len();
 
                 bind_count.0 += this_bind_count.0;
@@ -593,9 +605,17 @@ impl DrawCommandList {
                 bind_count.2 += this_bind_count.2;
                 bind_count.3 += this_bind_count.3;
                 bind_count.4 += this_bind_count.4;
+
+                if num_render_passes_constructed > num_layers {
+                    eprintln!(
+                        "        ({} RenderPass constructions...)",
+                        num_render_passes_constructed
+                    );
+                }
             }
 
             draw_session.binding_cache.merge(binding_cache);
+            buffers.push(buffer);
         }
 
         #[cfg(feature = "timing")]
@@ -629,8 +649,15 @@ impl DrawCommandList {
                 );
             }
 
-            WgpuDrawSession::lap_time("Submit", &mut draw_session.last_lap_time);
+            WgpuDrawSession::lap_time("Collate", &mut draw_session.last_lap_time);
         }
+
+        for buffer in buffers {
+            submission_index = Some(draw_session.resources.queue.submit(std::iter::once(buffer)));
+        }
+
+        #[cfg(feature = "timing")]
+        WgpuDrawSession::lap_time("Submit", &mut draw_session.last_lap_time);
 
         me.commands.drain(..);
 

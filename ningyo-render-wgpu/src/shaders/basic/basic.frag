@@ -16,19 +16,20 @@ layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outEmissive;
 layout(location = 2) out vec4 outBump;
 
-layout(set = 1, binding = 0) uniform texture2D albedo_tex;
-layout(set = 1, binding = 1) uniform texture2D emissive_tex;
-layout(set = 1, binding = 2) uniform texture2D bumpmap_tex;
-layout(set = 1, binding = 3) uniform sampler samp;
+layout(set = 1, binding = 0) uniform texture2DArray tex;
+layout(set = 1, binding = 1) uniform sampler samp;
 
-layout(set = 1, binding = 4) uniform Input {
-    uniform float opacity;
-    uniform vec3 multColor;
-    uniform vec3 screenColor;
-    uniform float emissionStrength;
+layout(set = 1, binding = 2) uniform Input {
+    float opacity;
+    vec3 multColor;
+    vec3 screenColor;
+    float emissionStrength;
+    uint tex_albedo;
+    uint tex_emissive;
+    uint tex_bumpmap;
 } uni_in;
 
-layout(set = 1, binding = 5) readonly buffer Viewports {
+layout(set = 1, binding = 3) readonly buffer Viewports {
     Viewport viewports[];
 } viewports_in;
 
@@ -46,7 +47,7 @@ void main() {
     }
 
     // Sample texture
-    vec4 texColor = texture(sampler2D(albedo_tex, samp), texUVs);
+    vec4 texColor = texture(sampler2DArray(tex, samp), vec3(texUVs.xy, uni_in.tex_albedo));
 
     // Screen color math
     vec3 screenOut = vec3(1.0) - ((vec3(1.0) - (texColor.xyz)) *
@@ -58,8 +59,8 @@ void main() {
 
     // Emissive
     outEmissive =
-        vec4(texture(sampler2D(emissive_tex, samp), texUVs).xyz * uni_in.emissionStrength, 1) * outAlbedo.a;
+        vec4(texture(sampler2DArray(tex, samp), vec3(texUVs.xy, uni_in.tex_emissive)).xyz * uni_in.emissionStrength, 1) * outAlbedo.a;
 
     // Bumpmap
-    outBump = vec4(texture(sampler2D(bumpmap_tex, samp), texUVs).xyz, 1) * outAlbedo.a;
+    outBump = vec4(texture(sampler2DArray(tex, samp), vec3(texUVs.xy, uni_in.tex_bumpmap)).xyz, 1) * outAlbedo.a;
 }

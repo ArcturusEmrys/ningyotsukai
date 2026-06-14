@@ -11,14 +11,16 @@
 #include "viewport.glsl"
 
 layout(location = 0) in vec2 texUVs;
+
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 outEmissive;
 layout(location = 2) out vec4 outBump;
 
-layout(set = 1, binding = 0) uniform texture2D tex;
+layout(set = 1, binding = 0) uniform texture2DArray tex;
 layout(set = 1, binding = 1) uniform sampler samp;
 layout(set = 1, binding = 2) uniform Input {
     float threshold;
+    uint tex_albedo;
 } uni_in;
 
 layout(set = 1, binding = 3) readonly buffer Viewports {
@@ -38,7 +40,7 @@ void main() {
         }
     }
 
-    vec4 color = texture(sampler2D(tex, samp), texUVs);
+    vec4 color = texture(sampler2DArray(tex, samp), vec3(texUVs, uni_in.tex_albedo));
     if (color.a <= uni_in.threshold)
         discard;
     outColor = vec4(1, 1, 1, 1);
