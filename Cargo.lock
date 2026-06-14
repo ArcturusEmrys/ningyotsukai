@@ -1797,6 +1797,7 @@ dependencies = [
 name = "ningyotsukai"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "drm-fourcc",
  "env_logger",
  "gdk4",

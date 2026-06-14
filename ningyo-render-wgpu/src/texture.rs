@@ -124,6 +124,8 @@ impl DeviceTexture {
                 },
                 layer_size,
             );
+
+            resources.device.poll(wgpu::PollType::Poll).unwrap();
         }
 
         let mut encoder =
@@ -233,7 +235,6 @@ impl DeviceTexture {
         let view = device_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let array_view = device_texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(1),
             ..Default::default()
         });
 
