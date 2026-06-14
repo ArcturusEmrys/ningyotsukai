@@ -8,6 +8,7 @@ use ningyo_texshare::ExtendedDevice;
 pub enum RenderMessage {
     UseResources(
         wgpu::Adapter,
+        wgpu::Instance,
         Arc<WgpuResources>,
         ExtendedDevice,
         wgpu::Queue,

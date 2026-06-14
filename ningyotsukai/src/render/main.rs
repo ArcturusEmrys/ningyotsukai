@@ -14,6 +14,7 @@ use crate::render::offscreen::OffscreenRender;
 struct RenderThread {
     wgpu_resources: Option<Arc<WgpuResources>>,
     wgpu_adapter: Option<wgpu::Adapter>,
+    wgpu_instance: Option<wgpu::Instance>,
     extended_device: Option<ExtendedDevice>,
     wgpu_queue: Option<wgpu::Queue>,
 
@@ -56,6 +57,7 @@ impl RenderThread {
         RenderThread {
             wgpu_resources,
             wgpu_adapter,
+            wgpu_instance: None,
             extended_device: None,
             wgpu_queue: None,
             last_time,
@@ -145,6 +147,9 @@ impl RenderThread {
                 if let Some(device) = self.extended_device.as_ref() {
                     #[allow(unused)]
                     let device = device.device();
+                    #[allow(unused)]
+                    let instance = self.wgpu_instance.as_ref().unwrap();
+
                     #[cfg(target_os = "windows")]
                     {
                         use windows::core::Interface;
@@ -159,7 +164,27 @@ impl RenderThread {
                         }
                     }
 
-                    #[cfg(not(target_os = "windows"))]
+                    #[cfg(target_os = "linux")]
+                    {
+                        use ash::vk::Handle;
+                        use std::ffi::c_void;
+                        if let Some(vkinst) = unsafe { instance.as_hal::<wgpu_hal::vulkan::Api>() }
+                        {
+                            let vkinst = vkinst.shared_instance().raw_instance();
+                            let ptr = vkinst.handle().as_raw() as *const *mut c_void;
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .start_frame_capture(unsafe { *ptr }, null());
+                        } else {
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .start_frame_capture(null(), null());
+                        }
+                    }
+
+                    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
                     self.doc
                         .as_mut()
                         .unwrap()
@@ -206,6 +231,8 @@ impl RenderThread {
                 if let Some(device) = self.extended_device.as_ref() {
                     #[allow(unused)]
                     let device = device.device();
+                    #[allow(unused)]
+                    let instance = self.wgpu_instance.as_ref().unwrap();
 
                     #[cfg(target_os = "windows")]
                     {
@@ -223,7 +250,27 @@ impl RenderThread {
                         }
                     }
 
-                    #[cfg(not(target_os = "windows"))]
+                    #[cfg(target_os = "linux")]
+                    {
+                        use ash::vk::Handle;
+                        use std::ffi::c_void;
+                        if let Some(vkinst) = unsafe { instance.as_hal::<wgpu_hal::vulkan::Api>() }
+                        {
+                            let vkinst = vkinst.shared_instance().raw_instance();
+                            let ptr = vkinst.handle().as_raw() as *const *mut c_void;
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .end_frame_capture(unsafe { *ptr }, null());
+                        } else {
+                            self.doc
+                                .as_mut()
+                                .unwrap()
+                                .start_frame_capture(null(), null());
+                        }
+                    }
+
+                    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
                     self.doc.as_mut().unwrap().end_frame_capture(null(), null());
                 }
             }
@@ -248,6 +295,11 @@ impl RenderThread {
     }
 
     fn do_update(&mut self, send: &Sender<RenderResponse>) {
+        // Don't do anything until the resources have come in.
+        if self.wgpu_resources.is_none() {
+            return;
+        }
+
         let cur_time = Instant::now();
         let del_time = cur_time - self.last_time;
         let dt = del_time.as_micros() as f32 / 1_000_000.0;
@@ -342,9 +394,16 @@ impl RenderThread {
     fn main(&mut self, recv: Receiver<RenderMessage>, send: Sender<RenderResponse>) {
         loop {
             match recv.try_recv() {
-                Ok(RenderMessage::UseResources(adapter, resources, extended_device, queue)) => {
+                Ok(RenderMessage::UseResources(
+                    adapter,
+                    instance,
+                    resources,
+                    extended_device,
+                    queue,
+                )) => {
                     self.wgpu_resources = Some(resources);
                     self.wgpu_adapter = Some(adapter);
+                    self.wgpu_instance = Some(instance);
                     self.extended_device = Some(extended_device);
                     self.wgpu_queue = Some(queue);
 

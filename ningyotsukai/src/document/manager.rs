@@ -88,6 +88,7 @@ impl DocumentManager {
     pub fn use_resources(
         &self,
         adapter: wgpu::Adapter,
+        instance: wgpu::Instance,
         resources: Arc<WgpuResources>,
         extended_device: ExtendedDevice,
         queue: wgpu::Queue,
@@ -97,6 +98,7 @@ impl DocumentManager {
             .send
             .send(RenderMessage::UseResources(
                 adapter,
+                instance,
                 resources,
                 extended_device,
                 queue,

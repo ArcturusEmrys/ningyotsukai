@@ -72,6 +72,7 @@ impl WidgetImpl for StageRendererImp {
         if let Some(document_manager) = &state.document_manager {
             document_manager.use_resources(
                 self.obj().adapter().unwrap(),
+                self.obj().instance().unwrap(),
                 resources.clone(),
                 self.obj().extended_device().unwrap(),
                 self.obj().queue().unwrap(),
@@ -195,6 +196,7 @@ impl StageRenderer {
         if let Some(resources) = &state.resources {
             document_manager.use_resources(
                 self.adapter().unwrap(),
+                self.instance().unwrap(),
                 resources.clone(),
                 self.extended_device().unwrap(),
                 self.queue().unwrap(),
