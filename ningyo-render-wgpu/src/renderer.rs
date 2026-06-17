@@ -49,13 +49,13 @@ pub struct WgpuRenderer<'window> {
     pub camera: Camera,
 
     /// Builder for basic part vertex uniforms
-    pub(crate) builder_basic_vert: BufferBuilder<basic_vert::Input>,
+    pub(crate) builder_basic_vert: BufferBuilder<basic_vert::InputArray>,
 
     /// Builder for basic part frag uniforms
-    pub(crate) builder_basic_frag: BufferBuilder<basic_frag::Input>,
+    pub(crate) builder_basic_frag: BufferBuilder<basic_frag::InputArray>,
 
     /// Builder for basic mask frag uniforms
-    pub(crate) builder_basic_mask_frag: BufferBuilder<basic_mask_frag::Input>,
+    pub(crate) builder_basic_mask_frag: BufferBuilder<basic_mask_frag::InputArray>,
 
     /// Builder for composite frag uniforms
     pub(crate) builder_composite_frag: BufferBuilder<composite_frag::Input>,
@@ -158,17 +158,14 @@ impl<'window> WgpuRenderer<'window> {
             render_target: target,
             uploads,
             resources,
-            builder_basic_frag: BufferBuilder::new(
-                wgpu::Limits::default(),
-                wgpu::BufferUsages::UNIFORM,
+            builder_basic_frag: BufferBuilder::new_array_builder::<basic_frag::InputArray>(
+                wgpu::BufferUsages::STORAGE,
             ),
-            builder_basic_mask_frag: BufferBuilder::new(
-                wgpu::Limits::default(),
-                wgpu::BufferUsages::UNIFORM,
+            builder_basic_mask_frag: BufferBuilder::new_array_builder::<basic_mask_frag::InputArray>(
+                wgpu::BufferUsages::STORAGE,
             ),
-            builder_basic_vert: BufferBuilder::new(
-                wgpu::Limits::default(),
-                wgpu::BufferUsages::UNIFORM,
+            builder_basic_vert: BufferBuilder::new_array_builder::<basic_vert::InputArray>(
+                wgpu::BufferUsages::STORAGE,
             ),
             builder_composite_frag: BufferBuilder::new(
                 wgpu::Limits::default(),

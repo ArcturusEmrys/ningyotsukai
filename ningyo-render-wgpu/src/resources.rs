@@ -35,15 +35,14 @@ pub struct WgpuResources {
 
     pub(crate) model_sampler: wgpu::Sampler,
 
-    pub(crate) mipmap_gen_vert_bind: wgpu::BindGroup,
     pub(crate) mipmap_gen_frag: mipmap_gen_frag::Shader,
     pub(crate) mipmap_gen_triangles: wgpu::Buffer,
-
-    pub(crate) null_frag_bind: wgpu::BindGroup,
 
     pub(crate) part_shader_vert: basic_vert::Shader,
     pub(crate) part_shader_frag: basic_frag::Shader,
     pub(crate) part_shader_mask_frag: basic_mask_frag::Shader,
+
+    pub(crate) texture_binding_max_size: u32,
 
     pub(crate) masked_depthstencil: wgpu::DepthStencilState,
     pub(crate) mask_depthstencil: wgpu::DepthStencilState,
@@ -108,7 +107,14 @@ impl WgpuResources {
             required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER
                 | wgpu::Features::CLEAR_TEXTURE
                 | wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
-                | wgpu::Features::DEPTH_CLIP_CONTROL,
+                | wgpu::Features::DEPTH_CLIP_CONTROL
+                | wgpu::Features::TEXTURE_BINDING_ARRAY
+                | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING
+                | wgpu::Features::INDIRECT_FIRST_INSTANCE,
+            // NOTE: While it would be SUPER COOL to use this feature, we
+            // can't, because AMD GPUs crash if you give them a partial
+            // bound.
+            //| wgpu::Features::PARTIALLY_BOUND_BINDING_ARRAY,
             required_limits: wgpu::Limits {
                 max_color_attachment_bytes_per_sample: 48,
                 max_multiview_view_count: adapter.limits().max_multiview_view_count,
@@ -116,6 +122,13 @@ impl WgpuResources {
                     adapter.limits().min_storage_buffer_offset_alignment,
                     32,
                 ),
+                max_buffer_size: adapter.limits().max_buffer_size,
+                max_sampled_textures_per_shader_stage: adapter
+                    .limits()
+                    .max_sampled_textures_per_shader_stage,
+                max_binding_array_elements_per_shader_stage: adapter
+                    .limits()
+                    .max_binding_array_elements_per_shader_stage,
                 ..Default::default()
             },
             ..Default::default()
@@ -154,9 +167,16 @@ impl WgpuResources {
         .unwrap();
 
         // Compile all our shaders now.
-        let part_shader_vert = basic_vert::Shader::new(&device, true, true);
-        let part_shader_frag = basic_frag::Shader::new(&device, true, true);
-        let part_shader_mask_frag = basic_mask_frag::Shader::new(&device, true, true);
+        let texture_binding_max_size = 16; // TODO: 16 textures ought to be enough for anyone.
+        let part_shader_vert = basic_vert::Shader::new(&device, false, true);
+        let part_shader_frag =
+            basic_frag::Shader::new(&device, NonZero::new(texture_binding_max_size), false, true);
+        let part_shader_mask_frag = basic_mask_frag::Shader::new(
+            &device,
+            NonZero::new(texture_binding_max_size),
+            false,
+            true,
+        );
 
         let masked_depthstencil = wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth24PlusStencil8,
@@ -266,8 +286,7 @@ impl WgpuResources {
             composite_shader_frag.clone(),
         );
 
-        let mipmap_gen_vert = mipmap_gen_vert::Shader::new(&device);
-        let mipmap_gen_vert_bind = mipmap_gen_vert.bind(&device);
+        let mipmap_gen_vert: mipmap_gen_vert::Shader = mipmap_gen_vert::Shader::new(&device);
         let mipmap_gen_frag = mipmap_gen_frag::Shader::new(&device);
         let mipmap_gen_triangles = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Mipmap Generator Quad"),
@@ -295,7 +314,6 @@ impl WgpuResources {
         });
 
         let null_frag = null_frag::Shader::new(&device);
-        let null_frag_bind = null_frag.bind(&device);
         let clear_pipeline =
             pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), null_frag.clone());
 
@@ -308,19 +326,18 @@ impl WgpuResources {
             queue,
 
             model_sampler,
-            mipmap_gen_vert_bind,
             mipmap_gen_frag,
             mipmap_gen_triangles,
             part_shader_vert,
             part_shader_frag,
             part_shader_mask_frag,
+            texture_binding_max_size,
             mask_depthstencil,
             masked_depthstencil,
             clear_depthstencil,
             ignore_depthstencil,
             composite_shader_vert,
             composite_shader_frag,
-            null_frag_bind,
             pipelines: RwLock::new(WgpuResourcesMutable {
                 #[cfg(feature = "tracy")]
                 profiler,

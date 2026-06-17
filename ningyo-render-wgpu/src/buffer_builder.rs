@@ -30,12 +30,26 @@ where
     B: UniformBlock,
 {
     /// Create a new Buffer Builder that can generate buffers compliant with
-    /// the specified GPU limits.
+    /// the specified GPU limits and usages for use as a uniform buffer.
     pub fn new(limits: wgpu::Limits, usages: wgpu::BufferUsages) -> Self {
         Self {
             phantom: PhantomData::default(),
             data: Vec::new(),
             alignment_requirement: limits.min_uniform_buffer_offset_alignment,
+            buffer: None,
+            required_usages: usages,
+        }
+    }
+
+    /// Create a new Buffer Builder that can generate buffers compliant with
+    /// the specified GPU usage for use as a storage buffer array.
+    ///
+    /// The T parameter should be an array type that holds instances of B.
+    pub fn new_array_builder<T: UniformBlock>(usages: wgpu::BufferUsages) -> Self {
+        Self {
+            phantom: PhantomData::default(),
+            data: Vec::new(),
+            alignment_requirement: T::static_size() as u32,
             buffer: None,
             required_usages: usages,
         }
@@ -54,11 +68,13 @@ where
     /// This function returns an index into the builder that will be valid for
     /// the next buffer returned from `commit`.
     pub fn insert(&mut self, uniform: B) -> usize {
-        let misalignment = self.alignment_requirement as usize
-            - (self.data.len() % self.alignment_requirement as usize);
-        let padding = misalignment % self.alignment_requirement as usize;
-        if padding != 0 {
-            self.data.resize(self.data.len() + padding, 0);
+        if self.alignment_requirement > 0 {
+            let misalignment = self.alignment_requirement as usize
+                - (self.data.len() % self.alignment_requirement as usize);
+            let padding = misalignment % self.alignment_requirement as usize;
+            if padding != 0 {
+                self.data.resize(self.data.len() + padding, 0);
+            }
         }
 
         let start = self.data.len();

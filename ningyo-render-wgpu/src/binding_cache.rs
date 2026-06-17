@@ -20,7 +20,10 @@ pub struct BindingCache<'a> {
     /// the second is the viewport configuration buffer.
     ///
     /// If either buffer changes, the previous binding is invalidated.
-    basic_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer, wgpu::Buffer)>,
+    ///
+    /// This stores two BindGroups; the second is shared with and identical
+    /// across all frag shader bindings.
+    basic_vert_bind: Option<(wgpu::BindGroup, wgpu::BindGroup, wgpu::Buffer, wgpu::Buffer)>,
 
     /// The cache of bind groups used for basic_frag.
     ///
@@ -28,7 +31,9 @@ pub struct BindingCache<'a> {
     /// do not permit multiple uniform buffers to live in the cache at the same
     /// time. All bindgroups must reference the same buffer, and if the buffer
     /// changes, the old bind groups are invalidated.
-    basic_frag_bind: HashMap<wgpu::TextureView, wgpu::BindGroup>,
+    ///
+    /// The bindgroups here go into slots 1 and 3.
+    basic_frag_bind: HashMap<Vec<wgpu::TextureView>, (wgpu::BindGroup, wgpu::BindGroup)>,
 
     /// The last uniform and viewport settings buffer used to access the
     /// basic_frag cache.
@@ -40,7 +45,9 @@ pub struct BindingCache<'a> {
     ///
     /// All bindgroups must reference the same buffer, and if the buffer
     /// changes, the old bind groups are invalidated.
-    basic_mask_frag_bind: HashMap<wgpu::TextureView, wgpu::BindGroup>,
+    ///
+    /// The bindgroups here go into slots 1 and 3.
+    basic_mask_frag_bind: HashMap<Vec<wgpu::TextureView>, (wgpu::BindGroup, wgpu::BindGroup)>,
 
     /// The last uniform and viewport settings buffer used to access the
     /// basic_mask_frag cache.
@@ -62,7 +69,10 @@ pub struct BindingCache<'a> {
     ///
     /// The two buffers in the list are the uniform and viewport settings
     /// buffers, in that order.
+    ///
+    /// The bindgroups here go into slots 1 and 3.
     composite_frag_bind: Option<(
+        wgpu::BindGroup,
         wgpu::BindGroup,
         wgpu::TextureView,
         wgpu::TextureView,
@@ -123,66 +133,77 @@ impl<'a> BindingCache<'a> {
         resources: &WgpuResources,
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
+    ) -> (wgpu::BindGroup, wgpu::BindGroup) {
         if let Some(tether) = self.tether {
-            if let Some((bg, my_buffer, my_viewports)) = &tether.basic_vert_bind {
+            if let Some((bg0, bg2, my_buffer, my_viewports)) = &tether.basic_vert_bind {
                 if buffer == my_buffer && viewports == my_viewports {
-                    return bg.clone();
+                    return (bg0.clone(), bg2.clone());
                 }
             }
         }
 
-        if let Some((bg, my_buffer, my_viewports)) = &self.basic_vert_bind {
+        if let Some((bg0, bg2, my_buffer, my_viewports)) = &self.basic_vert_bind {
             if buffer == my_buffer && viewports == my_viewports {
-                return bg.clone();
+                return (bg0.clone(), bg2.clone());
             } else {
                 #[cfg(feature = "timing")]
                 eprintln!("      (basic_vert buffer changed!)");
             }
         }
 
-        let new_bg = resources.part_shader_vert.bind(
+        let new_bg0 = resources.part_shader_vert.bind_0(
             &resources.device,
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(NonZero::new(basic_vert::Input::static_size() as u64).unwrap()),
-            },
-            wgpu::BufferBinding {
-                buffer: viewports,
-                offset: 0,
-                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
+                size: None,
             },
         );
 
-        self.basic_vert_bind = Some((new_bg.clone(), buffer.clone(), viewports.clone()));
+        let new_bg2 = resources.part_shader_vert.bind_2(
+            &resources.device,
+            wgpu::BufferBinding {
+                buffer: viewports,
+                offset: 0,
+                size: Some(NonZero::new(basic_vert::Viewport::static_size() as u64).unwrap()),
+            },
+        );
 
-        new_bg
+        self.basic_vert_bind = Some((
+            new_bg0.clone(),
+            new_bg2.clone(),
+            buffer.clone(),
+            viewports.clone(),
+        ));
+
+        (new_bg0, new_bg2)
     }
 
     pub fn bind_basic_frag(
         &mut self,
         resources: &WgpuResources,
-        model_textures: &wgpu::TextureView,
+        model_textures: &[&wgpu::TextureView],
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
+    ) -> (wgpu::BindGroup, wgpu::BindGroup) {
+        let textures_key: Vec<_> = model_textures.iter().map(|c| (*c).clone()).collect();
+
         if let Some(tether) = self.tether {
-            if let Some(bg) = tether.basic_frag_bind.get(&model_textures) {
+            if let Some((bg1, bg3)) = tether.basic_frag_bind.get(&textures_key) {
                 // NOTE: Not recording the buffer is an internal logic error,
                 // so a panic is appropriate
                 let (last_buffer, last_viewports) =
                     tether.last_basic_frag_bind_buffer.as_ref().unwrap();
                 if buffer == last_buffer && viewports == last_viewports {
-                    return bg.clone();
+                    return (bg1.clone(), bg3.clone());
                 }
             }
         }
 
-        if let Some(bg) = self.basic_frag_bind.get(&model_textures) {
+        if let Some((bg1, bg3)) = self.basic_frag_bind.get(&textures_key) {
             let (last_buffer, last_viewports) = self.last_basic_frag_bind_buffer.as_ref().unwrap();
             if buffer == last_buffer && viewports == last_viewports {
-                return bg.clone();
+                return (bg1.clone(), bg3.clone());
             } else {
                 #[cfg(feature = "timing")]
                 eprintln!("      (basic_frag_bind buffers changed!)");
@@ -190,15 +211,18 @@ impl<'a> BindingCache<'a> {
             }
         }
 
-        let new_bg = resources.part_shader_frag.bind(
+        let new_bg1 = resources.part_shader_frag.bind_1(
             &resources.device,
             model_textures,
             &resources.model_sampler,
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(NonZero::new(basic_frag::Input::static_size() as u64).unwrap()),
+                size: None,
             },
+        );
+        let new_bg3 = resources.part_shader_frag.bind_3(
+            &resources.device,
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
@@ -207,36 +231,38 @@ impl<'a> BindingCache<'a> {
         );
 
         self.basic_frag_bind
-            .insert(model_textures.clone(), new_bg.clone());
+            .insert(textures_key, (new_bg1.clone(), new_bg3.clone()));
         self.last_basic_frag_bind_buffer = Some((buffer.clone(), viewports.clone()));
 
-        new_bg
+        (new_bg1, new_bg3)
     }
 
     pub fn bind_basic_mask_frag(
         &mut self,
         resources: &WgpuResources,
-        albedo: &wgpu::TextureView,
+        model_textures: &[&wgpu::TextureView],
         buffer: &wgpu::Buffer,
         viewport: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
+    ) -> (wgpu::BindGroup, wgpu::BindGroup) {
+        let textures_key: Vec<_> = model_textures.iter().map(|c| (*c).clone()).collect();
+
         if let Some(tether) = self.tether {
-            if let Some(bg) = tether.basic_mask_frag_bind.get(albedo) {
+            if let Some((bg1, bg3)) = tether.basic_mask_frag_bind.get(&textures_key) {
                 // NOTE: Not recording the buffer is an internal logic error,
                 // so a panic is appropriate
                 let (last_buffer, last_viewport) =
                     tether.last_basic_mask_frag_bind_buffer.as_ref().unwrap();
                 if buffer == last_buffer && viewport == last_viewport {
-                    return bg.clone();
+                    return (bg1.clone(), bg3.clone());
                 }
             }
         }
 
-        if let Some(bg) = self.basic_mask_frag_bind.get(albedo) {
+        if let Some((bg1, bg3)) = self.basic_mask_frag_bind.get(&textures_key) {
             let (last_buffer, last_viewport) =
                 self.last_basic_mask_frag_bind_buffer.as_ref().unwrap();
             if buffer == last_buffer && viewport == last_viewport {
-                return bg.clone();
+                return (bg1.clone(), bg3.clone());
             } else {
                 #[cfg(feature = "timing")]
                 eprintln!("      (basic_mask_frag_bind buffers changed!)");
@@ -244,27 +270,30 @@ impl<'a> BindingCache<'a> {
             }
         }
 
-        let new_bg = resources.part_shader_mask_frag.bind(
+        let new_bg1 = resources.part_shader_mask_frag.bind_1(
             &resources.device,
-            albedo,
+            model_textures,
             &resources.model_sampler,
             wgpu::BufferBinding {
                 buffer,
                 offset: 0,
-                size: Some(NonZero::new(basic_mask_frag::Input::static_size() as u64).unwrap()),
+                size: None,
             },
+        );
+        let new_bg3 = resources.part_shader_mask_frag.bind_3(
+            &resources.device,
             wgpu::BufferBinding {
                 buffer: viewport,
                 offset: 0,
-                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
+                size: Some(NonZero::new(basic_mask_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
         self.basic_mask_frag_bind
-            .insert(albedo.clone(), new_bg.clone());
+            .insert(textures_key, (new_bg1.clone(), new_bg3.clone()));
         self.last_basic_mask_frag_bind_buffer = Some((buffer.clone(), viewport.clone()));
 
-        new_bg
+        (new_bg1, new_bg3)
     }
 
     pub fn bind_composite_vert(
@@ -289,7 +318,7 @@ impl<'a> BindingCache<'a> {
             }
         }
 
-        let new_bg = resources.composite_shader_vert.bind(
+        let new_bg = resources.composite_shader_vert.bind_2(
             &resources.device,
             wgpu::BufferBinding {
                 buffer: viewports,
@@ -311,9 +340,9 @@ impl<'a> BindingCache<'a> {
         bump: &wgpu::TextureView,
         buffer: &wgpu::Buffer,
         viewports: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
+    ) -> (wgpu::BindGroup, wgpu::BindGroup) {
         if let Some(tether) = self.tether {
-            if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
+            if let Some((bg1, bg3, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
                 &tether.composite_frag_bind
             {
                 if buffer == my_buffer
@@ -322,12 +351,12 @@ impl<'a> BindingCache<'a> {
                     && bump == my_bump
                     && viewports == my_viewports
                 {
-                    return bg.clone();
+                    return (bg1.clone(), bg3.clone());
                 }
             }
         }
 
-        if let Some((bg, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
+        if let Some((bg1, bg3, my_albedo, my_emissive, my_bump, my_buffer, my_viewports)) =
             &self.composite_frag_bind
         {
             if buffer == my_buffer
@@ -336,14 +365,14 @@ impl<'a> BindingCache<'a> {
                 && bump == my_bump
                 && viewports == my_viewports
             {
-                return bg.clone();
+                return (bg1.clone(), bg3.clone());
             } else {
                 #[cfg(feature = "timing")]
                 eprintln!("      (composite_frag buffer or textures changed!)");
             }
         }
 
-        let new_bg = resources.composite_shader_frag.bind(
+        let new_bg1 = resources.composite_shader_frag.bind_1(
             &resources.device,
             albedo,
             emissive,
@@ -354,15 +383,19 @@ impl<'a> BindingCache<'a> {
                 offset: 0,
                 size: Some(NonZero::new(composite_frag::Input::static_size() as u64).unwrap()),
             },
+        );
+        let new_bg3 = resources.composite_shader_frag.bind_3(
+            &resources.device,
             wgpu::BufferBinding {
                 buffer: viewports,
                 offset: 0,
-                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
+                size: Some(NonZero::new(basic_mask_frag::Viewport::static_size() as u64).unwrap()),
             },
         );
 
         self.composite_frag_bind = Some((
-            new_bg.clone(),
+            new_bg1.clone(),
+            new_bg3.clone(),
             albedo.clone(),
             emissive.clone(),
             bump.clone(),
@@ -370,7 +403,7 @@ impl<'a> BindingCache<'a> {
             viewports.clone(),
         ));
 
-        new_bg
+        (new_bg1, new_bg3)
     }
 
     /// Merge in another binding cache into this one.

@@ -25,6 +25,7 @@ pub enum DrawCommand {
         stencil_reference: u32,
         id: InoxNodeUuid,
         indirect_offset: wgpu::BufferAddress,
+        indirect_count: u32,
         to_composite: bool,
     },
     BeginComposite,
@@ -98,6 +99,7 @@ impl DrawCommandList {
         stencil_reference: u32,
         id: InoxNodeUuid,
         indirect_offset: wgpu::BufferAddress,
+        indirect_count: u32,
         to_composite: bool,
     ) {
         self.commands.push(DrawCommand::DrawPart {
@@ -106,6 +108,7 @@ impl DrawCommandList {
             stencil_reference,
             id,
             indirect_offset,
+            indirect_count,
             to_composite,
         });
     }
@@ -225,6 +228,7 @@ impl DrawCommandList {
                                 stencil_reference,
                                 id,
                                 indirect_offset,
+                                indirect_count,
                                 to_composite,
                             } => {
                                 let comps = puppet.world();
@@ -285,28 +289,27 @@ impl DrawCommandList {
                                 let blend = Some(Self::blend_mode_to_state(
                                     components.drawable.blending.mode,
                                 ));
-
-                                let index = draw_session.buffer_indices.get(&(*id).into()).unwrap();
-                                let vert_binding = binding_cache.bind_basic_vert(
-                                    &*draw_session.resources,
-                                    draw_session.basic_vert_buffer.as_ref().unwrap(),
-                                    viewports_config,
-                                );
+                                let (vert_binding, viewport_binding) = binding_cache
+                                    .bind_basic_vert(
+                                        &*draw_session.resources,
+                                        draw_session.basic_vert_buffer.as_ref().unwrap(),
+                                        viewports_config,
+                                    );
 
                                 // NOTE: It seems like we could do this with
                                 // the render pass once, but we actually have
                                 // to reset these every draw call for whatever
                                 // reason.
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_VERTS,
+                                    basic_vert::INPUT_INDEX_VERTS - 1,
                                     draw_session.uploads.verts.slice(..),
                                 );
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_UVS,
+                                    basic_vert::INPUT_INDEX_UVS - 1,
                                     draw_session.uploads.uvs.slice(..),
                                 );
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_DEFORM,
+                                    basic_vert::INPUT_INDEX_DEFORM - 1,
                                     draw_session.uploads.deforms.slice(..),
                                 );
                                 render_pass.set_index_buffer(
@@ -328,12 +331,19 @@ impl DrawCommandList {
 
                                 if *render_mask {
                                     //TODO: What happens if a mask is also masked?
-                                    let frag_binding = binding_cache.bind_basic_mask_frag(
-                                        &draw_session.resources,
-                                        draw_session.uploads.model_textures.array_view(),
-                                        draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
-                                        viewports_config,
-                                    );
+                                    let texture_views: Vec<_> = draw_session
+                                        .uploads
+                                        .model_textures
+                                        .iter()
+                                        .map(|mt| mt.view())
+                                        .collect();
+                                    let (frag_binding, viewport_frag_binding) = binding_cache
+                                        .bind_basic_mask_frag(
+                                            &draw_session.resources,
+                                            texture_views.as_slice(),
+                                            draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
+                                            viewports_config,
+                                        );
                                     let pipeline = draw_session
                                         .resources
                                         .part_mask_pipeline_with_configuration(
@@ -349,33 +359,36 @@ impl DrawCommandList {
                                             multiview_mask,
                                         );
                                     render_pass.set_pipeline(pipeline.pipeline());
-                                    pipeline.bind_frag(
-                                        render_pass,
-                                        Some(&frag_binding),
-                                        &[
-                                            index.basic_mask_frag.unwrap() as u32,
-                                            (current_layer * Viewport::static_size()) as u32,
-                                        ],
+                                    render_pass.set_bind_group(0, Some(&vert_binding), &[]);
+                                    render_pass.set_bind_group(1, Some(&frag_binding), &[]);
+                                    render_pass.set_bind_group(
+                                        2,
+                                        Some(&viewport_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
                                     );
-                                    pipeline.bind_vertex(
-                                        render_pass,
-                                        Some(&vert_binding),
-                                        &[
-                                            index.basic_vert.unwrap() as u32,
-                                            (current_layer * Viewport::static_size()) as u32,
-                                        ],
+                                    render_pass.set_bind_group(
+                                        3,
+                                        Some(&viewport_frag_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
                                     );
 
                                     render_pass.set_stencil_reference(*stencil_reference);
                                 } else {
                                     //Regular parts
                                     let all = wgpu::ColorWrites::ALL;
-                                    let frag_binding = binding_cache.bind_basic_frag(
-                                        &draw_session.resources,
-                                        draw_session.uploads.model_textures.array_view(),
-                                        draw_session.basic_frag_buffer.as_ref().unwrap(),
-                                        viewports_config,
-                                    );
+                                    let texture_views: Vec<_> = draw_session
+                                        .uploads
+                                        .model_textures
+                                        .iter()
+                                        .map(|mt| mt.view())
+                                        .collect();
+                                    let (frag_binding, viewport_frag_binding) = binding_cache
+                                        .bind_basic_frag(
+                                            &draw_session.resources,
+                                            &texture_views,
+                                            draw_session.basic_frag_buffer.as_ref().unwrap(),
+                                            viewports_config,
+                                        );
 
                                     let pipeline = if *using_mask {
                                         draw_session.resources.part_pipeline_with_configuration(
@@ -398,29 +411,27 @@ impl DrawCommandList {
                                     };
 
                                     render_pass.set_pipeline(pipeline.pipeline());
-                                    pipeline.bind_frag(
-                                        render_pass,
-                                        Some(&frag_binding),
-                                        &[
-                                            index.basic_frag.unwrap() as u32,
-                                            (current_layer * Viewport::static_size()) as u32,
-                                        ],
+                                    render_pass.set_bind_group(0, Some(&vert_binding), &[]);
+                                    render_pass.set_bind_group(1, Some(&frag_binding), &[]);
+                                    render_pass.set_bind_group(
+                                        2,
+                                        Some(&viewport_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
                                     );
-                                    pipeline.bind_vertex(
-                                        render_pass,
-                                        Some(&vert_binding),
-                                        &[
-                                            index.basic_vert.unwrap() as u32,
-                                            (current_layer * Viewport::static_size()) as u32,
-                                        ],
+                                    render_pass.set_bind_group(
+                                        3,
+                                        Some(&viewport_frag_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
                                     );
 
                                     render_pass.set_stencil_reference(1);
-                                    render_pass.set_pipeline(pipeline.pipeline());
                                 }
 
-                                render_pass
-                                    .draw_indexed_indirect(indirect_buffer, *indirect_offset);
+                                render_pass.multi_draw_indexed_indirect(
+                                    indirect_buffer,
+                                    *indirect_offset,
+                                    *indirect_count,
+                                );
                             }
                             DrawCommand::BeginComposite => {
                                 render_pass = None;
@@ -471,15 +482,15 @@ impl DrawCommandList {
                                 );
 
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_VERTS,
+                                    basic_vert::INPUT_INDEX_VERTS - 1,
                                     draw_session.uploads.verts.slice(..),
                                 );
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_UVS,
+                                    basic_vert::INPUT_INDEX_UVS - 1,
                                     draw_session.uploads.uvs.slice(..),
                                 );
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_DEFORM,
+                                    basic_vert::INPUT_INDEX_DEFORM - 1,
                                     draw_session.uploads.deforms.slice(..),
                                 );
                                 render_pass.set_index_buffer(
@@ -508,18 +519,19 @@ impl DrawCommandList {
 
                                     let index =
                                         draw_session.buffer_indices.get(&(*id).into()).unwrap();
-                                    let vert_binding = binding_cache.bind_composite_vert(
+                                    let viewport_binding = binding_cache.bind_composite_vert(
                                         &draw_session.resources,
                                         viewports_config,
                                     );
-                                    let frag_binding = binding_cache.bind_composite_frag(
-                                        &draw_session.resources,
-                                        &composite_albedo_view,
-                                        &composite_emissive_view,
-                                        &composite_bump_view,
-                                        draw_session.composite_frag_buffer.as_ref().unwrap(),
-                                        viewports_config,
-                                    );
+                                    let (frag_binding, viewport_frag_binding) = binding_cache
+                                        .bind_composite_frag(
+                                            &draw_session.resources,
+                                            &composite_albedo_view,
+                                            &composite_emissive_view,
+                                            &composite_bump_view,
+                                            draw_session.composite_frag_buffer.as_ref().unwrap(),
+                                            viewports_config,
+                                        );
 
                                     let pipeline = draw_session
                                         .resources
@@ -533,17 +545,21 @@ impl DrawCommandList {
                                         );
 
                                     render_pass.set_pipeline(pipeline.pipeline());
-                                    pipeline.bind_frag(
-                                        &mut render_pass,
+                                    //NOTE composite.vert does not use bindgroup 0.
+                                    render_pass.set_bind_group(0, None, &[]);
+                                    render_pass.set_bind_group(
+                                        1,
                                         Some(&frag_binding),
-                                        &[
-                                            index.composite_frag.unwrap() as u32,
-                                            (current_layer * Viewport::static_size()) as u32,
-                                        ],
+                                        &[index.composite_frag.unwrap() as u32],
                                     );
-                                    pipeline.bind_vertex(
-                                        &mut render_pass,
-                                        Some(&vert_binding),
+                                    render_pass.set_bind_group(
+                                        2,
+                                        Some(&viewport_binding),
+                                        &[(current_layer * Viewport::static_size()) as u32],
+                                    );
+                                    render_pass.set_bind_group(
+                                        3,
+                                        Some(&viewport_frag_binding),
                                         &[(current_layer * Viewport::static_size()) as u32],
                                     );
                                     render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?

@@ -1,11 +1,13 @@
 use shaderc::{self, IncludeType, ResolvedInclude};
 use spirv_reflect;
 use spirv_reflect::types::{
-    ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorType, ReflectDimension,
-    ReflectEntryPoint, ReflectFormat, ReflectImageFormat, ReflectTypeDescription, ReflectTypeFlags,
+    ReflectBlockVariable, ReflectDecorationFlags, ReflectDescriptorSet, ReflectDescriptorType,
+    ReflectDimension, ReflectEntryPoint, ReflectFormat, ReflectImageFormat, ReflectTypeDescription,
+    ReflectTypeFlags,
 };
 
 use std::borrow::Cow;
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsString;
@@ -299,8 +301,24 @@ fn gen_shader_new(
     };
 
     let mut extra_parameters = String::new();
+    let mut max_set_count = 0;
     for descriptor_set in &entrypoint.descriptor_sets {
+        max_set_count = max(max_set_count, descriptor_set.set);
+
         for binding in &descriptor_set.bindings {
+            if binding
+                .type_description
+                .as_ref()
+                .map(|td| td.type_flags.contains(ReflectTypeFlags::ARRAY))
+                .unwrap_or(false)
+            {
+                write!(
+                    extra_parameters,
+                    ", array_{}_count: Option<std::num::NonZero<u32>>",
+                    snake_case_name.to_lowercase()
+                )?;
+            }
+
             // NOTE: Yes, the Dynamic type is the same as regular, both allow
             // picking static or dynamic offsets at layout creation time.
             match binding.descriptor_type {
@@ -324,247 +342,261 @@ fn gen_shader_new(
         "    pub fn new(device: &wgpu::Device{}) -> Self {{",
         extra_parameters
     )?;
+    writeln!(
+        out,
+        "        let mut bindgroup_layout = vec![None; {}];",
+        max_set_count + 1
+    )?;
+
+    for descriptor_set in &entrypoint.descriptor_sets {
+        if descriptor_set.bindings.len() > 0 {
+            writeln!(
+                out,
+                "        bindgroup_layout[{}] = Some(device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {{",
+                descriptor_set.set
+            )?;
+            writeln!(out, "            entries: &[")?;
+            for binding in &descriptor_set.bindings {
+                writeln!(out, "                wgpu::BindGroupLayoutEntry {{")?;
+                writeln!(
+                    out,
+                    "                    binding: BINDING_{},",
+                    binding.name.to_uppercase()
+                )?;
+
+                // Strictly speaking, I'm not SURE if the count param needs to be
+                // present for anything other than a dynamically sized array?
+                if binding
+                    .type_description
+                    .as_ref()
+                    .map(|td| td.type_flags.contains(ReflectTypeFlags::ARRAY))
+                    .unwrap_or(false)
+                {
+                    writeln!(
+                        out,
+                        "                    count: array_{}_count,",
+                        snake_case_name.to_lowercase()
+                    )?;
+                } else {
+                    writeln!(out, "                    count: None,")?;
+                }
+
+                writeln!(out, "                    visibility: {},", visibility)?;
+
+                match binding.descriptor_type {
+                    ReflectDescriptorType::UniformBuffer
+                    | ReflectDescriptorType::UniformBufferDynamic => {
+                        writeln!(out, "                    ty: wgpu::BindingType::Buffer {{")?;
+                        writeln!(
+                            out,
+                            "                        ty: wgpu::BufferBindingType::Uniform,"
+                        )?;
+                        writeln!(
+                            out,
+                            "                        has_dynamic_offset: has_dynamic_offset_{}_{},",
+                            descriptor_set.set, binding.name
+                        )?;
+
+                        if binding.block.size > 0 {
+                            writeln!(
+                                out,
+                                "                        min_binding_size: Some(std::num::NonZero::new({}).expect(\"nonzero type\")),",
+                                binding.block.size
+                            )?;
+                        } else {
+                            writeln!(out, "                        min_binding_size: None,")?;
+                        }
+                        writeln!(out, "                    }},")?;
+                    }
+                    ReflectDescriptorType::StorageBuffer
+                    | ReflectDescriptorType::StorageBufferDynamic => {
+                        writeln!(out, "                    ty: wgpu::BindingType::Buffer {{")?;
+                        //TODO: At some point we're going to want writable storage buffers.
+                        writeln!(
+                            out,
+                            "                        ty: wgpu::BufferBindingType::Storage {{ read_only: true }},"
+                        )?;
+                        writeln!(
+                            out,
+                            "                        has_dynamic_offset: has_dynamic_offset_{}_{},",
+                            descriptor_set.set, binding.name
+                        )?;
+
+                        if binding.block.size > 0 {
+                            writeln!(
+                                out,
+                                "                        min_binding_size: Some(std::num::NonZero::new({}).expect(\"nonzero type\")),",
+                                binding.block.size
+                            )?;
+                        } else {
+                            writeln!(out, "                        min_binding_size: None,")?;
+                        }
+                        writeln!(out, "                    }},")?;
+                    }
+
+                    //NOTE: Combined image samplers are NOT supported by WGPU!
+                    ReflectDescriptorType::CombinedImageSampler => {
+                        writeln!(
+                            out,
+                            "                    ty: // Combined image samplers are NOT supported by WGPU. Please remove them from your shader.",
+                        )?;
+                    }
+                    ReflectDescriptorType::Sampler => {
+                        //TODO: How do we ask what filtering type to use?
+                        writeln!(
+                            out,
+                            "                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),"
+                        )?;
+                    }
+                    ReflectDescriptorType::SampledImage => {
+                        writeln!(out, "                    ty: wgpu::BindingType::Texture {{")?;
+                        writeln!(out, "                        multisampled: false,")?;
+
+                        match (binding.image.dim, binding.image.arrayed) {
+                            (ReflectDimension::Type1d, _) => writeln!(
+                                out,
+                                "                        view_dimension: wgpu::TextureViewDimension::D1,"
+                            )?,
+                            (ReflectDimension::Type2d, 1) => writeln!(
+                                out,
+                                "                        view_dimension: wgpu::TextureViewDimension::D2Array,"
+                            )?,
+                            (ReflectDimension::Type2d, _) => writeln!(
+                                out,
+                                "                        view_dimension: wgpu::TextureViewDimension::D2,"
+                            )?,
+                            (ReflectDimension::Type3d, _) => writeln!(
+                                out,
+                                "                        view_dimension: wgpu::TextureViewDimension::D3,"
+                            )?,
+                            (d, a) => writeln!(
+                                out,
+                                "                        view_dimension: //TODO: unknown dim {:?} / arrayed {},",
+                                d, a
+                            )?,
+                        }
+
+                        writeln!(
+                            out,
+                            "                        // Image format: {:?}",
+                            binding.image.image_format
+                        )?;
+                        match binding.image.image_format {
+                            ReflectImageFormat::Undefined => {
+                                let typedesc = binding.type_description.as_ref().unwrap();
+                                if typedesc.type_flags.contains(ReflectTypeFlags::FLOAT) {
+                                    writeln!(
+                                        out,
+                                        "                        sample_type: wgpu::TextureSampleType::Float {{ filterable: true }},"
+                                    )?;
+                                } else { //int textures
+                                    match typedesc.traits.numeric.scalar.signedness {
+                                        0 => writeln!(
+                                            out,
+                                            "                        sample_type: wgpu::TextureSampleType::Uint,"
+                                        )?,
+                                        1 => writeln!(
+                                            out,
+                                            "                        sample_type: wgpu::TextureSampleType::Sint,"
+                                        )?,
+                                        _ => panic!("Invalid signedness flag")
+                                    }
+                                }
+                            },
+                            ReflectImageFormat::RGBA32_FLOAT |
+                            ReflectImageFormat::RGBA16_FLOAT |
+                            ReflectImageFormat::R32_FLOAT |
+                            ReflectImageFormat::RG32_FLOAT |
+                            ReflectImageFormat::RG16_FLOAT |
+                            ReflectImageFormat::R11G11B10_FLOAT |
+                            ReflectImageFormat::R16_FLOAT => {
+                                // TODO: filtering on float textures is actually not permitted by WebGPU
+                                // so we need a mode to ask the generated shader code to turn this off
+                                writeln!(
+                                    out,
+                                    "                        sample_type: wgpu::TextureSampleType::Float {{ filterable: true }},"
+                                )?;
+                            }
+                            ReflectImageFormat::RGBA8 |   //TODO: Any documentation as to what this does?
+                            ReflectImageFormat::RGBA16 |  //I asked Al and he said this is UNORM, but Al
+                            ReflectImageFormat::RGB10A2 | //likes to make things up a lot.
+                            ReflectImageFormat::RG16 |
+                            ReflectImageFormat::RG8 |
+                            ReflectImageFormat::R16 |
+                            ReflectImageFormat::R8 |
+                            ReflectImageFormat::RGBA32_UINT |
+                            ReflectImageFormat::RGBA16_UINT |
+                            ReflectImageFormat::RGBA8_UINT |
+                            ReflectImageFormat::R32_UINT |
+                            ReflectImageFormat::RGB10A2_UINT |
+                            ReflectImageFormat::RG32_UINT |
+                            ReflectImageFormat::RG16_UINT |
+                            ReflectImageFormat::RG8_UINT |
+                            ReflectImageFormat::R16_UINT |
+                            ReflectImageFormat::R8_UINT => {
+                                writeln!(
+                                    out,
+                                    "                        sample_type: wgpu::TextureSampleType::Uint,"
+                                )?;
+                            }
+                            ReflectImageFormat::RGBA8_SNORM |
+                            ReflectImageFormat::RGBA16_SNORM |
+                            ReflectImageFormat::RG16_SNORM |
+                            ReflectImageFormat::RG8_SNORM |
+                            ReflectImageFormat::R16_SNORM |
+                            ReflectImageFormat::R8_SNORM |
+                            ReflectImageFormat::RGBA32_INT |
+                            ReflectImageFormat::RGBA16_INT |
+                            ReflectImageFormat::RGBA8_INT |
+                            ReflectImageFormat::R32_INT |
+                            ReflectImageFormat::RG32_INT |
+                            ReflectImageFormat::RG16_INT |
+                            ReflectImageFormat::RG8_INT |
+                            ReflectImageFormat::R16_INT |
+                            ReflectImageFormat::R8_INT => {
+                                writeln!(
+                                    out,
+                                    "                        sample_type: wgpu::TextureSampleType::Sint,"
+                                )?;
+                            }
+                        }
+                        writeln!(out, "                    }},")?;
+                    }
+
+                    //TODO: generate bindings for all of these
+                    ReflectDescriptorType::Undefined
+                    | ReflectDescriptorType::StorageImage
+                    | ReflectDescriptorType::UniformTexelBuffer
+                    | ReflectDescriptorType::StorageTexelBuffer
+                    | ReflectDescriptorType::InputAttachment
+                    | ReflectDescriptorType::AccelerationStructureKHR => {
+                        writeln!(
+                            out,
+                            "///TODO: Unknown descriptor type {:?}",
+                            binding.descriptor_type
+                        )?;
+                    }
+                }
+
+                writeln!(out, "                }},")?;
+            }
+            writeln!(out, "            ],")?;
+            writeln!(
+                out,
+                "            label: Some(\"{}::{} (set {})\")",
+                filename, entrypoint.name, descriptor_set.set
+            )?;
+            writeln!(out, "        }}));")?;
+        }
+    }
+
     writeln!(out, "        Self {{")?;
     writeln!(
         out,
         "            {}: device.create_shader_module({}),",
         entrypoint.name, snake_case_name
     )?;
-    writeln!(
-        out,
-        "            bindgroup_layout: device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {{"
-    )?;
-    writeln!(out, "                entries: &[")?;
-    for descriptor_set in &entrypoint.descriptor_sets {
-        writeln!(
-            out,
-            "                    // descriptor set {}",
-            descriptor_set.set
-        )?;
-        for binding in &descriptor_set.bindings {
-            writeln!(out, "                    wgpu::BindGroupLayoutEntry {{")?;
-            writeln!(
-                out,
-                "                        binding: BINDING_{},",
-                binding.name.to_uppercase()
-            )?;
-            writeln!(out, "                        count: None,")?; //TODO: Array support
-            writeln!(out, "                        visibility: {},", visibility)?;
-
-            match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer
-                | ReflectDescriptorType::UniformBufferDynamic => {
-                    writeln!(
-                        out,
-                        "                        ty: wgpu::BindingType::Buffer {{"
-                    )?;
-                    writeln!(
-                        out,
-                        "                            ty: wgpu::BufferBindingType::Uniform,"
-                    )?;
-                    writeln!(
-                        out,
-                        "                            has_dynamic_offset: has_dynamic_offset_{}_{},",
-                        descriptor_set.set, binding.name
-                    )?;
-
-                    if binding.block.size > 0 {
-                        writeln!(
-                            out,
-                            "                            min_binding_size: Some(std::num::NonZero::new({}).expect(\"nonzero type\")),",
-                            binding.block.size
-                        )?;
-                    } else {
-                        writeln!(out, "                            min_binding_size: None,")?;
-                    }
-                    writeln!(out, "                        }},")?;
-                }
-                ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::StorageBufferDynamic => {
-                    writeln!(
-                        out,
-                        "                        ty: wgpu::BindingType::Buffer {{"
-                    )?;
-                    //TODO: At some point we're going to want writable storage buffers.
-                    writeln!(
-                        out,
-                        "                            ty: wgpu::BufferBindingType::Storage {{ read_only: true }},"
-                    )?;
-                    writeln!(
-                        out,
-                        "                            has_dynamic_offset: has_dynamic_offset_{}_{},",
-                        descriptor_set.set, binding.name
-                    )?;
-
-                    if binding.block.size > 0 {
-                        writeln!(
-                            out,
-                            "                            min_binding_size: Some(std::num::NonZero::new({}).expect(\"nonzero type\")),",
-                            binding.block.size
-                        )?;
-                    } else {
-                        writeln!(out, "                            min_binding_size: None,")?;
-                    }
-                    writeln!(out, "                        }},")?;
-                }
-
-                //NOTE: Combined image samplers are NOT supported by WGPU!
-                ReflectDescriptorType::CombinedImageSampler => {
-                    writeln!(
-                        out,
-                        "                        ty: // Combined image samplers are NOT supported by WGPU. Please remove them from your shader.",
-                    )?;
-                }
-                ReflectDescriptorType::Sampler => {
-                    //TODO: How do we ask what filtering type to use?
-                    writeln!(
-                        out,
-                        "                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),"
-                    )?;
-                }
-                ReflectDescriptorType::SampledImage => {
-                    writeln!(
-                        out,
-                        "                        ty: wgpu::BindingType::Texture {{"
-                    )?;
-                    writeln!(out, "                            multisampled: false,")?;
-
-                    match (binding.image.dim, binding.image.arrayed) {
-                        (ReflectDimension::Type1d, _) => writeln!(
-                            out,
-                            "                            view_dimension: wgpu::TextureViewDimension::D1,"
-                        )?,
-                        (ReflectDimension::Type2d, 1) => writeln!(
-                            out,
-                            "                            view_dimension: wgpu::TextureViewDimension::D2Array,"
-                        )?,
-                        (ReflectDimension::Type2d, _) => writeln!(
-                            out,
-                            "                            view_dimension: wgpu::TextureViewDimension::D2,"
-                        )?,
-                        (ReflectDimension::Type3d, _) => writeln!(
-                            out,
-                            "                            view_dimension: wgpu::TextureViewDimension::D3,"
-                        )?,
-                        (d, a) => writeln!(
-                            out,
-                            "                            view_dimension: //TODO: unknown dim {:?} / arrayed {},",
-                            d, a
-                        )?,
-                    }
-
-                    writeln!(
-                        out,
-                        "                            // Image format: {:?}",
-                        binding.image.image_format
-                    )?;
-                    match binding.image.image_format {
-						ReflectImageFormat::Undefined => {
-							let typedesc = binding.type_description.as_ref().unwrap();
-							if typedesc.type_flags.contains(ReflectTypeFlags::FLOAT) {
-								writeln!(
-									out,
-									"                            sample_type: wgpu::TextureSampleType::Float {{ filterable: true }},"
-								)?;
-							} else { //int textures
-								match typedesc.traits.numeric.scalar.signedness {
-									0 => writeln!(
-										out,
-										"                            sample_type: wgpu::TextureSampleType::Uint,"
-									)?,
-									1 => writeln!(
-										out,
-										"                            sample_type: wgpu::TextureSampleType::Sint,"
-									)?,
-									_ => panic!("Invalid signedness flag")
-								}
-							}
-						},
-						ReflectImageFormat::RGBA32_FLOAT |
-						ReflectImageFormat::RGBA16_FLOAT |
-						ReflectImageFormat::R32_FLOAT |
-						ReflectImageFormat::RG32_FLOAT |
-						ReflectImageFormat::RG16_FLOAT |
-						ReflectImageFormat::R11G11B10_FLOAT |
-						ReflectImageFormat::R16_FLOAT => {
-							// TODO: filtering on float textures is actually not permitted by WebGPU
-							// so we need a mode to ask the generated shader code to turn this off
-							writeln!(
-								out,
-								"                            sample_type: wgpu::TextureSampleType::Float {{ filterable: true }},"
-							)?;
-						}
-						ReflectImageFormat::RGBA8 |   //TODO: Any documentation as to what this does?
-						ReflectImageFormat::RGBA16 |  //I asked Al and he said this is UNORM, but Al
-						ReflectImageFormat::RGB10A2 | //likes to make things up a lot.
-						ReflectImageFormat::RG16 |
-						ReflectImageFormat::RG8 |
-						ReflectImageFormat::R16 |
-						ReflectImageFormat::R8 |
-						ReflectImageFormat::RGBA32_UINT |
-						ReflectImageFormat::RGBA16_UINT |
-						ReflectImageFormat::RGBA8_UINT |
-						ReflectImageFormat::R32_UINT |
-						ReflectImageFormat::RGB10A2_UINT |
-						ReflectImageFormat::RG32_UINT |
-						ReflectImageFormat::RG16_UINT |
-						ReflectImageFormat::RG8_UINT |
-						ReflectImageFormat::R16_UINT |
-						ReflectImageFormat::R8_UINT => {
-							writeln!(
-								out,
-								"                            sample_type: wgpu::TextureSampleType::Uint,"
-							)?;
-						}
-						ReflectImageFormat::RGBA8_SNORM |
-						ReflectImageFormat::RGBA16_SNORM |
-						ReflectImageFormat::RG16_SNORM |
-						ReflectImageFormat::RG8_SNORM |
-						ReflectImageFormat::R16_SNORM |
-						ReflectImageFormat::R8_SNORM |
-						ReflectImageFormat::RGBA32_INT |
-						ReflectImageFormat::RGBA16_INT |
-						ReflectImageFormat::RGBA8_INT |
-						ReflectImageFormat::R32_INT |
-						ReflectImageFormat::RG32_INT |
-						ReflectImageFormat::RG16_INT |
-						ReflectImageFormat::RG8_INT |
-						ReflectImageFormat::R16_INT |
-						ReflectImageFormat::R8_INT => {
-							writeln!(
-								out,
-								"                            sample_type: wgpu::TextureSampleType::Sint,"
-							)?;
-						}
-					}
-                    writeln!(out, "                        }},")?;
-                }
-
-                //TODO: generate bindings for all of these
-                ReflectDescriptorType::Undefined
-                | ReflectDescriptorType::StorageImage
-                | ReflectDescriptorType::UniformTexelBuffer
-                | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::InputAttachment
-                | ReflectDescriptorType::AccelerationStructureKHR => {
-                    writeln!(
-                        out,
-                        "///TODO: Unknown descriptor type {:?}",
-                        binding.descriptor_type
-                    )?;
-                }
-            }
-
-            writeln!(out, "                    }},")?;
-        }
-    }
-    writeln!(out, "                ],")?;
-    writeln!(
-        out,
-        "                label: Some(\"{}::{}\")",
-        filename, entrypoint.name
-    )?;
-    writeln!(out, "            }})")?;
+    writeln!(out, "            bindgroup_layout,")?;
     writeln!(out, "        }}")?;
     writeln!(out, "    }}")?;
 
@@ -576,55 +608,66 @@ fn gen_shader_bind(
     out: &mut String,
     filename: &str,
     entrypoint: &ReflectEntryPoint,
+    descriptor_set: &ReflectDescriptorSet,
 ) -> Result<(), Box<dyn Error>> {
     let mut bind_params = String::new();
     let mut has_lifetime_parameter = false;
-    for descriptor_set in &entrypoint.descriptor_sets {
-        for binding in &descriptor_set.bindings {
-            // TODO: These can all be passed as arrays, we should probably
-            // support that.
-            match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer
-                | ReflectDescriptorType::UniformBufferDynamic => {
-                    has_lifetime_parameter = true;
+    for binding in &descriptor_set.bindings {
+        // TODO: These can all be passed as arrays, we should probably
+        // support that.
+        match binding.descriptor_type {
+            ReflectDescriptorType::UniformBuffer | ReflectDescriptorType::UniformBufferDynamic => {
+                has_lifetime_parameter = true;
+                write!(
+                    &mut bind_params,
+                    ", {}: impl Into<wgpu::BufferBinding<'a>>",
+                    binding.name
+                )?;
+            }
+            ReflectDescriptorType::StorageBuffer | ReflectDescriptorType::StorageBufferDynamic => {
+                has_lifetime_parameter = true;
+                write!(
+                    &mut bind_params,
+                    ", {}: impl Into<wgpu::BufferBinding<'a>>",
+                    binding.name
+                )?;
+            }
+            ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
+                write!(&mut bind_params, ", {}: &wgpu::Sampler", binding.name)?;
+            }
+            ReflectDescriptorType::SampledImage => {
+                if binding
+                    .type_description
+                    .as_ref()
+                    .map(|td| td.type_flags.contains(ReflectTypeFlags::ARRAY))
+                    .unwrap_or(false)
+                {
                     write!(
                         &mut bind_params,
-                        ", {}: impl Into<wgpu::BufferBinding<'a>>",
+                        ", {}: &[&wgpu::TextureView]",
                         binding.name
                     )?;
-                }
-                ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::StorageBufferDynamic => {
-                    has_lifetime_parameter = true;
-                    write!(
-                        &mut bind_params,
-                        ", {}: impl Into<wgpu::BufferBinding<'a>>",
-                        binding.name
-                    )?;
-                }
-                ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
-                    write!(&mut bind_params, ", {}: &wgpu::Sampler", binding.name)?;
-                }
-                ReflectDescriptorType::SampledImage => {
+                } else {
                     write!(&mut bind_params, ", {}: &wgpu::TextureView", binding.name)?;
                 }
+            }
 
-                //TODO: generate bindings for all of these
-                ReflectDescriptorType::Undefined
-                | ReflectDescriptorType::StorageImage
-                | ReflectDescriptorType::UniformTexelBuffer
-                | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::InputAttachment
-                | ReflectDescriptorType::AccelerationStructureKHR => {
-                    writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
-                }
+            //TODO: generate bindings for all of these
+            ReflectDescriptorType::Undefined
+            | ReflectDescriptorType::StorageImage
+            | ReflectDescriptorType::UniformTexelBuffer
+            | ReflectDescriptorType::StorageTexelBuffer
+            | ReflectDescriptorType::InputAttachment
+            | ReflectDescriptorType::AccelerationStructureKHR => {
+                writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
             }
         }
     }
 
     writeln!(
         out,
-        "    pub fn bind{}(&self, device: &wgpu::Device{}) -> wgpu::BindGroup {{",
+        "    pub fn bind_{}{}(&self, device: &wgpu::Device{}) -> wgpu::BindGroup {{",
+        descriptor_set.set,
         if has_lifetime_parameter { "<'a>" } else { "" },
         bind_params
     )?;
@@ -637,61 +680,71 @@ fn gen_shader_bind(
         "            label: Some(\"{}::{}\"),",
         filename, entrypoint.name
     )?;
-    writeln!(out, "            layout: &self.bindgroup_layout,")?;
+    writeln!(
+        out,
+        "            layout: &self.bindgroup_layout[{}].as_ref().unwrap(),",
+        descriptor_set.set
+    )?;
     writeln!(out, "            entries: &[")?;
 
-    for descriptor_set in &entrypoint.descriptor_sets {
+    for binding in &descriptor_set.bindings {
+        writeln!(out, "                wgpu::BindGroupEntry {{")?;
         writeln!(
             out,
-            "                // descriptor set {}",
-            descriptor_set.set
+            "                    binding: BINDING_{},",
+            binding.name.to_uppercase()
         )?;
-        for binding in &descriptor_set.bindings {
-            writeln!(out, "                wgpu::BindGroupEntry {{")?;
-            writeln!(
-                out,
-                "                    binding: BINDING_{},",
-                binding.name.to_uppercase()
-            )?;
-            match binding.descriptor_type {
-                ReflectDescriptorType::UniformBuffer
-                | ReflectDescriptorType::UniformBufferDynamic
-                | ReflectDescriptorType::StorageBuffer
-                | ReflectDescriptorType::StorageBufferDynamic => {
-                    writeln!(
-                        out,
-                        "                    resource: wgpu::BindingResource::Buffer({}.into())",
-                        binding.name
-                    )?;
-                }
+        match binding.descriptor_type {
+            ReflectDescriptorType::UniformBuffer
+            | ReflectDescriptorType::UniformBufferDynamic
+            | ReflectDescriptorType::StorageBuffer
+            | ReflectDescriptorType::StorageBufferDynamic => {
+                writeln!(
+                    out,
+                    "                    resource: wgpu::BindingResource::Buffer({}.into())",
+                    binding.name
+                )?;
+            }
 
-                ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
+            ReflectDescriptorType::Sampler | ReflectDescriptorType::CombinedImageSampler => {
+                writeln!(
+                    out,
+                    "                    resource: wgpu::BindingResource::Sampler({})",
+                    binding.name
+                )?;
+            }
+            ReflectDescriptorType::SampledImage => {
+                if binding
+                    .type_description
+                    .as_ref()
+                    .map(|td| td.type_flags.contains(ReflectTypeFlags::ARRAY))
+                    .unwrap_or(false)
+                {
                     writeln!(
                         out,
-                        "                    resource: wgpu::BindingResource::Sampler({})",
+                        "                    resource: wgpu::BindingResource::TextureViewArray({})",
                         binding.name
                     )?;
-                }
-                ReflectDescriptorType::SampledImage => {
+                } else {
                     writeln!(
                         out,
                         "                    resource: wgpu::BindingResource::TextureView({})",
                         binding.name
                     )?;
                 }
-
-                //TODO: generate bindings for all of these
-                ReflectDescriptorType::Undefined
-                | ReflectDescriptorType::StorageImage
-                | ReflectDescriptorType::UniformTexelBuffer
-                | ReflectDescriptorType::StorageTexelBuffer
-                | ReflectDescriptorType::InputAttachment
-                | ReflectDescriptorType::AccelerationStructureKHR => {
-                    writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
-                }
             }
-            writeln!(out, "                }},")?;
+
+            //TODO: generate bindings for all of these
+            ReflectDescriptorType::Undefined
+            | ReflectDescriptorType::StorageImage
+            | ReflectDescriptorType::UniformTexelBuffer
+            | ReflectDescriptorType::StorageTexelBuffer
+            | ReflectDescriptorType::InputAttachment
+            | ReflectDescriptorType::AccelerationStructureKHR => {
+                writeln!(out, "///TODO: Unknown type {:?}", binding.descriptor_type)?;
+            }
         }
+        writeln!(out, "                }},")?;
     }
 
     writeln!(out, "            ]")?;
@@ -725,6 +778,15 @@ fn gen_vertexshader_trait_methods(
         //how inox2d-opengl used its buffers.
         //In the future we may want packed buffers???
         let is_last = index == entrypoint.input_variables.len() - 1;
+
+        //NOTE: shaderc turns some GLSL builtins into -1 because they don't
+        //really HAVE a location. Skip them.
+        if input
+            .decoration_flags
+            .contains(ReflectDecorationFlags::BUILT_IN)
+        {
+            continue;
+        }
 
         if let Some(typedesc) = &input.type_description {
             let rust_type = spirv_to_rust_type(&typedesc)?;
@@ -913,9 +975,9 @@ fn gen_shader_trait_methods(
     writeln!(out, "impl shader::Shader for {} {{", struct_name)?;
     writeln!(
         out,
-        "    fn bindgroup_layout(&self) -> &wgpu::BindGroupLayout {{"
+        "    fn bindgroup_layout(&self) -> &[Option<wgpu::BindGroupLayout>] {{"
     )?;
-    writeln!(out, "        &self.bindgroup_layout")?;
+    writeln!(out, "        &self.bindgroup_layout.as_slice()")?;
     writeln!(out, "    }}")?;
     writeln!(out, "    fn label(&self) -> &str {{")?;
     writeln!(out, "        \"{}\"", label)?;
@@ -1183,14 +1245,19 @@ fn introspect_spirv(
         writeln!(out, "#[derive(Clone, Debug)]")?;
         writeln!(out, "pub struct {} {{", struct_name)?;
         writeln!(out, "    {}: wgpu::ShaderModule,", entrypoint.name)?;
-        writeln!(out, "    bindgroup_layout: wgpu::BindGroupLayout")?;
+        writeln!(
+            out,
+            "    bindgroup_layout: Vec<Option<wgpu::BindGroupLayout>>"
+        )?;
         writeln!(out, "}}")?;
         writeln!(out)?;
         writeln!(out, "impl {} {{", struct_name)?;
 
         gen_shader_new(out, snake_case_name, filename, &entrypoint)?;
         writeln!(out)?;
-        gen_shader_bind(out, filename, &entrypoint)?;
+        for descriptor_set in &entrypoint.descriptor_sets {
+            gen_shader_bind(out, filename, &entrypoint, descriptor_set)?;
+        }
         writeln!(out, "}}")?;
 
         writeln!(out)?;

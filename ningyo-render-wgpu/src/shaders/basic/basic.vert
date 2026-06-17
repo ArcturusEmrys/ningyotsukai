@@ -4,19 +4,24 @@
 
     Authors: Luna Nielsen
 */
-#version 440
+#version 450
 #extension GL_EXT_multiview : require
 #extension GL_GOOGLE_include_directive : require
 
 #include "viewport.glsl"
 
-layout(set = 0, binding = 0) uniform Input {
+struct Input {
   mat4 mvp;
   vec2 offset;
-} uni_in;
+  uint frag_index;
+};
 
-layout(set = 0, binding = 1) readonly buffer Viewports {
-  Viewport viewports[];
+layout(set = 0, binding = 0) readonly buffer InputArray {
+  Input inputs[];
+} uni_in_array;
+
+layout(set = 2, binding = 0) readonly buffer Viewports {
+    Viewport viewports[];
 } viewports_in;
 
 layout(location = 0) in vec2 verts;
@@ -24,8 +29,11 @@ layout(location = 1) in vec2 uvs;
 layout(location = 2) in vec2 deform;
 
 layout(location = 0) out vec2 texUVs;
+layout(location = 1) flat out uint frag_ii;
 
 void main() {
+  Input uni_in = uni_in_array.inputs[gl_InstanceIndex];
+
   mat4 viewport_proj = mat4(1.0);
   if (my_ViewIndex < viewports_in.viewports.length()) {
     viewport_proj = viewports_in.viewports[my_ViewIndex].projection;
@@ -33,4 +41,5 @@ void main() {
 
   gl_Position = viewport_proj * uni_in.mvp * vec4(verts - uni_in.offset + deform, 0, 1);
   texUVs = uvs;
+  frag_ii = uni_in.frag_index;
 }

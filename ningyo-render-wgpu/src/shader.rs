@@ -2,7 +2,7 @@ use std::hash::Hash;
 use wgpu;
 
 pub trait Shader: Clone {
-    fn bindgroup_layout(&self) -> &wgpu::BindGroupLayout;
+    fn bindgroup_layout(&self) -> &[Option<wgpu::BindGroupLayout>];
 
     fn label(&self) -> &str;
 }

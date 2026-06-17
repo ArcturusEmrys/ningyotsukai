@@ -9,6 +9,7 @@ use wgpu;
 use crate::buffer_builder::BufferBuilder;
 use crate::camera::CameraExt;
 use crate::draw_command::DrawCommandList;
+use crate::shader::UniformBlock;
 use crate::shaders::basic::{basic_frag, basic_mask_frag, basic_vert, composite_frag};
 use crate::{RenderTarget, WgpuRenderer};
 
@@ -30,9 +31,9 @@ pub struct WgpuDrawSession<'a, 'window> {
     pub(crate) uploads: &'a WgpuUploads,
 
     pub(crate) buffer_indices: &'a mut HashMap<u32, BufferIndices>,
-    pub(crate) builder_basic_vert: &'a mut BufferBuilder<basic_vert::Input>,
-    pub(crate) builder_basic_frag: &'a mut BufferBuilder<basic_frag::Input>,
-    pub(crate) builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::Input>,
+    pub(crate) builder_basic_vert: &'a mut BufferBuilder<basic_vert::InputArray>,
+    pub(crate) builder_basic_frag: &'a mut BufferBuilder<basic_frag::InputArray>,
+    pub(crate) builder_basic_mask_frag: &'a mut BufferBuilder<basic_mask_frag::InputArray>,
     pub(crate) builder_composite_frag: &'a mut BufferBuilder<composite_frag::Input>,
     pub(crate) builder_indirect: &'a mut BufferBuilder<wgpu::util::DrawIndexedIndirectArgs>,
 
@@ -188,23 +189,6 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             self.buffer_prepass_drawable(puppet, *uuid, false);
         }
 
-        self.basic_vert_buffer = Some(
-            self.builder_basic_vert
-                .commit(&self.device, &self.resources.queue),
-        );
-        self.basic_frag_buffer = Some(
-            self.builder_basic_frag
-                .commit(&self.device, &self.resources.queue),
-        );
-        self.basic_mask_frag_buffer = Some(
-            self.builder_basic_mask_frag
-                .commit(&self.device, &self.resources.queue),
-        );
-        self.composite_frag_buffer = Some(
-            self.builder_composite_frag
-                .commit(&self.device, &self.resources.queue),
-        );
-
         self.last_mask_threshold = 0.0;
         self.last_mask = vec![];
     }
@@ -263,37 +247,7 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
                     );
                 }
             }
-            Some(DrawableKind::TexturedMesh(components)) => {
-                if index.basic_vert.is_none() {
-                    index.basic_vert = Some(self.builder_basic_vert.insert(basic_vert::Input {
-                        mvp: (self.artboard_matrix * *components.transform).to_cols_array_2d(),
-                        offset: [0.0; 2],
-                    }));
-                }
-
-                if render_mask {
-                    if index.basic_mask_frag.is_none() {
-                        index.basic_mask_frag =
-                            Some(self.builder_basic_mask_frag.insert(basic_mask_frag::Input {
-                                threshold: self.last_mask_threshold,
-                                tex_albedo: components.texture.tex_albedo.raw() as u32,
-                            }));
-                    }
-                } else {
-                    if index.basic_frag.is_none() {
-                        index.basic_frag =
-                            Some(self.builder_basic_frag.insert(basic_frag::Input {
-                                opacity: components.drawable.blending.opacity,
-                                multColor: components.drawable.blending.tint.into(),
-                                screenColor: components.drawable.blending.screen_tint.into(),
-                                emissionStrength: 1.0, //NOTE: OpenGL never sets this.
-                                tex_albedo: components.texture.tex_albedo.raw() as u32,
-                                tex_emissive: components.texture.tex_emissive.raw() as u32,
-                                tex_bumpmap: components.texture.tex_bumpmap.raw() as u32,
-                            }));
-                    }
-                }
-            }
+            Some(DrawableKind::TexturedMesh(components)) => {}
             None => {}
         }
     }
@@ -347,17 +301,49 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
     fn draw_textured_mesh_content(
         &mut self,
         render_mask: bool,
-        _components: &drawables::TexturedMeshComponents,
+        components: &drawables::TexturedMeshComponents,
         render_ctx: &render::TexturedMeshRenderCtx,
         id: InoxNodeUuid,
     ) {
+        let frag_uniforms = if render_mask {
+            self.builder_basic_mask_frag
+                .insert(basic_mask_frag::InputArray {
+                    inputs: vec![basic_mask_frag::Input {
+                        threshold: self.last_mask_threshold,
+                        tex_albedo: components.texture.tex_albedo.raw() as u32,
+                    }],
+                })
+                / basic_mask_frag::InputArray::static_size()
+        } else {
+            // Input and InputArray have DIFFERENT static sizes,
+            // builder_basic_frag needs to align to InputArray's StaticSize.
+            // In addition, we appear to be putting invalid texture IDs in sometimes?!
+            self.builder_basic_frag.insert(basic_frag::InputArray {
+                inputs: vec![basic_frag::Input {
+                    opacity: components.drawable.blending.opacity,
+                    multColor: components.drawable.blending.tint.into(),
+                    screenColor: components.drawable.blending.screen_tint.into(),
+                    emissionStrength: 1.0, //NOTE: OpenGL never sets this.
+                    tex_albedo: components.texture.tex_albedo.raw() as u32,
+                    tex_emissive: components.texture.tex_emissive.raw() as u32,
+                    tex_bumpmap: components.texture.tex_bumpmap.raw() as u32,
+                }],
+            }) / basic_frag::InputArray::static_size()
+        };
+        let vert_uniforms = self.builder_basic_vert.insert(basic_vert::InputArray {
+            inputs: vec![basic_vert::Input {
+                mvp: (self.artboard_matrix * *components.transform).to_cols_array_2d(),
+                offset: [0.0; 2],
+                frag_index: frag_uniforms as u32,
+            }],
+        });
         let indirect_offset = self
             .builder_indirect
             .insert(wgpu::util::DrawIndexedIndirectArgs {
                 first_index: render_ctx.index_offset,
                 index_count: render_ctx.index_len as u32,
                 base_vertex: 0,
-                first_instance: 0,
+                first_instance: (vert_uniforms / basic_vert::InputArray::static_size()) as u32,
                 instance_count: 1,
             });
 
@@ -367,6 +353,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
             self.stencil_reference_value,
             id,
             indirect_offset as u64,
+            1,
             self.is_in_composite,
         );
     }
@@ -398,13 +385,29 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
         #[cfg(feature = "timing")]
         self.lap("Tree walk");
 
+        self.basic_vert_buffer = Some(
+            self.builder_basic_vert
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.basic_frag_buffer = Some(
+            self.builder_basic_frag
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.basic_mask_frag_buffer = Some(
+            self.builder_basic_mask_frag
+                .commit(&self.device, &self.resources.queue),
+        );
+        self.composite_frag_buffer = Some(
+            self.builder_composite_frag
+                .commit(&self.device, &self.resources.queue),
+        );
         self.indirect_buffer = Some(
             self.builder_indirect
                 .commit(&self.device, &self.resources.queue),
         );
 
         #[cfg(feature = "timing")]
-        self.lap("Indirect buffer");
+        self.lap("Buffer commit");
 
         *self.last_submission_index = DrawCommandList::flush(&mut self, puppet);
 

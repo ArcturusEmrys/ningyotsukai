@@ -27,7 +27,7 @@ layout(set = 1, binding = 4) uniform Input {
     vec3 screenColor;
 } uni_in;
 
-layout(set = 1, binding = 5) readonly buffer Viewports {
+layout(set = 3, binding = 0) readonly buffer Viewports {
     Viewport viewports[];
 } viewports_in;
 

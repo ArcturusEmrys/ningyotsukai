@@ -36,8 +36,7 @@ pub struct WgpuUploads {
     pub(crate) deforms: wgpu::Buffer,
     pub(crate) indices: wgpu::Buffer,
 
-    /// A texture array containing all textures in the model.
-    pub(crate) model_textures: DeviceTexture,
+    pub(crate) model_textures: Vec<DeviceTexture>,
 }
 
 impl WgpuUploads {
@@ -103,9 +102,45 @@ impl WgpuUploads {
         });
 
         let decoded_textures = decode_model_textures(model.textures.iter());
-        let model_textures =
-            DeviceTexture::new_from_model(resources, model, decoded_textures.as_slice())
-                .ok_or(WgpuRendererError::NonUniformModelTextureSizes)?;
+        let mut model_textures = vec![];
+
+        for (index, texture) in decoded_textures.iter().enumerate() {
+            model_textures.push(DeviceTexture::new_from_model(
+                resources, model, index, texture,
+            ));
+        }
+
+        // We have to provide a maximum number of binding items in advance and
+        // then stick to it.
+        // If we have LESS items, we add a 1x1 dummy texture, otherwise AMD GPUs
+        // will immediately panic.
+        // If we have MORE, some items WILL NOT RENDER!!! For now, at least.
+        let mut encoder =
+            resources
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Texture bind buffer fill thing"),
+                });
+        while model_textures.len() < resources.texture_binding_max_size as usize {
+            model_textures.push(DeviceTexture::empty_render_target(
+                &resources.device,
+                &mut encoder,
+                1,
+                1,
+                1,
+                wgpu::TextureFormat::Rgba8Unorm,
+            ));
+        }
+
+        resources.queue.submit(std::iter::once(encoder.finish()));
+
+        if model_textures.len() > resources.texture_binding_max_size as usize {
+            panic!(
+                "Too many textures in model! {} exceeds max size of {}",
+                model_textures.len(),
+                resources.texture_binding_max_size
+            );
+        }
 
         Ok(WgpuUploads {
             verts,

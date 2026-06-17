@@ -21,7 +21,4 @@ pub enum WgpuRendererError {
 
     #[error("The viewport ID {0} is not defined")]
     InvalidViewportId(usize),
-
-    #[error("Model textures not of uniform size")]
-    NonUniformModelTextureSizes,
 }

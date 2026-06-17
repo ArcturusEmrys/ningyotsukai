@@ -1,6 +1,7 @@
 use wgpu;
 
 use crate::shader::{FragmentShader, VertexShader};
+use std::cmp::max;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::num::NonZero;
@@ -31,12 +32,38 @@ where
         depth_stencil: Option<wgpu::DepthStencilState>,
         multiview_mask: Option<NonZero<u32>>,
     ) -> Self {
+        let vert_bindgroup_layouts = vert.bindgroup_layout();
+        let frag_bindgroup_layouts = frag.bindgroup_layout();
+        let mut mixed = vec![None; max(vert_bindgroup_layouts.len(), frag_bindgroup_layouts.len())];
+
+        for (index, fbl) in frag_bindgroup_layouts.iter().enumerate() {
+            if fbl.is_some() {
+                mixed[index] = fbl.as_ref();
+            }
+        }
+
+        for (index, vbl) in vert_bindgroup_layouts.iter().enumerate() {
+            // NOTE: We actually could share bindings across shaders, the
+            // problem is that our shader codegen isn't aware of this, so it
+            // claims the binding is only visible to one stage or the other.
+            // This really should be a property of the pipeline, but in order
+            // to do that, I need the codegen tool to add a method to get the
+            // bindgroup layout descriptors so we can create them here instead.
+            // Also, all the bindings the shaders generate have to have two
+            // sets of visibility flags.
+            if mixed[index].is_some() && vbl.is_some() {
+                panic!("Cannot share binding {} across shaders!", index);
+            }
+
+            if vbl.is_some() {
+                mixed[index] = vbl.as_ref();
+            }
+        }
+
         let name = format!("Pipeline of {} + {}", vert.label(), frag.label());
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&name),
-
-            // NOTE: This assumes vertex shaders always use set 0 and fragment shaders always use set 1.
-            bind_group_layouts: &[Some(vert.bindgroup_layout()), Some(frag.bindgroup_layout())],
+            bind_group_layouts: mixed.as_slice(),
             immediate_size: 0,
         });
 
@@ -83,28 +110,6 @@ where
             phantom_frag: PhantomData::default(),
             phantom_vert: PhantomData::default(),
         }
-    }
-
-    pub fn bind_vertex<'a, BG>(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        bind_group: BG,
-        offsets: &[wgpu::DynamicOffset],
-    ) where
-        Option<&'a wgpu::BindGroup>: From<BG>,
-    {
-        render_pass.set_bind_group(0, bind_group, offsets)
-    }
-
-    pub fn bind_frag<'a, BG>(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        bind_group: BG,
-        offsets: &[wgpu::DynamicOffset],
-    ) where
-        Option<&'a wgpu::BindGroup>: From<BG>,
-    {
-        render_pass.set_bind_group(1, bind_group, offsets)
     }
 
     pub fn pipeline(&self) -> &wgpu::RenderPipeline {

@@ -14,8 +14,8 @@ layout(set = 0, binding = 0) uniform Input {
   mat4 mvp;
 } uni_in;
 
-layout(set = 0, binding = 1) readonly buffer Viewports {
-  Viewport viewports[];
+layout(set = 2, binding = 0) readonly buffer Viewports {
+    Viewport viewports[];
 } viewports_in;
 
 layout(location = 0) in vec2 verts;
