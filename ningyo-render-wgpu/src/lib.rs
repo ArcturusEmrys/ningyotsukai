@@ -1,4 +1,5 @@
 mod binding_cache;
+mod blend;
 mod buffer_builder;
 mod camera;
 mod draw_command;

@@ -6,6 +6,7 @@ use std::error::Error;
 use std::sync::MutexGuard;
 use wgpu;
 
+use crate::blend::blend_mode_to_state;
 use crate::buffer_builder::BufferBuilder;
 use crate::camera::CameraExt;
 use crate::draw_command::DrawCommandList;
@@ -303,7 +304,7 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
         render_mask: bool,
         components: &drawables::TexturedMeshComponents,
         render_ctx: &render::TexturedMeshRenderCtx,
-        id: InoxNodeUuid,
+        _id: InoxNodeUuid,
     ) {
         let frag_uniforms = if render_mask {
             self.builder_basic_mask_frag
@@ -347,11 +348,17 @@ impl<'a, 'window> DrawSession<'a> for WgpuDrawSession<'a, 'window> {
                 instance_count: 1,
             });
 
+        let stencil_reference_value = if render_mask {
+            self.stencil_reference_value
+        } else {
+            1
+        };
+
         self.draw_commands.draw_part(
             render_mask,
             self.is_in_mask,
-            self.stencil_reference_value,
-            id,
+            stencil_reference_value,
+            Some(blend_mode_to_state(components.drawable.blending.mode)),
             indirect_offset as u64,
             1,
             self.is_in_composite,

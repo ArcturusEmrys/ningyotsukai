@@ -171,8 +171,7 @@ impl<'window> WgpuRenderer<'window> {
                 wgpu::Limits::default(),
                 wgpu::BufferUsages::UNIFORM,
             ),
-            builder_indirect: BufferBuilder::new(
-                wgpu::Limits::defaults(),
+            builder_indirect: BufferBuilder::new_array_builder::<wgpu::util::DrawIndexedIndirectArgs>(
                 wgpu::BufferUsages::INDIRECT,
             ),
             buffer_indices: Default::default(),

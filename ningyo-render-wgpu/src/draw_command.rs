@@ -1,20 +1,19 @@
 use inox2d::node::InoxNodeUuid;
-use inox2d::node::components;
 use inox2d::node::drawables::DrawableKind;
 use rayon::current_num_threads;
 
+use crate::blend::blend_mode_to_state;
 use crate::draw_session::WgpuDrawSession;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::basic_frag::Viewport;
 use crate::shaders::basic::basic_vert;
-use crate::texture::DeviceTexture;
 use crate::texture::TextureViewExt;
-use crate::uploads::WgpuUploads;
 
 use rayon::prelude::*;
 
 use std::cmp::max;
 
+#[derive(Debug)]
 pub enum DrawCommand {
     ClearCurrentStencil {
         to_composite: bool,
@@ -23,7 +22,7 @@ pub enum DrawCommand {
         render_mask: bool,
         using_mask: bool,
         stencil_reference: u32,
-        id: InoxNodeUuid,
+        blend_mode: Option<wgpu::BlendState>,
         indirect_offset: wgpu::BufferAddress,
         indirect_count: u32,
         to_composite: bool,
@@ -36,60 +35,79 @@ pub enum DrawCommand {
     },
 }
 
+impl DrawCommand {
+    /// Given two draw commands, determine if they can be batched, and if so,
+    /// construct a new draw command that encompasses both operations.
+    ///
+    /// If they cannot be batched, returns None.
+    pub fn can_be_batched(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (
+                Self::DrawPart {
+                    render_mask: self_render_mask,
+                    using_mask: self_using_mask,
+                    stencil_reference: self_stencil_reference,
+                    blend_mode: self_blend_mode,
+                    indirect_offset: self_indirect_offset,
+                    indirect_count: self_indirect_count,
+                    to_composite: self_to_composite,
+                },
+                Self::DrawPart {
+                    render_mask: other_render_mask,
+                    using_mask: other_using_mask,
+                    stencil_reference: other_stencil_reference,
+                    blend_mode: other_blend_mode,
+                    indirect_offset: other_indirect_offset,
+                    indirect_count: other_indirect_count,
+                    to_composite: other_to_composite,
+                },
+            ) => {
+                let self_indirect_end = *self_indirect_offset
+                    + (*self_indirect_count as usize
+                        * std::mem::size_of::<wgpu::util::DrawIndexedIndirectArgs>())
+                        as u64;
+
+                if *self_render_mask == *other_render_mask
+                    && *self_using_mask == *other_using_mask
+                    && *self_stencil_reference == *other_stencil_reference
+                    && *self_blend_mode == *other_blend_mode
+                    && self_indirect_end == *other_indirect_offset
+                    && *self_to_composite == *other_to_composite
+                {
+                    Some(Self::DrawPart {
+                        render_mask: *self_render_mask,
+                        using_mask: *self_using_mask,
+                        stencil_reference: *self_stencil_reference,
+                        blend_mode: *self_blend_mode,
+                        indirect_offset: *self_indirect_offset,
+                        indirect_count: *self_indirect_count + *other_indirect_count,
+                        to_composite: *self_to_composite,
+                    })
+                } else {
+                    None
+                }
+            }
+            (_, _) => None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct DrawCommandList {
     commands: Vec<DrawCommand>,
 }
 
 impl DrawCommandList {
-    fn blend_mode_to_state(state: components::BlendMode) -> wgpu::BlendState {
-        let component = match state {
-            components::BlendMode::Normal => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::Multiply => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Dst,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::ColorDodge => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::Dst,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::LinearDodge => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::One,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::Screen => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::One,
-                dst_factor: wgpu::BlendFactor::OneMinusSrc,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::ClipToLower => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::DstAlpha,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Add,
-            },
-            components::BlendMode::SliceFromLower => wgpu::BlendComponent {
-                src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
-                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                operation: wgpu::BlendOperation::Subtract,
-            },
-        };
-
-        wgpu::BlendState {
-            color: component,
-            alpha: component,
+    fn batch_upsert(&mut self, item: DrawCommand) {
+        if let Some(merged) = self.commands.last().and_then(|l| l.can_be_batched(&item)) {
+            *self.commands.last_mut().unwrap() = merged;
+        } else {
+            self.commands.push(item);
         }
     }
 
     pub fn clear_current_stencil(&mut self, to_composite: bool) {
-        self.commands
-            .push(DrawCommand::ClearCurrentStencil { to_composite });
+        self.batch_upsert(DrawCommand::ClearCurrentStencil { to_composite });
     }
 
     pub fn draw_part(
@@ -97,16 +115,16 @@ impl DrawCommandList {
         render_mask: bool,
         using_mask: bool,
         stencil_reference: u32,
-        id: InoxNodeUuid,
+        blend_mode: Option<wgpu::BlendState>,
         indirect_offset: wgpu::BufferAddress,
         indirect_count: u32,
         to_composite: bool,
     ) {
-        self.commands.push(DrawCommand::DrawPart {
+        self.batch_upsert(DrawCommand::DrawPart {
             render_mask,
             using_mask,
             stencil_reference,
-            id,
+            blend_mode,
             indirect_offset,
             indirect_count,
             to_composite,
@@ -114,11 +132,11 @@ impl DrawCommandList {
     }
 
     pub fn begin_composite(&mut self) {
-        self.commands.push(DrawCommand::BeginComposite);
+        self.batch_upsert(DrawCommand::BeginComposite);
     }
 
     pub fn end_composite(&mut self, render_mask: bool, using_mask: bool, id: InoxNodeUuid) {
-        self.commands.push(DrawCommand::EndComposite {
+        self.batch_upsert(DrawCommand::EndComposite {
             render_mask,
             using_mask,
             id,
@@ -149,6 +167,9 @@ impl DrawCommandList {
         let optimal_chunk_size = max(me.commands.len() / current_num_threads() * 2, 1);
 
         let mut submission_index = None;
+
+        #[cfg(feature = "timing")]
+        eprintln!("      (Commands: {})", me.commands.len());
 
         let commands: Vec<_> = me
             .commands
@@ -226,17 +247,12 @@ impl DrawCommandList {
                                 render_mask,
                                 using_mask,
                                 stencil_reference,
-                                id,
+                                blend_mode,
                                 indirect_offset,
                                 indirect_count,
                                 to_composite,
                             } => {
-                                let comps = puppet.world();
-                                let drawable = DrawableKind::new(*id, comps, false).unwrap();
-                                let components = match &drawable {
-                                    DrawableKind::Composite(_) => unreachable!(),
-                                    DrawableKind::TexturedMesh(components) => components,
-                                };
+                                let blend = [*blend_mode, *blend_mode, *blend_mode];
 
                                 let surface_color_attach = Some(color_view.as_color_attachment());
                                 let gbuffer_color = [
@@ -267,14 +283,7 @@ impl DrawCommandList {
 
                                     render_pass = Some(encoder.encoder().begin_render_pass(
                                         &wgpu::RenderPassDescriptor {
-                                            label: Some(&format!(
-                                                "WgpuRenderer::draw_textured_mesh_content - {}",
-                                                draw_session
-                                                    .node_names
-                                                    .get(&id)
-                                                    .map(|s| s.as_str())
-                                                    .unwrap_or("<NODE UNKNOWN>")
-                                            )),
+                                            label: Some(&format!("{:?}", command)),
                                             color_attachments,
                                             depth_stencil_attachment,
                                             occlusion_query_set: None,
@@ -285,10 +294,6 @@ impl DrawCommandList {
                                 }
 
                                 let render_pass = render_pass.as_mut().unwrap();
-
-                                let blend = Some(Self::blend_mode_to_state(
-                                    components.drawable.blending.mode,
-                                ));
                                 let (vert_binding, viewport_binding) = binding_cache
                                     .bind_basic_vert(
                                         &*draw_session.resources,
@@ -329,6 +334,8 @@ impl DrawCommandList {
                                         .map(|ca| ca.view.texture().format()),
                                 ];
 
+                                render_pass.set_stencil_reference(*stencil_reference);
+
                                 if *render_mask {
                                     //TODO: What happens if a mask is also masked?
                                     let texture_views: Vec<_> = draw_session
@@ -349,7 +356,7 @@ impl DrawCommandList {
                                         .part_mask_pipeline_with_configuration(
                                             &draw_session.device,
                                             formats,
-                                            [blend, blend, blend],
+                                            blend,
                                             [
                                                 wgpu::ColorWrites::empty(),
                                                 wgpu::ColorWrites::empty(),
@@ -371,8 +378,6 @@ impl DrawCommandList {
                                         Some(&viewport_frag_binding),
                                         &[(current_layer * Viewport::static_size()) as u32],
                                     );
-
-                                    render_pass.set_stencil_reference(*stencil_reference);
                                 } else {
                                     //Regular parts
                                     let all = wgpu::ColorWrites::ALL;
@@ -394,7 +399,7 @@ impl DrawCommandList {
                                         draw_session.resources.part_pipeline_with_configuration(
                                             &draw_session.device,
                                             formats,
-                                            [blend, blend, blend],
+                                            blend,
                                             [all, all, all],
                                             Some(masked_depthstencil.clone()),
                                             multiview_mask,
@@ -403,7 +408,7 @@ impl DrawCommandList {
                                         draw_session.resources.part_pipeline_with_configuration(
                                             &draw_session.device,
                                             formats,
-                                            [blend, blend, blend],
+                                            blend,
                                             [all, all, all],
                                             Some(ignore_depthstencil.clone()),
                                             multiview_mask,
@@ -423,8 +428,6 @@ impl DrawCommandList {
                                         Some(&viewport_frag_binding),
                                         &[(current_layer * Viewport::static_size()) as u32],
                                     );
-
-                                    render_pass.set_stencil_reference(1);
                                 }
 
                                 render_pass.multi_draw_indexed_indirect(
@@ -453,9 +456,8 @@ impl DrawCommandList {
                                     Some(stencil_view.as_depth_stencil_attachment());
 
                                 //TODO: Do we even want blending on in Normal mode?
-                                let blend = Some(Self::blend_mode_to_state(
-                                    components.drawable.blending.mode,
-                                ));
+                                let blend =
+                                    Some(blend_mode_to_state(components.drawable.blending.mode));
 
                                 let color_attachments =
                                     [Some(color_view.as_color_attachment()), None, None];
