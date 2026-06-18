@@ -190,6 +190,7 @@ impl DrawCommandList {
             });
         let mut binding_cache = draw_session.binding_cache.split();
         let mut render_pass: Option<wgpu::RenderPass<'_>> = None;
+        let mut render_pass_state_set = false;
         let send = send.clone();
 
         #[cfg(feature = "timing")]
@@ -223,6 +224,7 @@ impl DrawCommandList {
                             composite.stencil().clear(encoder.encoder());
                         } else {
                             let render_pass = render_pass.as_mut().unwrap();
+                            render_pass_state_set = false;
                             composite.stencil().clear_with_render_pass(
                                 &draw_session.device,
                                 render_pass,
@@ -240,6 +242,7 @@ impl DrawCommandList {
                             stencil.clear(encoder.encoder());
                         } else {
                             let render_pass = render_pass.as_mut().unwrap();
+                            render_pass_state_set = false;
                             stencil.clear_with_render_pass(
                                 &draw_session.device,
                                 render_pass,
@@ -297,35 +300,47 @@ impl DrawCommandList {
                                     multiview_mask,
                                 },
                             ));
+
+                            render_pass_state_set = false;
                         }
 
                         let render_pass = render_pass.as_mut().unwrap();
-                        let (vert_binding, viewport_binding) = binding_cache.bind_basic_vert(
-                            &*draw_session.resources,
-                            draw_session.basic_vert_buffer.as_ref().unwrap(),
-                            viewports_config,
-                        );
 
-                        // NOTE: It seems like we could do this with
-                        // the render pass once, but we actually have
-                        // to reset these every draw call for whatever
-                        // reason.
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_VERTS - 1,
-                            draw_session.uploads.verts.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_UVS - 1,
-                            draw_session.uploads.uvs.slice(..),
-                        );
-                        render_pass.set_vertex_buffer(
-                            basic_vert::INPUT_INDEX_DEFORM - 1,
-                            draw_session.uploads.deforms.slice(..),
-                        );
-                        render_pass.set_index_buffer(
-                            draw_session.uploads.indices.slice(..),
-                            wgpu::IndexFormat::Uint32,
-                        );
+                        if !render_pass_state_set {
+                            // NOTE: It seems like we could do this with
+                            // the render pass once, but we actually have
+                            // to reset these every draw call for whatever
+                            // reason.
+                            render_pass.set_vertex_buffer(
+                                basic_vert::INPUT_INDEX_VERTS - 1,
+                                draw_session.uploads.verts.slice(..),
+                            );
+                            render_pass.set_vertex_buffer(
+                                basic_vert::INPUT_INDEX_UVS - 1,
+                                draw_session.uploads.uvs.slice(..),
+                            );
+                            render_pass.set_vertex_buffer(
+                                basic_vert::INPUT_INDEX_DEFORM - 1,
+                                draw_session.uploads.deforms.slice(..),
+                            );
+                            render_pass.set_index_buffer(
+                                draw_session.uploads.indices.slice(..),
+                                wgpu::IndexFormat::Uint32,
+                            );
+
+                            let (vert_binding, viewport_binding) = binding_cache.bind_basic_vert(
+                                &*draw_session.resources,
+                                draw_session.basic_vert_buffer.as_ref().unwrap(),
+                                viewports_config,
+                            );
+
+                            render_pass.set_bind_group(0, Some(&vert_binding), &[]);
+                            render_pass.set_bind_group(
+                                2,
+                                Some(&viewport_binding),
+                                &[(current_layer * Viewport::static_size()) as u32],
+                            );
+                        }
 
                         let formats = [
                             color_attachments[0]
@@ -371,13 +386,7 @@ impl DrawCommandList {
                                     multiview_mask,
                                 );
                             render_pass.set_pipeline(pipeline.pipeline());
-                            render_pass.set_bind_group(0, Some(&vert_binding), &[]);
                             render_pass.set_bind_group(1, Some(&frag_binding), &[]);
-                            render_pass.set_bind_group(
-                                2,
-                                Some(&viewport_binding),
-                                &[(current_layer * Viewport::static_size()) as u32],
-                            );
                             render_pass.set_bind_group(
                                 3,
                                 Some(&viewport_frag_binding),
@@ -421,13 +430,7 @@ impl DrawCommandList {
                             };
 
                             render_pass.set_pipeline(pipeline.pipeline());
-                            render_pass.set_bind_group(0, Some(&vert_binding), &[]);
                             render_pass.set_bind_group(1, Some(&frag_binding), &[]);
-                            render_pass.set_bind_group(
-                                2,
-                                Some(&viewport_binding),
-                                &[(current_layer * Viewport::static_size()) as u32],
-                            );
                             render_pass.set_bind_group(
                                 3,
                                 Some(&viewport_frag_binding),
