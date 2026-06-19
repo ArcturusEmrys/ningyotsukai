@@ -19,17 +19,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build
-      if: matrix.os == "windows-latest"
+      if: matrix.os == 'windows-latest'
       run: cargo build --verbose
 
     - name: Build
-      if: matrix.os != "windows-latest"
+      if: matrix.os != 'windows-latest'
       run: cargo build --verbose --workspace --exclude ningyo-spout2
     
     - name: Run tests
-      if: matrix.os == "windows-latest"
+      if: matrix.os == 'windows-latest'
       run: cargo test --verbose
     
     - name: Run tests
-      if: matrix.os != "windows-latest"
+      if: matrix.os != 'windows-latest'
       run: cargo test --verbose --workspace --exclude ningyo-spout2
