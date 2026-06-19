@@ -1,0 +1,25 @@
+name: Build
+
+on:
+  push:
+    branches: [ $default-branch ]
+  pull_request:
+    branches: [ $default-branch ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    runs-on: ${{matrix.os}}
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: cargo build --verbose ${{ matrix.os == "ubuntu-latest" && "--workspace --exclude ningyo-spout2" || ""}}
+    - name: Run tests
+      run: cargo test --verbose ${{ matrix.os == "ubuntu-latest" && "--workspace --exclude ningyo-spout2" || ""}}
