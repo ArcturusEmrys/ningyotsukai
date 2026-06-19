@@ -2,9 +2,8 @@ name: Build
 
 on:
   push:
-    branches: [ $default-branch ]
+    branches: [ 'main', 'master' ]
   pull_request:
-    branches:
 
 env:
   CARGO_TERM_COLOR: always
@@ -29,8 +28,8 @@ jobs:
     
     - name: Run tests
       if: matrix.os == "windows-latest"
-      run: cargo build --verbose
+      run: cargo test --verbose
     
     - name: Run tests
       if: matrix.os != "windows-latest"
-      run: cargo build --verbose --workspace --exclude ningyo-spout2
+      run: cargo test --verbose --workspace --exclude ningyo-spout2
