@@ -3,18 +3,19 @@
 //! This type enables having multiple renderers share resources such as shaders,
 //! and pipelines.
 
+use std::any::type_name;
 use std::cmp::min;
 use std::fmt::Debug;
 use std::num::NonZero;
-use std::sync::RwLock;
+use std::ops::DerefMut;
+use std::sync::Mutex;
 
 use glam::Vec2;
 use wgpu;
 use wgpu::util::DeviceExt;
 
 use crate::error::WgpuRendererError;
-use crate::pipeline;
-use crate::shader::FragmentShader;
+use crate::pipeline_cache::PipelineCache;
 use crate::shaders::basic::{
     basic_frag, basic_mask_frag, basic_vert, composite_frag, composite_vert,
 };
@@ -52,33 +53,22 @@ pub struct WgpuResources {
     pub(crate) composite_shader_vert: composite_vert::Shader,
     pub(crate) composite_shader_frag: composite_frag::Shader,
 
-    pipelines: RwLock<WgpuResourcesMutable>,
-}
-
-struct WgpuResourcesMutable {
-    pub(crate) clear_pipeline: pipeline::PipelineGroup<mipmap_gen_vert::Shader, null_frag::Shader>,
-    pub(crate) mipmap_gen_pipeline:
-        pipeline::PipelineGroup<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader>,
-    pub(crate) part_pipeline: pipeline::PipelineGroup<basic_vert::Shader, basic_frag::Shader>,
-    pub(crate) part_mask_pipeline:
-        pipeline::PipelineGroup<basic_vert::Shader, basic_mask_frag::Shader>,
-    pub(crate) composite_pipeline:
-        pipeline::PipelineGroup<composite_vert::Shader, composite_frag::Shader>,
+    pipelines: Mutex<PipelineCache<'static>>,
 
     #[cfg(feature = "tracy")]
-    pub profiler: wgpu_profiler::GpuProfiler,
+    profiler: NoDebug<Mutex<wgpu_profiler::GpuProfiler>>,
 }
 
-impl Debug for WgpuResourcesMutable {
+#[repr(transparent)]
+struct NoDebug<T>(pub T);
+
+impl<T> Debug for NoDebug<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let none: Option<()> = None;
         // NOTE: The `profiler` field is deliberately elided since they forgot
         // to derive Debug
-        f.debug_struct("WgpuResourcesMutable")
-            .field("clear_pipeline", &self.clear_pipeline)
-            .field("mipmap_gen_pipeline", &self.mipmap_gen_pipeline)
-            .field("part_pipeline", &self.part_pipeline)
-            .field("part_mask_pipeline", &self.part_mask_pipeline)
-            .field("composite_pipeline", &self.composite_pipeline)
+        f.debug_struct(type_name::<T>())
+            .field("(contents elided)", &none)
             .finish()
     }
 }
@@ -270,21 +260,8 @@ impl WgpuResources {
             bias: wgpu::DepthBiasState::default(),
         };
 
-        //TODO: We need a pipeline per Inochi blending mode
-        //(or some kind of ubershader blending)
-
-        let part_pipeline =
-            pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_frag.clone());
-        let part_mask_pipeline =
-            pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
-
         let composite_shader_vert = composite_vert::Shader::new(&device, true);
         let composite_shader_frag = composite_frag::Shader::new(&device, true, true);
-
-        let composite_pipeline = pipeline::PipelineGroup::new(
-            composite_shader_vert.clone(),
-            composite_shader_frag.clone(),
-        );
 
         let mipmap_gen_vert: mipmap_gen_vert::Shader = mipmap_gen_vert::Shader::new(&device);
         let mipmap_gen_frag = mipmap_gen_frag::Shader::new(&device);
@@ -300,8 +277,6 @@ impl WgpuResources {
                 Vec2::new(1.0, 1.0),
             ]),
         });
-        let mipmap_gen_pipeline =
-            pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), mipmap_gen_frag.clone());
 
         let model_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToBorder,
@@ -314,8 +289,6 @@ impl WgpuResources {
         });
 
         let null_frag = null_frag::Shader::new(&device);
-        let clear_pipeline =
-            pipeline::PipelineGroup::new(mipmap_gen_vert.clone(), null_frag.clone());
 
         // Flush all pending work.
         // In wgpu, texture uploads etc will only execute at submit time
@@ -324,6 +297,17 @@ impl WgpuResources {
         WgpuResources {
             device,
             queue,
+
+            pipelines: Mutex::new(PipelineCache::new(
+                &part_shader_vert,
+                &part_shader_frag,
+                &part_shader_mask_frag,
+                &composite_shader_vert,
+                &composite_shader_frag,
+                &mipmap_gen_vert,
+                &mipmap_gen_frag,
+                &null_frag,
+            )),
 
             model_sampler,
             mipmap_gen_frag,
@@ -338,218 +322,14 @@ impl WgpuResources {
             ignore_depthstencil,
             composite_shader_vert,
             composite_shader_frag,
-            pipelines: RwLock::new(WgpuResourcesMutable {
-                #[cfg(feature = "tracy")]
-                profiler,
 
-                clear_pipeline,
-                mipmap_gen_pipeline,
-                part_pipeline,
-                part_mask_pipeline,
-                composite_pipeline,
-            }),
+            #[cfg(feature = "tracy")]
+            profiler: NoDebug(Mutex::new(profiler)),
         }
     }
 
-    pub fn clear_pipeline_with_configuration(
-        &self,
-        device: &wgpu::Device,
-        formats: <null_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::TextureFormat>>,
-        blend: <null_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
-        write_mask: <null_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
-        depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>,
-    ) -> pipeline::Pipeline<mipmap_gen_vert::Shader, null_frag::Shader> {
-        if let Some(premade_entry) = self
-            .pipelines
-            .read()
-            .unwrap()
-            .clear_pipeline
-            .with_configuration_cached(
-                formats,
-                blend,
-                write_mask,
-                depth_stencil.clone(),
-                multiview_mask,
-            )
-        {
-            premade_entry
-        } else {
-            self.pipelines
-                .write()
-                .unwrap()
-                .clear_pipeline
-                .with_configuration(
-                    device,
-                    formats,
-                    blend,
-                    write_mask,
-                    depth_stencil,
-                    multiview_mask,
-                )
-        }
-    }
-
-    pub fn mipmap_gen_pipeline_with_configuration(
-        &self,
-        device: &wgpu::Device,
-        formats: <mipmap_gen_frag::Shader as FragmentShader>::TargetArray<
-            Option<wgpu::TextureFormat>,
-        >,
-        blend: <mipmap_gen_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
-        write_mask: <mipmap_gen_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
-        depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>,
-    ) -> pipeline::Pipeline<mipmap_gen_vert::Shader, mipmap_gen_frag::Shader> {
-        if let Some(premade_entry) = self
-            .pipelines
-            .read()
-            .unwrap()
-            .mipmap_gen_pipeline
-            .with_configuration_cached(
-                formats,
-                blend,
-                write_mask,
-                depth_stencil.clone(),
-                multiview_mask,
-            )
-        {
-            premade_entry
-        } else {
-            self.pipelines
-                .write()
-                .unwrap()
-                .mipmap_gen_pipeline
-                .with_configuration(
-                    device,
-                    formats,
-                    blend,
-                    write_mask,
-                    depth_stencil,
-                    multiview_mask,
-                )
-        }
-    }
-
-    pub fn part_pipeline_with_configuration(
-        &self,
-        device: &wgpu::Device,
-        formats: <basic_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::TextureFormat>>,
-        blend: <basic_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
-        write_mask: <basic_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
-        depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>,
-    ) -> pipeline::Pipeline<basic_vert::Shader, basic_frag::Shader> {
-        if let Some(premade_entry) = self
-            .pipelines
-            .read()
-            .unwrap()
-            .part_pipeline
-            .with_configuration_cached(
-                formats,
-                blend,
-                write_mask,
-                depth_stencil.clone(),
-                multiview_mask,
-            )
-        {
-            premade_entry
-        } else {
-            self.pipelines
-                .write()
-                .unwrap()
-                .part_pipeline
-                .with_configuration(
-                    device,
-                    formats,
-                    blend,
-                    write_mask,
-                    depth_stencil,
-                    multiview_mask,
-                )
-        }
-    }
-
-    pub fn part_mask_pipeline_with_configuration(
-        &self,
-        device: &wgpu::Device,
-        formats: <basic_mask_frag::Shader as FragmentShader>::TargetArray<
-            Option<wgpu::TextureFormat>,
-        >,
-        blend: <basic_mask_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
-        write_mask: <basic_mask_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
-        depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>,
-    ) -> pipeline::Pipeline<basic_vert::Shader, basic_mask_frag::Shader> {
-        if let Some(premade_entry) = self
-            .pipelines
-            .read()
-            .unwrap()
-            .part_mask_pipeline
-            .with_configuration_cached(
-                formats,
-                blend,
-                write_mask,
-                depth_stencil.clone(),
-                multiview_mask,
-            )
-        {
-            premade_entry
-        } else {
-            self.pipelines
-                .write()
-                .unwrap()
-                .part_mask_pipeline
-                .with_configuration(
-                    device,
-                    formats,
-                    blend,
-                    write_mask,
-                    depth_stencil,
-                    multiview_mask,
-                )
-        }
-    }
-
-    pub fn composite_pipeline_with_configuration(
-        &self,
-        device: &wgpu::Device,
-        formats: <composite_frag::Shader as FragmentShader>::TargetArray<
-            Option<wgpu::TextureFormat>,
-        >,
-        blend: <composite_frag::Shader as FragmentShader>::TargetArray<Option<wgpu::BlendState>>,
-        write_mask: <composite_frag::Shader as FragmentShader>::TargetArray<wgpu::ColorWrites>,
-        depth_stencil: Option<wgpu::DepthStencilState>,
-        multiview_mask: Option<NonZero<u32>>,
-    ) -> pipeline::Pipeline<composite_vert::Shader, composite_frag::Shader> {
-        if let Some(premade_entry) = self
-            .pipelines
-            .read()
-            .unwrap()
-            .composite_pipeline
-            .with_configuration_cached(
-                formats,
-                blend,
-                write_mask,
-                depth_stencil.clone(),
-                multiview_mask,
-            )
-        {
-            premade_entry
-        } else {
-            self.pipelines
-                .write()
-                .unwrap()
-                .composite_pipeline
-                .with_configuration(
-                    device,
-                    formats,
-                    blend,
-                    write_mask,
-                    depth_stencil,
-                    multiview_mask,
-                )
-        }
+    pub fn pipelines(&self) -> impl DerefMut<Target = PipelineCache<'static>> {
+        self.pipelines.lock().unwrap()
     }
 
     pub fn create_encoder(&self, desc: &wgpu::CommandEncoderDescriptor) -> CommandEncoderWrapper {
@@ -557,10 +337,10 @@ impl WgpuResources {
 
         #[cfg(feature = "tracy")]
         let perf_query = self
-            .pipelines
-            .write()
-            .unwrap()
             .profiler
+            .0
+            .lock()
+            .unwrap()
             .begin_query("WgpuDrawSession::begin", &mut encoder);
 
         CommandEncoderWrapper {
@@ -573,10 +353,10 @@ impl WgpuResources {
 
     pub fn finish_encoding(&self, mut encoder: CommandEncoderWrapper) -> wgpu::CommandBuffer {
         #[cfg(feature = "tracy")]
-        self.pipelines
-            .write()
+        self.profiler
+            .0
+            .lock()
             .unwrap()
-            .profiler
             .end_query(&mut encoder.encoder, encoder.perf_query);
 
         encoder.encoder.finish()
@@ -588,8 +368,8 @@ impl WgpuResources {
     /// to be called after all renderers for the frame have run.
     #[cfg(feature = "tracy")]
     pub fn end_frame(&self) -> Result<(), wgpu_profiler::EndFrameError> {
-        let mut mutable_bit = self.pipelines.write().unwrap();
-        let profiler = &mut mutable_bit.profiler;
+        let mut mutable_bit = self.profiler.0.lock().unwrap();
+        let profiler = &mut *mutable_bit;
         let mut command_encoder =
             self.device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor {

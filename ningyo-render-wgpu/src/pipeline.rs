@@ -120,7 +120,7 @@ where
 /// Cache for different pipelines with the same shader program.
 ///
 /// Necessary as certain configurations cannot be changed dynamically in WGPU.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PipelineGroup<V, F>
 where
     V: VertexShader,
@@ -151,6 +151,29 @@ where
             frag,
             cache: HashMap::new(),
         }
+    }
+
+    /// Clone this pipeline group without cloning any of the cached pipelines
+    /// in it.
+    pub fn split(&self) -> Self {
+        Self {
+            vert: self.vert.clone(),
+            frag: self.frag.clone(),
+            cache: HashMap::new(),
+        }
+    }
+
+    /// Take ownership over any pipelines created by another pipeline group of
+    /// the same vertex/fragment shader combo.
+    pub fn merge(&mut self, mut other: Self) {
+        for (k, v) in other.cache.drain() {
+            self.cache.insert(k, v);
+        }
+    }
+
+    /// Determine how many cached pipelines exist in this pipeline group.
+    pub fn len(&self) -> usize {
+        self.cache.len()
     }
 
     /// Yields a pipeline with the chosen configuration iff it has already been

@@ -1783,6 +1783,7 @@ dependencies = [
  "glam",
  "inox2d",
  "ningyo-extensions",
+ "owning_ref",
  "rayon",
  "shaderc",
  "spirv-reflect",

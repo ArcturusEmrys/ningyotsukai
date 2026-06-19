@@ -6,6 +6,7 @@ mod draw_command;
 mod draw_session;
 mod error;
 mod pipeline;
+mod pipeline_cache;
 mod renderer;
 mod resources;
 mod shader;

@@ -6,6 +6,7 @@ use rayon::current_num_threads;
 use crate::binding_cache::BindingCache;
 use crate::blend::blend_mode_to_state;
 use crate::draw_session::WgpuDrawSession;
+use crate::pipeline_cache::PipelineCache;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::basic_frag::Viewport;
 use crate::shaders::basic::basic_vert;
@@ -161,6 +162,7 @@ impl DrawCommandList {
 
     fn flush_block(
         draw_session: &WgpuDrawSession<'_, '_>,
+        pipelines: &mut PipelineCache<'_>,
         puppet: &inox2d::puppet::Puppet,
         send: Sender<FlushResult>,
         thread_index: usize,
@@ -229,6 +231,7 @@ impl DrawCommandList {
                                 &draw_session.device,
                                 render_pass,
                                 &draw_session.resources,
+                                pipelines,
                                 &composite.as_color_attachments(), //NOTE: this does not actually write to these
                                 multiview_mask,
                             );
@@ -247,6 +250,7 @@ impl DrawCommandList {
                                 &draw_session.device,
                                 render_pass,
                                 &draw_session.resources,
+                                pipelines,
                                 &[Some(color_view.as_color_attachment()), None, None],
                                 multiview_mask,
                             );
@@ -371,20 +375,18 @@ impl DrawCommandList {
                                     draw_session.basic_mask_frag_buffer.as_ref().unwrap(),
                                     viewports_config,
                                 );
-                            let pipeline = draw_session
-                                .resources
-                                .part_mask_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    blend,
-                                    [
-                                        wgpu::ColorWrites::empty(),
-                                        wgpu::ColorWrites::empty(),
-                                        wgpu::ColorWrites::empty(),
-                                    ],
-                                    Some(mask_depthstencil.clone()),
-                                    multiview_mask,
-                                );
+                            let pipeline = pipelines.part_mask_pipeline_with_configuration(
+                                &draw_session.device,
+                                formats,
+                                blend,
+                                [
+                                    wgpu::ColorWrites::empty(),
+                                    wgpu::ColorWrites::empty(),
+                                    wgpu::ColorWrites::empty(),
+                                ],
+                                Some(mask_depthstencil.clone()),
+                                multiview_mask,
+                            );
                             render_pass.set_pipeline(pipeline.pipeline());
                             render_pass.set_bind_group(1, Some(&frag_binding), &[]);
                             render_pass.set_bind_group(
@@ -410,7 +412,7 @@ impl DrawCommandList {
                                 );
 
                             let pipeline = if *using_mask {
-                                draw_session.resources.part_pipeline_with_configuration(
+                                pipelines.part_pipeline_with_configuration(
                                     &draw_session.device,
                                     formats,
                                     blend,
@@ -419,7 +421,7 @@ impl DrawCommandList {
                                     multiview_mask,
                                 )
                             } else {
-                                draw_session.resources.part_pipeline_with_configuration(
+                                pipelines.part_pipeline_with_configuration(
                                     &draw_session.device,
                                     formats,
                                     blend,
@@ -540,16 +542,14 @@ impl DrawCommandList {
                                     viewports_config,
                                 );
 
-                            let pipeline = draw_session
-                                .resources
-                                .composite_pipeline_with_configuration(
-                                    &draw_session.device,
-                                    formats,
-                                    [blend, blend, blend],
-                                    [all, all, all],
-                                    depth_stencil,
-                                    multiview_mask,
-                                );
+                            let pipeline = pipelines.composite_pipeline_with_configuration(
+                                &draw_session.device,
+                                formats,
+                                [blend, blend, blend],
+                                [all, all, all],
+                                depth_stencil,
+                                multiview_mask,
+                            );
 
                             render_pass.set_pipeline(pipeline.pipeline());
                             //NOTE composite.vert does not use bindgroup 0.
@@ -619,20 +619,34 @@ impl DrawCommandList {
             draw_session.draw_commands.commands.len()
         );
 
-        let (_, (results, submission_index)) = rayon::join(
+        let (pipeline_caches, (results, submission_index)) = rayon::join(
             || {
-                draw_session
+                let pipelines_parent = draw_session.resources.pipelines();
+                let pipelines_end = draw_session
                     .draw_commands
                     .commands
                     .par_chunks(optimal_chunk_size)
                     .enumerate()
                     .map(|(thread_index, commands)| {
                         let send = send.clone();
-                        Self::flush_block(draw_session, puppet, send, thread_index, commands);
+                        let mut pipelines = pipelines_parent.split();
+                        Self::flush_block(
+                            draw_session,
+                            &mut pipelines,
+                            puppet,
+                            send,
+                            thread_index,
+                            commands,
+                        );
+
+                        pipelines.untether()
                     })
                     .collect::<Vec<_>>();
 
                 drop(send);
+                drop(pipelines_parent);
+
+                pipelines_end
             },
             || {
                 let mut next_index = 0;
@@ -724,6 +738,22 @@ impl DrawCommandList {
             }
 
             draw_session.binding_cache.merge(binding_cache);
+        }
+
+        {
+            let mut pipelines = draw_session.resources.pipelines();
+            let mut count = 0;
+            for subcache in pipeline_caches {
+                count += subcache.len();
+                pipelines.merge(subcache);
+            }
+
+            #[cfg(feature = "timing")]
+            {
+                if count > 0 {
+                    eprintln!("      ({} pipelines created...)", count);
+                }
+            }
         }
 
         #[cfg(feature = "timing")]

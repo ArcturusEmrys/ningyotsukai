@@ -106,7 +106,11 @@ impl WgpuUploads {
 
         for (index, texture) in decoded_textures.iter().enumerate() {
             model_textures.push(DeviceTexture::new_from_model(
-                resources, model, index, texture,
+                resources,
+                &mut *resources.pipelines(),
+                model,
+                index,
+                texture,
             ));
         }
 

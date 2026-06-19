@@ -8,6 +8,7 @@ use inox2d::texture::ShallowTexture;
 
 use crate::WgpuResources;
 use crate::error::WgpuRendererError;
+use crate::pipeline_cache::PipelineCache;
 use crate::shaders::mipmap_gen_vert;
 
 pub trait TextureViewExt {
@@ -54,6 +55,7 @@ impl DeviceTexture {
     /// Note that the upload will not complete until the next queue submission.
     pub fn new_from_model(
         resources: &WgpuResources,
+        pipelines: &mut PipelineCache<'_>,
         model: &Model,
         index: usize,
         texture: &ShallowTexture,
@@ -176,7 +178,7 @@ impl DeviceTexture {
                 multiview_mask: None,
             });
 
-            let pipeline = resources.mipmap_gen_pipeline_with_configuration(
+            let pipeline = pipelines.mipmap_gen_pipeline_with_configuration(
                 &resources.device,
                 [Some(device_texture.format())],
                 [Some(wgpu::BlendState::REPLACE)],
@@ -414,6 +416,7 @@ impl DepthStencilTexture {
         device: &wgpu::Device,
         render_pass: &mut wgpu::RenderPass<'_>,
         resources: &WgpuResources,
+        pipelines: &mut PipelineCache<'_>,
         color_attachments: &[Option<wgpu::RenderPassColorAttachment>],
         multiview_mask: Option<NonZero<u32>>,
     ) {
@@ -431,7 +434,7 @@ impl DepthStencilTexture {
         let replace = Some(wgpu::BlendState::REPLACE);
         let none = wgpu::ColorWrites::empty();
         let clear = resources.clear_depthstencil.clone();
-        let pipeline = resources.clear_pipeline_with_configuration(
+        let pipeline = pipelines.clear_pipeline_with_configuration(
             &device,
             formats,
             [replace, replace, replace],
