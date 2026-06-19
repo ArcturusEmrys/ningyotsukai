@@ -19,11 +19,16 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install Dependencies (GTK)
+    - name: Install Dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get -y install libgtk-4-dev libpipewire-0.3-dev
+
+    - name: Install Dependencies
+      if: matrix.os == 'windows-latest'
+      run: |
+        vcpkg install gtk:x64-windows
 
     - name: Build
       if: matrix.os == 'windows-latest'
