@@ -18,6 +18,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+
+    - name: Install Dependencies (GTK)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libgtk-4-dev libpipewire-0.3-dev
+
     - name: Build
       if: matrix.os == 'windows-latest'
       run: cargo build --verbose
