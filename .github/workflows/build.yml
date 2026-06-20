@@ -26,7 +26,7 @@ jobs:
     - name: Enable NuGet feeds
       if: matrix.os == 'windows-latest'
       run: |
-        dotnet nuget add source "https://github.com/{{ github.repository_owner }}/index.json" `
+        dotnet nuget add source "https://github.com/${{ github.repository_owner }}/index.json" `
           --name "GitHubPackages" `
           --username "${{ github.repository_owner }}" `
           --password "${{ secrets.GITHUB_TOKEN }}" `
@@ -41,9 +41,9 @@ jobs:
     - name: Install Dependencies
       if: matrix.os == 'windows-latest'
       env:
-        VCPKG_BINARY_SOURCES: "clear;nuget,https://github.com/{{ github.repository_owner }}/index.json,readwrite"
+        VCPKG_BINARY_SOURCES: "clear;nuget,https://github.com/${{ github.repository_owner }}/index.json,readwrite"
       run: |
-        vcpkg install --triplet=x64-windows
+        vcpkg install --triplet=x64-windowsho
 
         echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
         echo "RUST_VCPKG_DEFAULT_BINARIES=1" >> $env:GITHUB_ENV
