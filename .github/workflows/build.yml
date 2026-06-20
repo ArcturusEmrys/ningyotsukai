@@ -24,13 +24,13 @@ jobs:
             compatible_features: 'ningyotsukai/pipewire,ningyotsukai/timing,ningyotsukai/tracy,ningyotsukai/renderdoc'
             flags: '--exclude ningyo-spout2'
 
-    runs-on: ${{matrix.os}}
+    runs-on: ${{matrix.os.name}}
 
     steps:
     - uses: actions/checkout@v4
     
     - name: Cache native dependencies (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os.name == 'windows-latest'
       run: |
         dotnet nuget add source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
           --name "GitHubPackages" `
@@ -44,13 +44,13 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Install Dependencies (Ubuntu)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.os.name == 'ubuntu-latest'
       run: |
         sudo apt-get update
         sudo apt-get -y install libgtk-4-dev libpipewire-0.3-dev
 
     - name: Install Dependencies (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.os.name == 'windows-latest'
       env:
         VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json,readwrite"
       run: |
