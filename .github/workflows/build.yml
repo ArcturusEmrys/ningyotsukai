@@ -43,7 +43,7 @@ jobs:
       env:
         VCPKG_BINARY_SOURCES: "clear;nuget,https://github.com/${{ github.repository_owner }}/index.json,readwrite"
       run: |
-        vcpkg install --triplet=x64-windowsho
+        vcpkg install --triplet=x64-windows
 
         echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
         echo "RUST_VCPKG_DEFAULT_BINARIES=1" >> $env:GITHUB_ENV
