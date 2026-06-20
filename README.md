@@ -19,7 +19,9 @@ I am very sorry you have to do this.
   * TODO: Since I switched to forcing DX12 on Windows, is this still needed?
 3. Install GTK.
   * If you're on Ubuntu, install libgtk-4-dev
-  * On Windows, there are two paths to install GTK.
+  * On Windows, there are three paths to install GTK.
+    * You could install GTK via vcpkg, which is what I wound up doing in CI/CD.
+      This is probably the only easy option, but it takes a long while to build.
     * GTK itself recommends MSYS2, but GTK-RS recommends gvsbuild.
     * I actually chose neither! gvsbuild distributes nightlies as a ZIP that can be installed into `C:\gtk`. I set the following path vars:
       * `PATH` - add `C:\gtk\bin` to the existing list
