@@ -23,7 +23,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Enable NuGet feeds
+    - name: Cache native dependencies
       if: matrix.os == 'windows-latest'
       run: |
         dotnet nuget add source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
@@ -31,6 +31,11 @@ jobs:
           --username "${{ github.repository_owner }}" `
           --password "${{ secrets.GITHUB_TOKEN }}" `
           --store-password-in-clear-text
+    
+    - name: Cache compiled Rust
+      uses: swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Install Dependencies
       if: matrix.os == 'ubuntu-latest'
@@ -53,15 +58,6 @@ jobs:
         echo "${{ github.workspace }}\vcpkg_installed\x64-windows\bin" >> $env:GITHUB_PATH
         echo "${{ github.workspace }}\vcpkg_installed\x64-windows\tools\pkgconf" >> $env:GITHUB_PATH
         echo "${{ github.workspace }}\vcpkg_installed\x64-windows\tools\glib" >> $env:GITHUB_PATH
-
-    - name: Haha funny debug in prod
-      if: matrix.os == 'windows-latest'
-      run: |
-        dir $env:VCPKG_INSTALLATION_ROOT
-        dir ${{ github.workspace }}\vcpkg_installed
-        dir ${{ github.workspace }}\vcpkg_installed\x64-windows
-        dir ${{ github.workspace }}\vcpkg_installed\x64-windows\lib
-        dir ${{ github.workspace }}\vcpkg_installed\x64-windows\lib\pkgconfig
     
     - name: Build
       if: matrix.os == 'windows-latest'
