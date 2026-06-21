@@ -17,6 +17,7 @@ use crate::panels::PanelDock;
 use crate::panels::PanelFrame;
 use crate::stage::{Puppet, StageWidget};
 use crate::tracker::{TrackerManager, TrackerPanel, TrackerParamPanel};
+use crate::artboard::ArtboardPanel;
 
 use ningyo_extensions::{FileIn, WidgetExt2};
 
@@ -174,6 +175,37 @@ impl ObjectImpl for DocumentControllerImp {
                         } else {
                             for panel_frame in callback_self.find_all::<PanelFrame>() {
                                 if panel_frame.remove_page_by_action("doc.panels-bindings") {
+                                    break;
+                                }
+                            }
+                        }
+
+                        action.set_state(&glib::Variant::from(!panel_open));
+                    }
+                })
+                .build(),
+            gio::ActionEntry::builder("panels-artboard")
+                .state(false.into())
+                .activate({
+                    let callback_self = self.obj().clone();
+                    move |_, action, _| {
+                        let panel_open: bool = action.state().unwrap().get().unwrap();
+
+                        if !panel_open {
+                            let state = callback_self.imp().state.borrow();
+                            let document = state.as_ref().unwrap().document.clone();
+                            let builder = gtk4::Builder::from_resource(
+                                "/live/arcturus/ningyotsukai/artboard/panel_frame.ui",
+                            );
+                            let panel: PanelFrame = builder.object("panel").unwrap();
+                            let contents: ArtboardPanel = builder.object("contents").unwrap();
+
+                            contents.bind(document, callback_self.imp().stage.clone());
+
+                            callback_self.imp().new_panel_dock.append(&panel);
+                        } else {
+                            for panel_frame in callback_self.find_all::<PanelFrame>() {
+                                if panel_frame.remove_page_by_action("doc.panels-artboard") {
                                     break;
                                 }
                             }

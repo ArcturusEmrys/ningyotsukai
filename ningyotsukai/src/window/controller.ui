@@ -42,6 +42,10 @@
                 <attribute name="label" translatable="yes">Puppet Bindings</attribute>
                 <attribute name="action">doc.panels-bindings</attribute>
             </item>
+            <item>
+                <attribute name="label" translatable="yes">Artboard</attribute>
+                <attribute name="action">doc.panels-artboard</attribute>
+            </item>
         </section>
         <section>
             <item>

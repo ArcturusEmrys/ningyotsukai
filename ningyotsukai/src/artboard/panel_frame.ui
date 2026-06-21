@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <object class="NGTPanelFrame" id="panel">
+        <property name="name">Artboard</property>
+        <property name="associated-action">doc.panels-artboard</property>
+        <child>
+            <object class="NGTArtboardPanel" id="contents">
+            </object>
+        </child>
+    </object>
+</interface>

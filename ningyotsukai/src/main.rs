@@ -11,6 +11,7 @@ mod render;
 mod stage;
 mod tracker;
 mod window;
+mod artboard;
 
 fn main() -> glib::ExitCode {
     env_logger::init();
@@ -47,6 +48,7 @@ fn main() -> glib::ExitCode {
             tracker::TrackerPanel::ensure_type();
             tracker::TrackerParamPanel::ensure_type();
             bindings::BindingPanel::ensure_type();
+            artboard::ArtboardPanel::ensure_type();
 
             let window = window::WindowController::new(
                 app,
