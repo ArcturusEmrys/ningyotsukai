@@ -99,34 +99,24 @@ impl ObjectImpl for BindingFormImp {
         self.parent_constructed();
 
         export_notify!(self, name, connect_label_notify, notify_binding_name);
-        export_notify!(
-            self,
-            dampening_entry,
-            connect_buffer_notify,
-            notify_dampen_level
-        );
+        export_notify!(self, dampening_entry, connect_changed, notify_dampen_level);
         export_notify!(
             self,
             value_in_from_entry,
-            connect_buffer_notify,
+            connect_changed,
             notify_value_in_from
         );
-        export_notify!(
-            self,
-            value_in_to_entry,
-            connect_buffer_notify,
-            notify_value_in_to
-        );
+        export_notify!(self, value_in_to_entry, connect_changed, notify_value_in_to);
         export_notify!(
             self,
             value_out_from_entry,
-            connect_buffer_notify,
+            connect_changed,
             notify_value_out_from
         );
         export_notify!(
             self,
             value_out_to_entry,
-            connect_buffer_notify,
+            connect_changed,
             notify_value_out_to
         );
         export_notify!(self, value_invert_check, connect_activate, notify_inverse);
@@ -177,12 +167,7 @@ impl ObjectImpl for BindingFormImp {
             connect_value_notify,
             notify_value_out
         );
-        export_notify!(
-            self,
-            expression_entry,
-            connect_buffer_notify,
-            notify_expression
-        );
+        export_notify!(self, expression_entry, connect_changed, notify_expression);
         export_notify!(
             self,
             error_indicator,

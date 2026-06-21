@@ -21,6 +21,10 @@ impl Stage {
         self.size
     }
 
+    pub fn set_size(&mut self, new_size: Vec2) {
+        self.size = new_size;
+    }
+
     pub fn add_puppet(&mut self, mut puppet: Puppet) -> Index {
         puppet.ensure_render_initialized();
         self.puppets.insert(puppet)

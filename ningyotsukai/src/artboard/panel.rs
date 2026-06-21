@@ -1,7 +1,8 @@
 use std::cell::RefCell;
+use std::str::FromStr;
 
-use glib::WeakRef;
 use glib::subclass::InitializingObject;
+use glib::{Properties, WeakRef};
 use gtk4::CompositeTemplate;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
@@ -12,13 +13,24 @@ use crate::stage::StageWidget;
 struct State {
     document: Document,
 
-    stage: WeakRef<StageWidget>
+    stage: WeakRef<StageWidget>,
 }
 
-#[derive(CompositeTemplate, Default)]
+#[derive(CompositeTemplate, Default, Properties)]
 #[template(resource = "/live/arcturus/ningyotsukai/artboard/panel.ui")]
+#[properties(wrapper_type=ArtboardPanel)]
 pub struct ArtboardPanelImp {
     state: RefCell<Option<State>>,
+
+    #[template_child]
+    width_entry: gtk4::TemplateChild<gtk4::Entry>,
+    #[template_child]
+    height_entry: gtk4::TemplateChild<gtk4::Entry>,
+
+    #[property(name="artboard_width", get=Self::artboard_width, set=Self::set_artboard_width)]
+    width: RefCell<f32>,
+    #[property(name="artboard_height", get=Self::artboard_height, set=Self::set_artboard_height)]
+    height: RefCell<f32>,
 }
 
 #[glib::object_subclass]
@@ -47,6 +59,21 @@ impl WidgetImpl for ArtboardPanelImp {}
 impl BoxImpl for ArtboardPanelImp {}
 
 impl ArtboardPanelImp {
+    fn artboard_width(&self) -> f32 {
+        *self.width.borrow()
+    }
+
+    fn set_artboard_width(&self, value: f32) {
+        *self.width.borrow_mut() = value;
+    }
+
+    fn artboard_height(&self) -> f32 {
+        *self.height.borrow()
+    }
+
+    fn set_artboard_height(&self, value: f32) {
+        *self.height.borrow_mut() = value;
+    }
 }
 
 glib::wrapper! {
@@ -60,6 +87,105 @@ impl ArtboardPanel {
         *self.imp().state.borrow_mut() = Some(State {
             document,
             stage: stage.downgrade(),
+        });
+
+        let current_size = self
+            .imp()
+            .state
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .document
+            .stage()
+            .size();
+
+        self.imp()
+            .width_entry
+            .buffer()
+            .set_text(format!("{}", current_size.x));
+        self.imp()
+            .height_entry
+            .buffer()
+            .set_text(format!("{}", current_size.y));
+
+        self.imp().width_entry.connect_changed({
+            let width_self = self.clone();
+            move |entry| {
+                let mut size = width_self
+                    .imp()
+                    .state
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .document
+                    .stage()
+                    .size();
+
+                if let Ok(width) = f32::from_str(&entry.buffer().text()) {
+                    size.x = width;
+                }
+
+                width_self
+                    .imp()
+                    .state
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .document
+                    .stage_mut()
+                    .set_size(size);
+
+                width_self
+                    .imp()
+                    .state
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .stage
+                    .upgrade()
+                    .unwrap()
+                    .stage_resized();
+            }
+        });
+
+        self.imp().height_entry.connect_changed({
+            let height_self = self.clone();
+            move |entry| {
+                let mut size = height_self
+                    .imp()
+                    .state
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .document
+                    .stage()
+                    .size();
+
+                if let Ok(height) = f32::from_str(&entry.buffer().text()) {
+                    size.y = height;
+                }
+
+                height_self
+                    .imp()
+                    .state
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .document
+                    .stage_mut()
+                    .set_size(size);
+
+                height_self
+                    .imp()
+                    .state
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .stage
+                    .upgrade()
+                    .unwrap()
+                    .stage_resized();
+            }
         });
     }
 }

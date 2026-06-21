@@ -3,6 +3,7 @@ use gtk4::prelude::*;
 
 use ningyo_look_and_feel;
 
+mod artboard;
 mod bindings;
 mod document;
 mod io;
@@ -11,7 +12,6 @@ mod render;
 mod stage;
 mod tracker;
 mod window;
-mod artboard;
 
 fn main() -> glib::ExitCode {
     env_logger::init();

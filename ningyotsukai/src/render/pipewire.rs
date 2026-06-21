@@ -589,6 +589,8 @@ impl PipewireThread {
                         label: Some("Pipewire Texture Copy")
                     });
 
+                    // TODO: If the texture size changes, we panic here!
+
                     if data.type_ == sys::SPA_DATA_DmaBuf {
                         let texture = unsafe { (*raw_buffer).user_data } as *mut wgpu::Texture;
                         let texture = unsafe { &mut *texture };

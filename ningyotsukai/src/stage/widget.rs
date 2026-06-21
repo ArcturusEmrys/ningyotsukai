@@ -557,6 +557,10 @@ impl StageWidget {
 
         state.selected.clone()
     }
+
+    pub fn stage_resized(&self) {
+        self.imp().configure_adjustments();
+    }
 }
 
 pub trait StageWidgetExt {

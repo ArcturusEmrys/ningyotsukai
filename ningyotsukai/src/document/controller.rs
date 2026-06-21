@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
 
+use crate::artboard::ArtboardPanel;
 use crate::bindings::BindingPanel;
 use crate::document::DocumentManager;
 use crate::document::model::Document;
@@ -17,7 +18,6 @@ use crate::panels::PanelDock;
 use crate::panels::PanelFrame;
 use crate::stage::{Puppet, StageWidget};
 use crate::tracker::{TrackerManager, TrackerPanel, TrackerParamPanel};
-use crate::artboard::ArtboardPanel;
 
 use ningyo_extensions::{FileIn, WidgetExt2};
 
