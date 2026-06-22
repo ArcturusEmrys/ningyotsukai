@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::mem::swap;
 use std::str::FromStr;
 
 use glib::subclass::InitializingObject;
@@ -26,6 +27,8 @@ pub struct ArtboardPanelImp {
     width_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
     height_entry: gtk4::TemplateChild<gtk4::Entry>,
+    #[template_child]
+    aspect_ratio_flip: gtk4::TemplateChild<gtk4::Button>,
 
     #[property(name="artboard_width", get=Self::artboard_width, set=Self::set_artboard_width)]
     width: RefCell<f32>,
@@ -122,6 +125,10 @@ impl ArtboardPanel {
                     .size();
 
                 if let Ok(width) = f32::from_str(&entry.buffer().text()) {
+                    if size.x == width {
+                        return;
+                    }
+
                     size.x = width;
                 }
 
@@ -136,15 +143,7 @@ impl ArtboardPanel {
                     .set_size(size);
 
                 width_self
-                    .imp()
-                    .state
-                    .borrow()
-                    .as_ref()
-                    .unwrap()
-                    .stage
-                    .upgrade()
-                    .unwrap()
-                    .stage_resized();
+                    .size_changed();
             }
         });
 
@@ -162,6 +161,10 @@ impl ArtboardPanel {
                     .size();
 
                 if let Ok(height) = f32::from_str(&entry.buffer().text()) {
+                    if size.y == height {
+                        return;
+                    }
+
                     size.y = height;
                 }
 
@@ -176,16 +179,53 @@ impl ArtboardPanel {
                     .set_size(size);
 
                 height_self
+                    .size_changed();
+            }
+        });
+
+        self.imp().aspect_ratio_flip.connect_clicked({
+            let arf_self = self.clone();
+            move |_| {
+                let mut size = arf_self
                     .imp()
                     .state
                     .borrow()
                     .as_ref()
                     .unwrap()
-                    .stage
-                    .upgrade()
+                    .document
+                    .stage()
+                    .size();
+
+                swap(&mut size.x, &mut size.y);
+
+                arf_self
+                    .imp()
+                    .state
+                    .borrow_mut()
+                    .as_mut()
                     .unwrap()
-                    .stage_resized();
+                    .document
+                    .stage_mut()
+                    .set_size(size);
+
+                arf_self.size_changed();
             }
         });
+    }
+
+    fn size_changed(&self) {
+        let size = self.imp().state.borrow().as_ref().unwrap().document.stage().size();
+
+        let width_text = format!("{}", size.x);
+        if self.imp().width_entry.buffer().text() != width_text {
+            self.imp().width_entry.buffer().set_text(width_text);
+        }
+
+        let height_text = format!("{}", size.y);
+        if self.imp().height_entry.buffer().text() != height_text {
+            self.imp().height_entry.buffer().set_text(height_text);
+        }
+
+        self.imp().state.borrow().as_ref().unwrap().stage.upgrade().unwrap().stage_resized();
     }
 }

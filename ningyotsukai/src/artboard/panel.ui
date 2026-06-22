@@ -25,7 +25,6 @@
                                 <property name="hexpand">true</property>
                                 <layout>
                                     <property name="column">1</property>
-                                    <property name="column-span">2</property>
                                     <property name="row">0</property>
                                 </layout>
                             </object>
@@ -45,9 +44,23 @@
                                 <property name="hexpand">true</property>
                                 <layout>
                                     <property name="column">1</property>
-                                    <property name="column-span">2</property>
                                     <property name="row">1</property>
                                 </layout>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkButton" id="aspect_ratio_flip">
+                                <property name="vexpand">false</property>
+                                <layout>
+                                    <property name="column">2</property>
+                                    <property name="row">0</property>
+                                    <property name="row-span">2</property>
+                                </layout>
+                                <child>
+                                    <object class="GtkImage">
+                                        <property name="icon-name">object-rotate-right</property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                     </object>
