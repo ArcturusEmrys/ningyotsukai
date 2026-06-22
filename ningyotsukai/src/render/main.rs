@@ -24,12 +24,6 @@ struct RenderThread {
 
     plugins: Vec<Box<dyn SinkPlugin>>,
 
-    /// The last recorded ViewportChanged message.
-    ///
-    /// We can't immediately process these as we may have multiples of them in
-    /// flight.
-    last_viewport_unlock: Option<(Document, wgpu::Texture, f32, f32, f32)>,
-
     #[cfg(feature = "timing")]
     start_time: std::time::Instant,
 
@@ -62,7 +56,6 @@ impl RenderThread {
             renderers,
             unregistered_documents,
             plugins,
-            last_viewport_unlock: None,
 
             #[cfg(feature = "renderdoc")]
             doc: None,
@@ -76,40 +69,13 @@ impl RenderThread {
     }
 
     fn register_document(&mut self, document: Document) {
-        let size = document.stage().size();
-
         self.renderers.push(OffscreenRender::new(
             document.clone(),
             self.wgpu_resources.clone().unwrap(),
             self.extended_device.as_ref().unwrap().device().clone(),
             self.wgpu_queue.clone().unwrap(),
+            self.plugins.as_mut_slice(),
         ));
-
-        for plugin in &mut self.plugins {
-            plugin.publish_stream(
-                document.clone(),
-                "Ningyotsukai Document".to_string(),
-                size,
-                (60, 1),
-            );
-        }
-    }
-
-    fn viewport_change(
-        &mut self,
-        document: Document,
-        texture: wgpu::Texture,
-        center_x: f32,
-        center_y: f32,
-        scale: f32,
-    ) {
-        for renderer in &mut self.renderers {
-            if renderer.is_for_document(&document) {
-                renderer
-                    .viewport_change(texture.clone(), center_x, center_y, scale)
-                    .unwrap();
-            }
-        }
     }
 
     #[cfg(feature = "timing")]
@@ -254,21 +220,6 @@ impl RenderThread {
 
         self.start_frame();
 
-        // First, check if we got any RenderViewport messages.
-        // We do this first thing to unlock GTK, since the rest of the update
-        // will take longer.
-        if let Some((doc, _, _, _, _)) = &self.last_viewport_unlock {
-            for renderer in &self.renderers {
-                if renderer.is_for_document(doc) {
-                    send.send(RenderResponse::RenderComplete(
-                        renderer.document().upgrade().unwrap(),
-                        renderer.viewport_copy(),
-                    ))
-                    .unwrap();
-                }
-            }
-        }
-
         #[cfg(feature = "timing")]
         self.lap("Copy to main thread");
 
@@ -279,10 +230,28 @@ impl RenderThread {
         #[cfg(feature = "timing")]
         self.lap("Update");
 
-        let last_viewport_unlock = self.last_viewport_unlock.take();
+        for renderer in self.renderers.iter_mut() {
+            if let Some((texture, center_x, center_y, scale)) =
+                renderer.take_last_viewport_message()
+            {
+                // GTK is potentially waiting for a RenderComplete message, so
+                // send one.
+                send.send(RenderResponse::RenderComplete(
+                    renderer.document().upgrade().unwrap(),
+                    renderer.viewport_copy(),
+                ))
+                .unwrap();
 
-        if let Some((document, texture, center_x, center_y, scale)) = last_viewport_unlock {
-            self.viewport_change(document, texture, center_x, center_y, scale);
+                renderer
+                    .viewport_change(
+                        texture.clone(),
+                        center_x,
+                        center_y,
+                        scale,
+                        self.plugins.as_mut_slice(),
+                    )
+                    .unwrap();
+            }
         }
 
         #[cfg(feature = "timing")]
@@ -391,9 +360,13 @@ impl RenderThread {
                     center_y,
                     scale,
                 }) => {
-                    //TODO: This won't work if we have multiple documents open.
-                    self.last_viewport_unlock =
-                        Some((document, texture, center_x, center_y, scale));
+                    for renderer in self.renderers.iter_mut() {
+                        if renderer.is_for_document(&document) {
+                            renderer
+                                .set_last_viewport_message((texture, center_x, center_y, scale));
+                            break;
+                        }
+                    }
                 }
                 Err(TryRecvError::Empty) => {
                     // The channel is empty. We are idle. Run an update.

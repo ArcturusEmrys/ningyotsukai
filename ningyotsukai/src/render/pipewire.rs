@@ -219,6 +219,12 @@ pub enum PipewireMessage {
         size: glam::Vec2,
         framerate: (u32, u32),
     },
+    StreamParametersChanged {
+        document: Document,
+        name: String,
+        size: glam::Vec2,
+        framerate: (u32, u32),
+    },
     UpdateStreamImage {
         document: Document,
         texture: wgpu::Texture,
@@ -247,10 +253,15 @@ impl OwnedPod {
 }
 
 pub struct PipewireStream {
-    _stream: StreamRc,
+    stream: StreamRc,
     _listener: StreamListener<()>,
     last_tex: Option<(wgpu::Texture, wgpu::Origin3d, wgpu::Extent3d)>,
     copy_buffer: Option<wgpu::Buffer>,
+    size: glam::Vec2,
+    datasize: u64,
+    row_stride: u64,
+    modifier: u64,
+    download_row_stride: u64,
 }
 
 #[derive(Clone)]
@@ -306,6 +317,16 @@ impl PipewireThread {
                 framerate,
             } => {
                 self.publish_stream(document, name, size, framerate);
+                let state = self.0.borrow();
+                state.sender.send(PipewireResponse::Ack).unwrap();
+            }
+            PipewireMessage::StreamParametersChanged {
+                document,
+                name,
+                size,
+                framerate,
+            } => {
+                self.stream_parameters_changed(document, name, size, framerate);
                 let state = self.0.borrow();
                 state.sender.send(PipewireResponse::Ack).unwrap();
             }
@@ -456,7 +477,13 @@ impl PipewireThread {
         };
 
         let listener = stream.add_local_listener::<()>().param_changed({
+            let callback_self = self.clone();
+            let callback_document = document.clone();
             move |stream, _data, _id, pod| {
+                let mut state = callback_self.0.borrow_mut();
+                let PipewireThreadInner { streams, .. } = &mut *state;
+                let stream_data = streams.get_mut(&callback_document).unwrap();
+
                 if let Some(pod) = pod { //NOTE: call spa_debug_pod if you want to dump this.
                     if let Ok(pod_object) = pod.as_object() {
                         let specified_dmabuf_modifier = pod_object.find_prop(Id(sys::SPA_FORMAT_VIDEO_modifier)).is_some();
@@ -471,16 +498,16 @@ impl PipewireThread {
                                     sys::SPA_FORMAT_mediaType => Id(Id(sys::SPA_MEDIA_TYPE_video)) (0),
                                     sys::SPA_FORMAT_mediaSubtype => Id(Id(sys::SPA_MEDIA_SUBTYPE_raw)) (0),
                                     sys::SPA_FORMAT_VIDEO_format => Id(Id(sys::SPA_VIDEO_FORMAT_RGBA)) (0),
-                                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: size.x as u32, height: size.y as u32 }) (0),
+                                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: stream_data.size.x as u32, height: stream_data.size.y as u32 }) (0),
                                     sys::SPA_FORMAT_VIDEO_framerate => Fraction(sys::spa_fraction { num: framerate.0, denom: framerate.1 }) (0),
-                                    sys::SPA_FORMAT_VIDEO_modifier => Long(modifier as i64) (0),
+                                    sys::SPA_FORMAT_VIDEO_modifier => Long(stream_data.modifier as i64) (0),
                                 }).unwrap();
                             } else {
                                 builder_add!(&mut builder, Object(sys::SPA_TYPE_OBJECT_Format, sys::SPA_PARAM_Format) {
                                     sys::SPA_FORMAT_mediaType => Id(Id(sys::SPA_MEDIA_TYPE_video)) (0),
                                     sys::SPA_FORMAT_mediaSubtype => Id(Id(sys::SPA_MEDIA_SUBTYPE_raw)) (0),
                                     sys::SPA_FORMAT_VIDEO_format => Id(Id(sys::SPA_VIDEO_FORMAT_RGBA)) (0),
-                                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: size.x as u32, height: size.y as u32 }) (0),
+                                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: stream_data.size.x as u32, height: stream_data.size.y as u32 }) (0),
                                     sys::SPA_FORMAT_VIDEO_framerate => Fraction(sys::spa_fraction { num: framerate.0, denom: framerate.1 }) (0),
                                 }).unwrap();
                             }
@@ -498,8 +525,8 @@ impl PipewireThread {
                                     sys::SPA_PARAM_BUFFERS_buffers => Int(3) (0),
                                     sys::SPA_PARAM_BUFFERS_dataType => ChoiceFlags(Int(data_type)) (0),
                                     sys::SPA_PARAM_BUFFERS_blocks => Int(1) (0),
-                                    sys::SPA_PARAM_BUFFERS_size => Int(datasize as i32) (0),
-                                    sys::SPA_PARAM_BUFFERS_stride => Int(row_stride as i32) (0),
+                                    sys::SPA_PARAM_BUFFERS_size => Int(stream_data.datasize as i32) (0),
+                                    sys::SPA_PARAM_BUFFERS_stride => Int(stream_data.row_stride as i32) (0),
                                 }
                             ).unwrap();
 
@@ -522,12 +549,15 @@ impl PipewireThread {
                 let data = unsafe { &mut *(*spa_buffer).datas };
 
                 if data.type_ == sys::SPA_DATA_DmaBuf {
-                    let (texture, _datasize, row_stride, _modifier, fd) = callback_self.create_dmabuf_texture(size);
+                    let (texture, datasize, row_stride, modifier, fd) = callback_self.create_dmabuf_texture(stream.size);
                     let texture_holder = Box::new(texture);
 
                     data.fd = fd.as_raw_fd() as i64;
-                    data.maxsize = size.y as u32 * row_stride as u32;
-                    //data.data = null_mut();
+                    data.maxsize = stream.size.y as u32 * row_stride as u32;
+
+                    stream.datasize = datasize;
+                    stream.row_stride = row_stride;
+                    stream.modifier = modifier;
 
                     forget(fd);
 
@@ -539,7 +569,7 @@ impl PipewireThread {
                     if stream.copy_buffer.is_none() {
                         let buffer = device.device().create_buffer(&wgpu::BufferDescriptor {
                             label: Some("Pipewire SHM Download Buffer"),
-                            size: download_row_stride * size.y as u64,
+                            size: stream.download_row_stride * stream.size.y as u64,
                             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
                             mapped_at_creation: false
                         });
@@ -616,7 +646,7 @@ impl PipewireThread {
                             buffer: stream_data.copy_buffer.as_ref().unwrap(),
                             layout: wgpu::TexelCopyBufferLayout {
                                 offset: 0,
-                                bytes_per_row: Some(download_row_stride as u32),
+                                bytes_per_row: Some(stream_data.download_row_stride as u32),
                                 rows_per_image: None
                             }
                         }, last_tex_extent);
@@ -633,9 +663,9 @@ impl PipewireThread {
 
                             let chunk = &mut (*data.chunk);
                             chunk.flags = 0;
-                            chunk.size = datasize as u32;
+                            chunk.size = stream_data.datasize as u32;
                             chunk.offset = 0;
-                            chunk.stride = row_stride as i32;
+                            chunk.stride = stream_data.row_stride as i32;
                         }
                     } else {
                         let buffer = stream_data.copy_buffer.as_ref().unwrap();
@@ -644,15 +674,15 @@ impl PipewireThread {
                         device.device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
                         let view = buffer.get_mapped_range(..);
-                        let cpu_stride = size.x as usize * 4;
+                        let cpu_stride = stream_data.size.x as usize * 4;
 
                         unsafe {
-                            let memptr_data = slice::from_raw_parts_mut(data.data as *mut u8, datasize as usize);
+                            let memptr_data = slice::from_raw_parts_mut(data.data as *mut u8, stream_data.datasize as usize);
 
                             // AAGH WE HAVE TO DO INDIVIDUAL ROW COPIES
-                            for row_index in 0..size.y as usize {
+                            for row_index in 0..stream_data.size.y as usize {
                                 let cpu_base = row_index * cpu_stride;
-                                let gpu_base = row_index * download_row_stride as usize;
+                                let gpu_base = row_index * stream_data.download_row_stride as usize;
                                 let src = &view[gpu_base..gpu_base + cpu_stride];
                                 memptr_data[cpu_base..cpu_base + cpu_stride].copy_from_slice(src);
                             }
@@ -663,7 +693,7 @@ impl PipewireThread {
 
                             let chunk = &mut (*data.chunk);
                             chunk.flags = 0;
-                            chunk.size = datasize as u32;
+                            chunk.size = stream_data.datasize as u32;
                             chunk.offset = 0;
                             chunk.stride = cpu_stride as i32;
                         }
@@ -699,12 +729,105 @@ impl PipewireThread {
         state.streams.insert(
             document,
             PipewireStream {
-                _stream: stream,
+                stream,
                 _listener: listener,
                 last_tex: None,
                 copy_buffer: None,
+                size,
+                datasize,
+                row_stride,
+                modifier,
+                download_row_stride,
             },
         );
+    }
+
+    fn stream_parameters_changed(
+        &self,
+        document: Document,
+        name: String,
+        size: Vec2,
+        framerate: (u32, u32),
+    ) {
+        let (_, datasize, row_stride, modifier, _) = self.create_dmabuf_texture(size);
+        let mut download_row_stride = 4 * size.x as u64;
+        let misalign = download_row_stride % wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as u64;
+        if misalign != 0 {
+            download_row_stride += wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as u64 - misalign;
+        }
+
+        let mut state = self.0.borrow_mut();
+
+        let buffer = state
+            .device
+            .device()
+            .create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Pipewire SHM Download Buffer"),
+                size: download_row_stride * size.y as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+
+        let stream = state.streams.get_mut(&document);
+
+        if let Some(stream) = stream {
+            //TODO: Update ALL of the existing derived parameters in STream to
+            //match the new configuration, then send updated PODs into the
+            //pipewire stream to trigger renegotiation.
+
+            stream.size = size;
+            stream.datasize = datasize;
+            stream.row_stride = row_stride;
+            stream.download_row_stride = download_row_stride;
+            stream.copy_buffer = Some(buffer);
+
+            let format_with_modifier = {
+                let mut data = vec![];
+                let mut builder = Builder::new(&mut data);
+
+                builder_add!(&mut builder, Object(sys::SPA_TYPE_OBJECT_Format, sys::SPA_PARAM_EnumFormat) {
+                    sys::SPA_FORMAT_mediaType => Id(Id(sys::SPA_MEDIA_TYPE_video)) (0),
+                    sys::SPA_FORMAT_mediaSubtype => Id(Id(sys::SPA_MEDIA_SUBTYPE_raw)) (0),
+                    sys::SPA_FORMAT_VIDEO_format => Id(Id(sys::SPA_VIDEO_FORMAT_RGBA)) (0),
+                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: size.x as u32, height: size.y as u32 }) (0),
+                    sys::SPA_FORMAT_VIDEO_framerate => Fraction(sys::spa_fraction { num: framerate.0, denom: framerate.1 }) (0),
+                    sys::SPA_FORMAT_VIDEO_modifier => ChoiceEnum(0, Long(modifier as i64), Long(u64::from(drm_fourcc::DrmModifier::Invalid) as i64)) (sys::SPA_POD_PROP_FLAG_MANDATORY | sys::SPA_POD_PROP_FLAG_DONT_FIXATE),
+                }).unwrap();
+
+                OwnedPod::from_data(data)
+            };
+
+            let format_no_modifier = {
+                let mut data = vec![];
+                let mut builder = Builder::new(&mut data);
+
+                builder_add!(&mut builder, Object(sys::SPA_TYPE_OBJECT_Format, sys::SPA_PARAM_EnumFormat) {
+                    sys::SPA_FORMAT_mediaType => Id(Id(sys::SPA_MEDIA_TYPE_video)) (0),
+                    sys::SPA_FORMAT_mediaSubtype => Id(Id(sys::SPA_MEDIA_SUBTYPE_raw)) (0),
+                    sys::SPA_FORMAT_VIDEO_format => Id(Id(sys::SPA_VIDEO_FORMAT_RGBA)) (0),
+                    sys::SPA_FORMAT_VIDEO_size => Rectangle(sys::spa_rectangle { width: size.x as u32, height: size.y as u32 }) (0),
+                    sys::SPA_FORMAT_VIDEO_framerate => Fraction(sys::spa_fraction { num: framerate.0, denom: framerate.1 }) (0)
+                }).unwrap();
+
+                OwnedPod::from_data(data)
+            };
+
+            let inner_stream = stream.stream.clone();
+            drop(state);
+
+            inner_stream.disconnect().unwrap();
+            inner_stream
+                .connect(
+                    Direction::Output,
+                    None,
+                    StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS,
+                    &mut [
+                        format_with_modifier.as_pod().unwrap(),
+                        format_no_modifier.as_pod().unwrap(),
+                    ],
+                )
+                .unwrap();
+        }
     }
 
     fn update_stream_image(
@@ -738,6 +861,23 @@ impl SinkPlugin for PipewirePlugin {
     ) {
         self.msg_send
             .send(PipewireMessage::PublishStream {
+                document,
+                name,
+                size,
+                framerate,
+            })
+            .unwrap_or_else(|_| panic!("Poisoned"));
+    }
+
+    fn stream_parameters_changed(
+        &mut self,
+        document: Document,
+        name: String,
+        size: glam::Vec2,
+        framerate: (u32, u32),
+    ) {
+        self.msg_send
+            .send(PipewireMessage::StreamParametersChanged {
                 document,
                 name,
                 size,

@@ -4,8 +4,20 @@ use ningyo_texshare::ExtendedDevice;
 pub trait SinkPlugin {
     /// Publish a new stream.
     ///
-    /// Streams are identified by their Document.
+    /// Streams are identified by their Document. Further sink plugin messages
+    /// will use the same Document to identify the same stream.
     fn publish_stream(
+        &mut self,
+        document: Document,
+        name: String,
+        size: glam::Vec2,
+        framerate: (u32, u32),
+    );
+
+    /// Indicate that one or more of the given stream parameters has changed.
+    ///
+    /// The document given will match a previously published stream.
+    fn stream_parameters_changed(
         &mut self,
         document: Document,
         name: String,

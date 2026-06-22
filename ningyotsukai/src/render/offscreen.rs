@@ -7,6 +7,7 @@ use ningyo_render_wgpu::{RenderTarget, WgpuRenderer, WgpuRendererError, WgpuReso
 use inox2d::render::InoxRendererExt;
 
 use crate::document::{Document, WeakDocument};
+use crate::render::SinkPlugin;
 
 pub struct OffscreenRender {
     /// The document we want to render.
@@ -32,6 +33,17 @@ pub struct OffscreenRender {
 
     /// The current set of render target(s).
     render_target: Arc<Mutex<RenderTarget<'static>>>,
+
+    /// The last recorded ViewportChanged message.
+    ///
+    /// We can't immediately process these as we may have multiples of them in
+    /// flight. Instead, we queue this up here, and then after all messages are
+    /// processed, we do an update where this is copied over to
+    /// viewport_parameters.
+    last_viewport_unlock: Option<(wgpu::Texture, f32, f32, f32)>,
+
+    /// The last known size of the artboard.
+    last_artboard_size: Option<glam::Vec2>,
 }
 
 impl OffscreenRender {
@@ -40,7 +52,19 @@ impl OffscreenRender {
         resources: Arc<WgpuResources>,
         device: wgpu::Device,
         queue: wgpu::Queue,
+        sink_plugins: &mut [Box<dyn SinkPlugin>],
     ) -> Self {
+        let size = document.stage().size();
+
+        for plugin in sink_plugins {
+            plugin.publish_stream(
+                document.clone(),
+                "Ningyotsukai Document".to_string(),
+                size,
+                (60, 1),
+            );
+        }
+
         OffscreenRender {
             document: document.downgrade(),
             resources,
@@ -49,6 +73,8 @@ impl OffscreenRender {
             puppet_renderers: HashMap::new(),
             viewport_parameters: None,
             render_target: Arc::new(Mutex::new(RenderTarget::new_texture_target())),
+            last_viewport_unlock: None,
+            last_artboard_size: None,
         }
     }
 
@@ -157,12 +183,21 @@ impl OffscreenRender {
         }
     }
 
+    pub fn take_last_viewport_message(&mut self) -> Option<(wgpu::Texture, f32, f32, f32)> {
+        self.last_viewport_unlock.take()
+    }
+
+    pub fn set_last_viewport_message(&mut self, message: (wgpu::Texture, f32, f32, f32)) {
+        self.last_viewport_unlock = Some(message);
+    }
+
     pub fn viewport_change(
         &mut self,
         texture: wgpu::Texture,
         center_x: f32,
         center_y: f32,
         zoom: f32,
+        sink_plugins: &mut [Box<dyn SinkPlugin>],
     ) -> Result<(), WgpuRendererError> {
         // TODO: Do we need to apply the puppet position at this time?
         let indexes: Vec<_> = self.puppet_renderers.keys().map(|i| *i).collect();
@@ -175,11 +210,25 @@ impl OffscreenRender {
         render_target.resize(texture.width(), texture.height(), 0)?;
 
         if let Some(document) = self.document.upgrade() {
-            render_target.resize(
-                document.stage().size().x as u32,
-                document.stage().size().y as u32,
-                1,
-            )?;
+            let artboard_size = document.stage().size();
+            render_target.resize(artboard_size.x as u32, artboard_size.y as u32, 1)?;
+
+            if self.last_artboard_size != Some(artboard_size) {
+                // We only send a resize notification if the plugin already
+                // knows about the old size.
+                if self.last_artboard_size.is_some() {
+                    for plugin in sink_plugins {
+                        plugin.stream_parameters_changed(
+                            document.clone(),
+                            "Ningyotsukai Document".to_string(),
+                            artboard_size,
+                            (60, 1),
+                        );
+                    }
+                }
+
+                self.last_artboard_size = Some(artboard_size);
+            }
         }
 
         render_target.set_color_target_format(texture.format());
