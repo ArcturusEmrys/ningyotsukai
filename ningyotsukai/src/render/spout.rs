@@ -44,6 +44,20 @@ impl SinkPlugin for SpoutPlugin {
         self.registration = Some(registration);
     }
 
+    
+    fn stream_parameters_changed(
+        &mut self,
+        _document: crate::document::Document,
+        _name: String,
+        _size: glam::Vec2,
+        _framerate: (u32, u32),
+    )
+    {
+        // Spout2 does not care about the size of the texture, so we don't need
+        // to do anything here. The video size can change every frame for all
+        // we care.
+    }
+
     fn update_stream_image(
         &mut self,
         _document: crate::document::Document,
