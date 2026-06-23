@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <object class="NGTPanelFrame" id="panel">
+        <property name="name">Inspector</property>
+        <property name="associated-action">doc.panels-inspector</property>
+        <child>
+            <object class="NGTInspectorPanel" id="contents">
+            </object>
+        </child>
+    </object>
+</interface>

@@ -22,5 +22,7 @@
         <file compressed="true" preprocess="xml-stripblanks">bindings/form.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">artboard/panel.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">artboard/panel_frame.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">inspector/panel.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">inspector/panel_frame.ui</file>
     </gresource>
 </gresources>

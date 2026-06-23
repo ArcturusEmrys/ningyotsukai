@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="NGTInspectorPanel" parent="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+            <object class="GtkScrolledWindow">
+                <child>
+                    <object class="GtkGrid" id="bindings_contents">
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

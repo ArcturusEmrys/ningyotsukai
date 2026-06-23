@@ -46,6 +46,10 @@
                 <attribute name="label" translatable="yes">Artboard</attribute>
                 <attribute name="action">doc.panels-artboard</attribute>
             </item>
+            <item>
+                <attribute name="label" translatable="yes">Inspector</attribute>
+                <attribute name="action">doc.panels-inspector</attribute>
+            </item>
         </section>
         <section>
             <item>
