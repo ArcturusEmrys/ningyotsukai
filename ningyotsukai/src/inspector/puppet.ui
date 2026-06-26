@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="NGTPuppetInspector" parent="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+            <object class="GtkGrid">
+                <property name="vexpand">true</property>
+                <property name="orientation">vertical</property>
+
+                <child>
+                    <object class="GtkLabel" id="name">
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">0</property>
+                            <property name="column-span">3</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkLabel">
+                        <property name="xalign">0.0</property>
+                        <property name="label">Position</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkEntry" id="position_x_entry">
+                        <property name="hexpand">true</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkEntry" id="position_y_entry">
+                        <property name="hexpand">true</property>
+                        <layout>
+                            <property name="column">2</property>
+                            <property name="row">1</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkLabel">
+                        <property name="xalign">0.0</property>
+                        <property name="label">Scale</property>
+                        <layout>
+                            <property name="column">0</property>
+                            <property name="row">2</property>
+                        </layout>
+                    </object>
+                </child>
+                <child>
+                    <object class="GtkEntry" id="scale_entry">
+                        <property name="hexpand">true</property>
+                        <layout>
+                            <property name="column">1</property>
+                            <property name="row">2</property>
+                        </layout>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>

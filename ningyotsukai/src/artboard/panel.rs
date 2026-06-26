@@ -142,8 +142,7 @@ impl ArtboardPanel {
                     .stage_mut()
                     .set_size(size);
 
-                width_self
-                    .size_changed();
+                width_self.size_changed();
             }
         });
 
@@ -178,8 +177,7 @@ impl ArtboardPanel {
                     .stage_mut()
                     .set_size(size);
 
-                height_self
-                    .size_changed();
+                height_self.size_changed();
             }
         });
 
@@ -214,7 +212,15 @@ impl ArtboardPanel {
     }
 
     fn size_changed(&self) {
-        let size = self.imp().state.borrow().as_ref().unwrap().document.stage().size();
+        let size = self
+            .imp()
+            .state
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .document
+            .stage()
+            .size();
 
         let width_text = format!("{}", size.x);
         if self.imp().width_entry.buffer().text() != width_text {
@@ -226,6 +232,14 @@ impl ArtboardPanel {
             self.imp().height_entry.buffer().set_text(height_text);
         }
 
-        self.imp().state.borrow().as_ref().unwrap().stage.upgrade().unwrap().stage_resized();
+        self.imp()
+            .state
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .stage
+            .upgrade()
+            .unwrap()
+            .stage_resized();
     }
 }

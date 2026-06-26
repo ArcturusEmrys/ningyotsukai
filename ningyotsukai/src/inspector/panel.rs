@@ -1,6 +1,4 @@
 use std::cell::RefCell;
-use std::mem::swap;
-use std::str::FromStr;
 
 use glib::subclass::InitializingObject;
 use glib::{Properties, WeakRef};
@@ -8,8 +6,11 @@ use gtk4::CompositeTemplate;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
+use ningyo_extensions::WidgetExt2;
+
 use crate::document::Document;
-use crate::stage::StageWidget;
+use crate::inspector::puppet::PuppetInspector;
+use crate::stage::{StageWidget, StageWidgetExt};
 
 struct State {
     document: Document,
@@ -22,6 +23,9 @@ struct State {
 #[properties(wrapper_type=InspectorPanel)]
 pub struct InspectorPanelImp {
     state: RefCell<Option<State>>,
+
+    #[template_child]
+    inspector_content: gtk4::TemplateChild<gtk4::Box>,
 }
 
 #[glib::object_subclass]
@@ -49,6 +53,38 @@ impl WidgetImpl for InspectorPanelImp {}
 
 impl BoxImpl for InspectorPanelImp {}
 
+impl InspectorPanelImp {
+    fn selection_changed(&self) {
+        self.inspector_content.clear_children();
+
+        let document = self.state.borrow().as_ref().unwrap().document.clone();
+        let stage = self
+            .state
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .stage
+            .upgrade()
+            .unwrap();
+
+        let selection = stage.selected_puppets();
+        if selection.len() > 1 {
+            //Multiselect UI
+            let empty = gtk4::Label::builder()
+                .label(format!("{} things are selected", selection.len()))
+                .build();
+            self.inspector_content.append(&empty);
+        } else if let Some(select) = selection.iter().next() {
+            let puppet_inspect = PuppetInspector::new(document, *select, stage);
+            self.inspector_content.append(&puppet_inspect);
+        } else {
+            //Empty select UI
+            let empty = gtk4::Label::builder().label("Nothing is selected").build();
+            self.inspector_content.append(&empty);
+        }
+    }
+}
+
 glib::wrapper! {
     pub struct InspectorPanel(ObjectSubclass<InspectorPanelImp>)
         @extends gtk4::Box, gtk4::Widget,
@@ -60,6 +96,17 @@ impl InspectorPanel {
         *self.imp().state.borrow_mut() = Some(State {
             document,
             stage: stage.downgrade(),
+        });
+
+        self.imp().selection_changed();
+
+        stage.connect_selection_changed({
+            let stage_self = self.downgrade();
+            move |_| {
+                if let Some(stage_self) = stage_self.upgrade() {
+                    stage_self.imp().selection_changed();
+                }
+            }
         });
     }
 }

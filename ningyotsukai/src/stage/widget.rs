@@ -488,6 +488,11 @@ impl StageWidget {
         self.emit_updated();
     }
 
+    pub fn selected_puppets(&self) -> HashSet<Index> {
+        let state = self.imp().state.borrow();
+        state.selected.clone()
+    }
+
     pub fn set_selected_puppet(&self, puppet: Option<Index>) {
         let mut state = self.imp().state.borrow_mut();
 

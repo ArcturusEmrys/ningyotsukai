@@ -24,5 +24,6 @@
         <file compressed="true" preprocess="xml-stripblanks">artboard/panel_frame.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">inspector/panel.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">inspector/panel_frame.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">inspector/puppet.ui</file>
     </gresource>
 </gresources>

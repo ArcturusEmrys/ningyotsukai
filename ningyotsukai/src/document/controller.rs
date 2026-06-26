@@ -10,11 +10,11 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
 
-use crate::inspector::InspectorPanel;
 use crate::artboard::ArtboardPanel;
 use crate::bindings::BindingPanel;
 use crate::document::DocumentManager;
 use crate::document::model::Document;
+use crate::inspector::InspectorPanel;
 use crate::panels::PanelDock;
 use crate::panels::PanelFrame;
 use crate::stage::{Puppet, StageWidget};

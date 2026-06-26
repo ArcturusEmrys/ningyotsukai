@@ -6,13 +6,13 @@ use ningyo_look_and_feel;
 mod artboard;
 mod bindings;
 mod document;
+mod inspector;
 mod io;
 mod panels;
 mod render;
 mod stage;
 mod tracker;
 mod window;
-mod inspector;
 
 fn main() -> glib::ExitCode {
     env_logger::init();

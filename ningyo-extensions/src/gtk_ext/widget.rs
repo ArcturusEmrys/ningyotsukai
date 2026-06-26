@@ -79,6 +79,13 @@ pub trait WidgetExt2: WidgetExt {
     {
         self.walk().filter_map(|v| v.downcast::<T>().ok())
     }
+
+    /// Remove all children of this widget.
+    fn clear_children(&self) {
+        while let Some(c) = self.first_child() {
+            c.unparent();
+        }
+    }
 }
 
 impl<O: IsA<gtk4::Widget>> WidgetExt2 for O {}
