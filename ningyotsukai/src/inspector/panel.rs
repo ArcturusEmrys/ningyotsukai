@@ -1,4 +1,7 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
+
+use generational_arena::Index;
 
 use glib::subclass::InitializingObject;
 use glib::{Properties, WeakRef};
@@ -16,6 +19,8 @@ struct State {
     document: Document,
 
     stage: WeakRef<StageWidget>,
+
+    last_selection: HashSet<Index>,
 }
 
 #[derive(CompositeTemplate, Default, Properties)]
@@ -55,8 +60,6 @@ impl BoxImpl for InspectorPanelImp {}
 
 impl InspectorPanelImp {
     fn selection_changed(&self) {
-        self.inspector_content.clear_children();
-
         let document = self.state.borrow().as_ref().unwrap().document.clone();
         let stage = self
             .state
@@ -68,6 +71,13 @@ impl InspectorPanelImp {
             .unwrap();
 
         let selection = stage.selected_puppets();
+        if selection == self.state.borrow().as_ref().unwrap().last_selection {
+            return;
+        }
+
+        self.state.borrow_mut().as_mut().unwrap().last_selection = selection.clone();
+        self.inspector_content.clear_children();
+
         if selection.len() > 1 {
             //Multiselect UI
             let empty = gtk4::Label::builder()
@@ -96,6 +106,7 @@ impl InspectorPanel {
         *self.imp().state.borrow_mut() = Some(State {
             document,
             stage: stage.downgrade(),
+            last_selection: HashSet::new(),
         });
 
         self.imp().selection_changed();

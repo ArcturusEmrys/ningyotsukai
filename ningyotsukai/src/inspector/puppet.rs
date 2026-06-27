@@ -8,7 +8,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use generational_arena::Index;
-use ningyo_extensions::StrExt;
+use ningyo_extensions::{StrExt, WidgetExt2};
 
 use crate::document::Document;
 use crate::stage::{StageWidget, StageWidgetExt};
@@ -35,6 +35,12 @@ pub struct PuppetInspectorImp {
 
     #[template_child]
     position_y_entry: gtk4::TemplateChild<gtk4::Entry>,
+
+    #[template_child]
+    width_entry: gtk4::TemplateChild<gtk4::Entry>,
+
+    #[template_child]
+    height_entry: gtk4::TemplateChild<gtk4::Entry>,
 
     #[template_child]
     scale_entry: gtk4::TemplateChild<gtk4::Entry>,
@@ -70,12 +76,19 @@ impl PuppetInspectorImp {
         let state_outer = self.state.borrow();
         let state = state_outer.as_ref().unwrap();
 
-        let (x, y, scale) = if let Some(puppet) = state.document.stage().puppet(state.puppet) {
+        let (x, y, scale, w, h) = if let Some(puppet) = state.document.stage().puppet(state.puppet)
+        {
             if let Some(name) = &puppet.model().puppet.meta.name {
                 self.name.set_label(&name.escape_nulls());
             }
 
-            (puppet.position().x, puppet.position().y, puppet.scale())
+            (
+                puppet.position().x,
+                puppet.position().y,
+                puppet.scale(),
+                puppet.bounds().as_ref().map(|b| b.width()).unwrap_or(0.0) * puppet.scale(),
+                puppet.bounds().as_ref().map(|b| b.height()).unwrap_or(0.0) * puppet.scale(),
+            )
         } else {
             return;
         };
@@ -83,18 +96,32 @@ impl PuppetInspectorImp {
         drop(state_outer);
 
         let x = format!("{}", x);
-        if self.position_x_entry.buffer().text() != x {
+        if self.position_x_entry.buffer().text() != x
+            && !self.position_x_entry.has_transitive_focus()
+        {
             self.position_x_entry.buffer().set_text(x);
         }
 
         let y = format!("{}", y);
-        if self.position_y_entry.buffer().text() != y {
+        if self.position_y_entry.buffer().text() != y
+            && !self.position_y_entry.has_transitive_focus()
+        {
             self.position_y_entry.buffer().set_text(y);
         }
 
         let scale = format!("{}", scale);
-        if self.scale_entry.buffer().text() != scale {
+        if self.scale_entry.buffer().text() != scale && !self.scale_entry.has_transitive_focus() {
             self.scale_entry.buffer().set_text(scale);
+        }
+
+        let w = format!("{}", w);
+        if self.width_entry.buffer().text() != w && !self.width_entry.has_transitive_focus() {
+            self.width_entry.buffer().set_text(w);
+        }
+
+        let h = format!("{}", h);
+        if self.height_entry.buffer().text() != h && !self.height_entry.has_transitive_focus() {
+            self.height_entry.buffer().set_text(h);
         }
     }
 }
@@ -133,6 +160,10 @@ impl PuppetInspector {
         self.imp().position_x_entry.connect_changed({
             let pos_x_self = self.clone();
             move |field| {
+                if !field.has_transitive_focus() {
+                    return;
+                }
+
                 if let Ok(x_pos) = f32::from_str(&field.buffer().text()) {
                     let mut state = pos_x_self.imp().state.borrow_mut();
                     let state = state.as_mut().unwrap();
@@ -149,6 +180,10 @@ impl PuppetInspector {
         self.imp().position_y_entry.connect_changed({
             let pos_y_self = self.clone();
             move |field| {
+                if !field.has_transitive_focus() {
+                    return;
+                }
+
                 if let Ok(y_pos) = f32::from_str(&field.buffer().text()) {
                     let mut state = pos_y_self.imp().state.borrow_mut();
                     let state = state.as_mut().unwrap();
@@ -165,10 +200,62 @@ impl PuppetInspector {
         self.imp().scale_entry.connect_changed({
             let scale_self = self.clone();
             move |field| {
+                if !field.has_transitive_focus() {
+                    return;
+                }
+
                 if let Ok(scale) = f32::from_str(&field.buffer().text()) {
                     let mut state = scale_self.imp().state.borrow_mut();
                     let state = state.as_mut().unwrap();
                     if let Some(mut puppet) = state.document.stage_mut().puppet(state.puppet) {
+                        puppet.set_scale(scale);
+                    }
+                }
+            }
+        });
+
+        self.imp().width_entry.connect_changed({
+            let width_self = self.clone();
+            move |field| {
+                if !field.has_transitive_focus() {
+                    return;
+                }
+
+                if let Ok(new_width) = f32::from_str(&field.buffer().text()) {
+                    let mut state = width_self.imp().state.borrow_mut();
+                    let state = state.as_mut().unwrap();
+                    if let Some(mut puppet) = state.document.stage_mut().puppet(state.puppet) {
+                        let scale = if let Some(bounds) = puppet.bounds() {
+                            let bounds_width = bounds.width();
+                            new_width / bounds_width
+                        } else {
+                            return;
+                        };
+
+                        puppet.set_scale(scale);
+                    }
+                }
+            }
+        });
+
+        self.imp().height_entry.connect_changed({
+            let height_self = self.clone();
+            move |field| {
+                if !field.has_transitive_focus() {
+                    return;
+                }
+
+                if let Ok(new_height) = f32::from_str(&field.buffer().text()) {
+                    let mut state = height_self.imp().state.borrow_mut();
+                    let state = state.as_mut().unwrap();
+                    if let Some(mut puppet) = state.document.stage_mut().puppet(state.puppet) {
+                        let scale = if let Some(bounds) = puppet.bounds() {
+                            let bounds_height = bounds.height();
+                            new_height / bounds_height
+                        } else {
+                            return;
+                        };
+
                         puppet.set_scale(scale);
                     }
                 }

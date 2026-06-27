@@ -86,6 +86,16 @@ pub trait WidgetExt2: WidgetExt {
             c.unparent();
         }
     }
+
+    fn has_transitive_focus(&self) -> bool {
+        if let Some(root) = self.closest::<gtk4::Root>() {
+            if let Some(focus) = root.focus() {
+                return focus.is_ancestor(self);
+            }
+        }
+
+        false
+    }
 }
 
 impl<O: IsA<gtk4::Widget>> WidgetExt2 for O {}
