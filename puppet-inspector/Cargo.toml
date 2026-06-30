@@ -12,6 +12,7 @@ inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7
 inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7df36f1f167d655539e59abc18c2" }
 json = "0.12.4"
 gl46 = "0.2.1"
+glam = "0.29.0"
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
 ningyo-extensions = { path = "../ningyo-extensions" }
 

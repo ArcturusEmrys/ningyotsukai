@@ -13,6 +13,7 @@ use inox2d::render::InoxRendererExt;
 use inox2d_opengl::OpenglRenderer;
 
 use crate::document::Document;
+use crate::render_preview::param_list::RenderParamList;
 use ningyo_extensions::GLAreaExt2;
 
 struct State {
@@ -35,6 +36,8 @@ pub struct InoxRenderPreviewImp {
     error_view: TemplateChild<gtk4::Frame>,
     #[template_child]
     error_label: TemplateChild<gtk4::Label>,
+    #[template_child]
+    param_list: TemplateChild<RenderParamList>,
 }
 
 #[glib::object_subclass]
@@ -72,6 +75,8 @@ glib::wrapper! {
 impl InoxRenderPreview {
     pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
+
+        selfish.imp().param_list.bind(document.clone());
 
         *selfish.imp().state.borrow_mut() = Some(State {
             document,
@@ -171,6 +176,8 @@ impl InoxRenderPreview {
                 let dt = del_mus as f32 / 1_000_000.0;
 
                 document.model.puppet.begin_frame();
+                tick_self.imp().param_list.do_param_set(&mut *document);
+
                 document.model.puppet.end_frame(dt);
 
                 tick_self.imp().gl_view.queue_render();

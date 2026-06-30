@@ -2186,6 +2186,7 @@ dependencies = [
  "gdk4",
  "gio",
  "gl46",
+ "glam",
  "glib",
  "glib-build-tools",
  "gtk4",

@@ -11,10 +11,11 @@
                 <property name="resize-start-child">false</property>
                 <property name="resize-end-child">true</property>
                 <property name="start_child">
-                    <object class="GtkLabel">
-                        <property name="halign">center</property>
-                        <property name="valign">center</property>
-                        <property name="label">Params under active development</property>
+                    <object class="GtkScrolledWindow">
+                        <child>
+                            <object class="PIRenderParamList" id="param_list">
+                            </object>
+                        </child>
                     </object>
                 </property>
                 <property name="end_child">

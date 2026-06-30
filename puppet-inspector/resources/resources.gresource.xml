@@ -15,5 +15,7 @@
         <file compressed="true" preprocess="xml-stripblanks">render_preview/window.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/texture/browser.ui</file>
         <file compressed="true">detail_views/search.css</file>
+        <file compressed="true" preprocess="xml-stripblanks">render_preview/param_list.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">render_preview/param.ui</file>
     </gresource>
 </gresources>
