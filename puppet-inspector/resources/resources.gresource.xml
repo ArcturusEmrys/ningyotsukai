@@ -17,5 +17,6 @@
         <file compressed="true">detail_views/search.css</file>
         <file compressed="true" preprocess="xml-stripblanks">render_preview/param_list.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">render_preview/param.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">render_preview/opengl.ui</file>
     </gresource>
 </gresources>

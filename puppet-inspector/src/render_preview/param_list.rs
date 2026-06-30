@@ -11,13 +11,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use inox2d::params::ParamUuid;
-use inox2d::render::InoxRendererExt;
-use inox2d_opengl::OpenglRenderer;
-
 use crate::document::Document;
 use crate::render_preview::param::RenderParam;
-use ningyo_extensions::{JsonValueExt, StrExt};
+use ningyo_extensions::JsonValueExt;
 
 struct State {
     document: Arc<Mutex<Document>>,
@@ -120,7 +116,8 @@ impl RenderParamList {
                 .param_ctx
                 .as_mut()
                 .unwrap()
-                .set(param, *value);
+                .set(param, *value)
+                .unwrap();
         }
     }
 }

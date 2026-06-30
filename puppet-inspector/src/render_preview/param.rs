@@ -98,7 +98,6 @@ impl RenderParam {
     pub fn bind(&self, document: Arc<Mutex<Document>>, param_name: &str) {
         self.imp().x_param.connect_value_changed({
             let x_self = self.clone();
-            let x_document = document.clone();
             let x_param = param_name.to_string();
             move |adj| {
                 if !x_self.imp().x_param_label.is_editing() {
@@ -120,7 +119,6 @@ impl RenderParam {
         });
         self.imp().y_param.connect_value_changed({
             let y_self = self.clone();
-            let y_document = document.clone();
             let y_param = param_name.to_string();
             move |adj| {
                 if !y_self.imp().y_param_label.is_editing() {
@@ -230,7 +228,4 @@ impl RenderParam {
 
         *self.imp().state.borrow_mut() = Some(State { document });
     }
-
-    // Called at the start of a frame to set all parameters that have overrides.
-    fn do_param_set(&self, document_borrow: &mut Document) {}
 }
