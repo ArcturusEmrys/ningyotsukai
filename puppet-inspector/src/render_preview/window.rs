@@ -69,7 +69,7 @@ impl InoxRenderPreview {
         selfish.imp().param_list.bind(document.clone());
 
         *selfish.imp().state.borrow_mut() = Some(State {
-            document: document.clone()
+            document: document.clone(),
         });
 
         selfish.imp().preview_view.bind(document);

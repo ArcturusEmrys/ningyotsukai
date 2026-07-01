@@ -138,14 +138,41 @@ impl InoxGLPreview {
                     resize_self.display_error(e.message());
                 }
 
+                let mut state_outer = resize_self.imp().state.borrow_mut();
+                let state = state_outer.as_mut().unwrap();
+
                 if width > 0 && height > 0 {
-                    let mut state_outer = resize_self.imp().state.borrow_mut();
-                    let state = state_outer.as_mut().unwrap();
                     state
                         .renderer
                         .as_mut()
                         .unwrap()
                         .resize(width as u32, height as u32);
+                }
+
+                let document = state.document.lock().unwrap();
+                let bounds = document.model.puppet.bounds();
+                if let Some(bounds) = bounds {
+                    let bounds_width = bounds.bottom_right_point().x - bounds.top_left_point().x;
+                    let bounds_height = bounds.bottom_right_point().y - bounds.top_left_point().y;
+
+                    let bounds_aspect_ratio = bounds_width / bounds_height;
+                    let widget_aspect_ratio = width as f32 / height as f32;
+
+                    let scale = if bounds_aspect_ratio > widget_aspect_ratio {
+                        width as f32 / bounds_width
+                    } else {
+                        height as f32 / bounds_height
+                    };
+
+                    let renderer = state.renderer.as_mut().unwrap();
+
+                    renderer.camera.scale.x = scale;
+                    renderer.camera.scale.y = scale;
+
+                    renderer.camera.position.x =
+                        -bounds.top_left_point().x - bounds_width as f32 / 2.0;
+                    renderer.camera.position.y =
+                        -bounds.top_left_point().y - bounds_height as f32 / 2.0;
                 }
             });
 
@@ -161,7 +188,10 @@ impl InoxGLPreview {
                 let dt = del_mus as f32 / 1_000_000.0;
 
                 document.model.puppet.begin_frame();
-                tick_self.closest::<InoxRenderPreview>().unwrap().do_param_set(&mut *document);
+                tick_self
+                    .closest::<InoxRenderPreview>()
+                    .unwrap()
+                    .do_param_set(&mut *document);
 
                 document.model.puppet.end_frame(dt);
 
