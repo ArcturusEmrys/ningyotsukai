@@ -10,6 +10,7 @@ use glam::Vec2;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::document::Document;
 use crate::render_preview::param_list::RenderParamList;
@@ -84,7 +85,7 @@ impl RenderParam {
     pub fn new(document: Arc<Mutex<Document>>, param: &str) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
-        glib::idle_add_local_once({
+        glib::timeout_add_local_once(Duration::from_millis(1), {
             let selfish = selfish.clone();
             let param = param.to_string();
             move || {

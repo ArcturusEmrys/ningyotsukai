@@ -189,7 +189,7 @@ impl TrackerParamPanel {
         // Don't ask why, but calling connect_params_changed on stack panics.
         let idle_self = self.clone();
         let idle_tm = tracker_manager.clone();
-        glib::idle_add_local_once(move || {
+        glib::timeout_add_local_once(Duration::from_millis(1), move || {
             let tracker_manager_self = idle_self.clone().downgrade();
             idle_tm.connect_params_changed(move || {
                 if let Some(tracker_manager_self) = tracker_manager_self.upgrade() {

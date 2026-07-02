@@ -5,6 +5,7 @@ use windows::UI::Color;
 use windows::UI::ViewManagement::{UIColorType, UISettings};
 
 use std::cell::RefCell;
+use std::time::Duration;
 
 fn wcag_value_to_float(v: u8) -> f32 {
     let vf = v as f32 / 255.0;
@@ -98,7 +99,7 @@ impl LAFProvider {
 
             laf.ui_settings
                 .ColorValuesChanged(Some(&TypedEventHandler::new(|_, _| {
-                    glib::idle_add_once(|| {
+                    glib::timeout_add_once(Duration::from_millis(1), || {
                         LAFProvider::with_singleton(|laf| laf.update_color_css());
                     });
                     Ok(())

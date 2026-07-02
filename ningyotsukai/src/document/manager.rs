@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
 
 use ningyo_render_wgpu::WgpuResources;
 use ningyo_texshare::ExtendedDevice;
@@ -40,7 +41,7 @@ impl DocumentManager {
             render_callbacks: vec![],
         })));
 
-        glib::idle_add_local({
+        glib::timeout_add_local(Duration::from_millis(10), {
             let idle_me = Rc::downgrade(&me.0);
             move || {
                 if let Some(me) = idle_me.upgrade() {
