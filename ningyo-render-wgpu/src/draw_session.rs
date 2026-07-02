@@ -29,7 +29,7 @@ pub struct WgpuDrawSession<'a, 'window> {
     pub(crate) resources: &'a WgpuResources,
 
     /// The uploads for the particular model that we will be drawing.
-    pub(crate) uploads: &'a WgpuUploads,
+    pub(crate) uploads: &'a mut WgpuUploads,
 
     pub(crate) buffer_indices: &'a mut HashMap<u32, BufferIndices>,
     pub(crate) builder_basic_vert: &'a mut BufferBuilder<basic_vert::Input>,
@@ -102,11 +102,13 @@ impl<'a, 'window> WgpuDrawSession<'a, 'window> {
             .collect::<HashMap<_, _>>();
         let artboard_matrix = renderer.camera.to_artboard_matrix();
 
+        renderer.uploads.update_deforms(puppet, resources)?;
+
         let device = resources.device.clone();
 
         let mut session = WgpuDrawSession {
             resources,
-            uploads: &renderer.uploads,
+            uploads: &mut renderer.uploads,
             buffer_indices: &mut renderer.buffer_indices,
             builder_basic_vert: &mut renderer.builder_basic_vert,
             builder_basic_frag: &mut renderer.builder_basic_frag,

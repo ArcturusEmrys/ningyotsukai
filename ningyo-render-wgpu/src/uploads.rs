@@ -1,6 +1,7 @@
 use crate::texture::DeviceTexture;
 use crate::{WgpuResources, error::WgpuRendererError};
 use inox2d::model::Model;
+use inox2d::puppet::Puppet;
 use inox2d::texture::decode_model_textures;
 
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
@@ -116,5 +117,24 @@ impl WgpuUploads {
             indices,
             model_textures: texture_handles,
         })
+    }
+
+    pub fn update_deforms(
+        &mut self,
+        puppet: &Puppet,
+        resources: &WgpuResources,
+    ) -> Result<(), WgpuRendererError> {
+        let inox_buffers = puppet
+            .render_ctx
+            .as_ref()
+            .ok_or(WgpuRendererError::ModelRenderingNotInitialized)?;
+
+        resources.queue.write_buffer(
+            &self.deforms,
+            0,
+            cast_vec2(inox_buffers.vertex_buffers.deforms.as_slice()),
+        );
+
+        Ok(())
     }
 }
