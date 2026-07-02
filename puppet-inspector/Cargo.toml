@@ -15,6 +15,9 @@ gl46 = "0.2.1"
 glam = "0.29.0"
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
 ningyo-extensions = { path = "../ningyo-extensions" }
+ningyo-gtk-wgpu = { path = "../ningyo-gtk-wgpu" }
+ningyo-render-wgpu = { path = "../ningyo-render-wgpu" }
+wgpu = { version = "29.0.0" }
 
 [target.'cfg(not(windows))'.dependencies]
 gtk4 = { version = "0.11.0", features = ["v4_10"] }

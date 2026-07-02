@@ -2194,7 +2194,10 @@ dependencies = [
  "inox2d-opengl",
  "json",
  "ningyo-extensions",
+ "ningyo-gtk-wgpu",
  "ningyo-look-and-feel",
+ "ningyo-render-wgpu",
+ "wgpu",
 ]
 
 [[package]]

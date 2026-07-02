@@ -2,10 +2,9 @@
 <interface>
     <template class="PIInoxWgpuPreview" parent="GtkBox">
         <child>
-            <object class="NGWgpuArea" id="wgpu_view">
+            <object class="PIMyWgpuArea" id="wgpu_view">
                 <property name="hexpand">true</property>
                 <property name="vexpand">true</property>
-                <property name="auto-render">true</property>
             </object>
         </child>
         <object class="GtkFrame" id="error_view">

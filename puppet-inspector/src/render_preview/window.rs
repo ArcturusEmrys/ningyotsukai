@@ -5,6 +5,7 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use glib::subclass::InitializingObject;
+use ningyo_extensions::WidgetExt2;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -12,6 +13,8 @@ use std::sync::{Arc, Mutex};
 use crate::document::Document;
 use crate::render_preview::opengl::InoxGLPreview;
 use crate::render_preview::param_list::RenderParamList;
+use crate::render_preview::wgpu::InoxWgpuPreview;
+use crate::render_preview::wgpu_inner::MyWgpuArea;
 
 struct State {
     document: Arc<Mutex<Document>>,
@@ -25,9 +28,11 @@ pub struct InoxRenderPreviewImp {
     #[template_child]
     paned_view: TemplateChild<gtk4::Paned>,
     #[template_child]
-    preview_view: TemplateChild<InoxGLPreview>,
+    preview_view: TemplateChild<gtk4::Box>,
     #[template_child]
     param_list: TemplateChild<RenderParamList>,
+    #[template_child]
+    renderer_menu_button: TemplateChild<gtk4::MenuButton>,
 }
 
 #[glib::object_subclass]
@@ -64,6 +69,8 @@ glib::wrapper! {
 
 impl InoxRenderPreview {
     pub fn new(document: Arc<Mutex<Document>>) -> Self {
+        MyWgpuArea::ensure_type();
+
         let selfish: Self = glib::Object::builder().build();
 
         selfish.imp().param_list.bind(document.clone());
@@ -72,12 +79,58 @@ impl InoxRenderPreview {
             document: document.clone(),
         });
 
-        selfish.imp().preview_view.bind(document);
+        selfish.use_wgpu();
+
+        let render_actions = gio::SimpleActionGroup::new();
+        render_actions.add_action_entries([
+            gio::ActionEntry::builder("render-with-opengl")
+                .activate({
+                    let opengl_self = selfish.clone();
+                    move |_, _, _| {
+                        opengl_self.use_opengl();
+                    }
+                })
+                .build(),
+            gio::ActionEntry::builder("render-with-wgpu")
+                .activate({
+                    let wgpu_self = selfish.clone();
+                    move |_, _, _| {
+                        wgpu_self.use_wgpu();
+                    }
+                })
+                .build(),
+        ]);
+
+        selfish.insert_action_group("render", Some(&render_actions));
 
         selfish
     }
 
     pub fn do_param_set(&self, document: &mut Document) {
         self.imp().param_list.do_param_set(document);
+    }
+
+    fn use_opengl(&self) {
+        let document = self.imp().state.borrow().as_ref().unwrap().document.clone();
+
+        self.imp().preview_view.clear_children();
+
+        self.imp()
+            .preview_view
+            .append(&InoxGLPreview::new(document));
+
+        self.imp().renderer_menu_button.set_label("OpenGL");
+    }
+
+    fn use_wgpu(&self) {
+        let document = self.imp().state.borrow().as_ref().unwrap().document.clone();
+
+        self.imp().preview_view.clear_children();
+
+        self.imp()
+            .preview_view
+            .append(&InoxWgpuPreview::new(document));
+
+        self.imp().renderer_menu_button.set_label("WGPU");
     }
 }

@@ -69,6 +69,14 @@ glib::wrapper! {
 }
 
 impl InoxGLPreview {
+    pub fn new(document: Arc<Mutex<Document>>) -> Self {
+        let selfish: Self = glib::Object::builder().build();
+
+        selfish.bind(document);
+
+        selfish
+    }
+
     fn display_error(&self, error: &str) {
         self.append(&*self.imp().error_view);
         self.imp().error_label.set_label(error);

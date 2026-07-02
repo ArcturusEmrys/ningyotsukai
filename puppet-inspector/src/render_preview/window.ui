@@ -4,6 +4,17 @@
         <property name="title">Preview</property>
         <property name="default-width">640</property>
         <property name="default-height">480</property>
+        <property name="titlebar">
+            <object class="GtkHeaderBar">
+                <child type="end">
+                    <object class="GtkMenuButton" id="renderer_menu_button">
+                        <property name="icon-name">open-menu-symbolic</property>
+                        <property name="label">OpenGL</property>
+                        <property name="menu-model">renderer_menu</property>
+                    </object>
+                </child>
+            </object>
+        </property>
         <child>
             <object class="GtkPaned" id="paned_view">
                 <property name="hexpand">true</property>
@@ -19,10 +30,22 @@
                     </object>
                 </property>
                 <property name="end_child">
-                    <object class="PIInoxGLPreview" id="preview_view">
+                    <object class="GtkBox" id="preview_view">
                     </object>
                 </property>
             </object>
         </child>
     </template>
+    <menu id="renderer_menu">
+        <section>
+            <item>
+                <attribute name="label" translatable="yes">OpenGL</attribute>
+                <attribute name="action">render.render-with-opengl</attribute>
+            </item>
+            <item>
+                <attribute name="label" translatable="yes">WGPU</attribute>
+                <attribute name="action">render.render-with-wgpu</attribute>
+            </item>
+        </section>
+    </menu>
 </interface>
