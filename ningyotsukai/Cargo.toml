@@ -20,7 +20,7 @@ gl46 = "0.2.1"
 glam = "0.29.0"
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7df36f1f167d655539e59abc18c2" }
 inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7df36f1f167d655539e59abc18c2" }
-ningyo-look-and-feel = { path = "../ningyo-look-and-feel" }
+ningyo-look-and-feel = { path = "../ningyo-look-and-feel", optional=true }
 ningyo-extensions = { path = "../ningyo-extensions" }
 ningyo-binding = { path = "../ningyo-binding" }
 ningyo-texshare = { path = "../ningyo-texshare" }
@@ -63,6 +63,10 @@ features = [
 [build-dependencies]
 glib-build-tools = "0.22.0"
 
+[target.'cfg(target_os="windows")'.build-dependencies]
+ico = "0.5.0"
+winresource = "0.1.31"
+
 [features]
 pipewire = ["dep:pipewire", "dep:libspa", "dep:libspa-sys", "dep:drm-fourcc"]
 spout = ["dep:ningyo-spout2"]
@@ -72,3 +76,4 @@ tracy = [
     "tracy-client/sampling",
     "tracy-client/system-tracing"
 ]
+branding = ["dep:ningyo-look-and-feel"]

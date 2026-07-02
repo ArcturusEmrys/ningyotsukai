@@ -6,6 +6,7 @@
 window {
     background: var(--Windows-background);
     color: var(--Windows-foreground);
+    border-radius: 0;
 }
 
 headerbar {

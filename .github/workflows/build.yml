@@ -18,10 +18,10 @@ jobs:
       matrix:
         os:
           - name: 'windows-latest'
-            compatible_features: 'ningyotsukai/spout,ningyotsukai/timing,ningyotsukai/tracy,ningyotsukai/renderdoc'
+            compatible_features: 'ningyotsukai/spout,ningyotsukai/timing,ningyotsukai/tracy,ningyotsukai/renderdoc,ningyotsukai/branding,puppet-inspector/branding'
             flags: ''
           - name: 'ubuntu-latest'
-            compatible_features: 'ningyotsukai/pipewire,ningyotsukai/timing,ningyotsukai/tracy,ningyotsukai/renderdoc'
+            compatible_features: 'ningyotsukai/pipewire,ningyotsukai/timing,ningyotsukai/tracy,ningyotsukai/renderdoc,ningyotsukai/branding,puppet-inspector/branding'
             flags: '--exclude ningyo-spout2'
 
     runs-on: ${{matrix.os.name}}

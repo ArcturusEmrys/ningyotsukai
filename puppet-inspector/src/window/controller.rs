@@ -54,6 +54,7 @@ impl ObjectSubclass for WindowControllerImp {
 impl ObjectImpl for WindowControllerImp {
     fn constructed(&self) {
         self.parent_constructed();
+        self.obj().add_css_class("PuppetInspectorWindow");
     }
 }
 

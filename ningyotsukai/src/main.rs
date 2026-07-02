@@ -1,7 +1,7 @@
+#![windows_subsystem = "windows"]
+
 use gio::prelude::*;
 use gtk4::prelude::*;
-
-use ningyo_look_and_feel;
 
 mod artboard;
 mod bindings;
@@ -20,6 +20,7 @@ fn main() -> glib::ExitCode {
     gio::resources_register_include!("resources.gresource").expect("valid resource file");
     gtk4::init().expect("valid gtk4 state");
 
+    #[cfg(feature = "branding")]
     ningyo_look_and_feel::init();
 
     let laf_css = gtk4::CssProvider::new();

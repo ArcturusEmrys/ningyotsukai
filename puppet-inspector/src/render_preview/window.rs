@@ -53,6 +53,7 @@ impl ObjectSubclass for InoxRenderPreviewImp {
 impl ObjectImpl for InoxRenderPreviewImp {
     fn constructed(&self) {
         self.parent_constructed();
+        self.obj().add_css_class("PuppetInspectorWindow");
     }
 }
 

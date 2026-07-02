@@ -42,23 +42,35 @@
             <object class="GtkHeaderBar">
                 <child type="start">
                     <object class="GtkButton" id="back_button">
+                        <style>
+                            <class name="PuppetInspectorButton" />
+                        </style>
                         <property name="icon-name">go-previous</property>
                         <property name="action-name">doc.back</property>
                     </object>
                 </child>
                 <child type="start">
                     <object class="GtkButton" id="fwd_button">
+                        <style>
+                            <class name="PuppetInspectorButton" />
+                        </style>
                         <property name="icon-name">go-next</property>
                         <property name="action-name">doc.fwd</property>
                     </object>
                 </child>
                 <child type="end">
                     <object class="GtkMenuButton" id="main_menu_button">
+                        <style>
+                            <class name="PuppetInspectorMenuButton" />
+                        </style>
                         <property name="icon-name">open-menu-symbolic</property>
                     </object>
                 </child>
                 <child type="end">
                     <object class="GtkButton" id="preview_button">
+                        <style>
+                            <class name="PuppetInspectorButton" />
+                        </style>
                         <property name="icon-name">open-menu-symbolic</property>
                         <property name="label">Preview</property>
                         <property name="action-name">doc.preview</property>

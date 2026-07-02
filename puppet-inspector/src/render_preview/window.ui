@@ -8,6 +8,9 @@
             <object class="GtkHeaderBar">
                 <child type="end">
                     <object class="GtkMenuButton" id="renderer_menu_button">
+                        <style>
+                            <class name="PuppetInspectorButton" />
+                        </style>
                         <property name="icon-name">open-menu-symbolic</property>
                         <property name="label">OpenGL</property>
                         <property name="menu-model">renderer_menu</property>

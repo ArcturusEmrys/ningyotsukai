@@ -1,9 +1,24 @@
-/* TODO: Generic CSS theming for Ningyo Suite UI */
-
-.NingyoAppWindow {
-    border-radius: 0;
+/* Puppet Inspector branding */
+.PuppetInspectorWindow {
+    border: 1px solid #DA9700;
 }
 
+.PuppetInspectorWindow headerbar {
+    background-color: #3D1A60;
+}
+
+.PuppetInspectorWindow headerbar .title {
+    color: white;
+}
+
+.PuppetInspectorButton, .PuppetInspectorMenuButton button {
+    border: 1px solid #0b0015;
+    color: white;
+    background-image: none;
+    background: #2a034f;
+}
+
+/* Ningyotsukai branding */
 .NingyoAppWindow headerbar {
     background-color: black;
     background-image: linear-gradient(to right, #181818, #181818 32%, #19572C 33%, #19572C 65%, #82211A 66%, #82211A 100%);
