@@ -11,7 +11,7 @@ use json::JsonValue;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Read;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
 
 use glam::Vec2;
 use mlua::Error as LuaError;
@@ -22,7 +22,7 @@ use ningyo_binding::{Binding, ExpressionEval, parse_bindings};
 use owning_ref::{OwningRef, OwningRefMut};
 
 #[derive(Clone)]
-pub struct Puppet(Arc<RwLock<PuppetInner>>);
+pub struct Puppet(Arc<Mutex<PuppetInner>>);
 struct PuppetInner {
     /// The position of the puppet's origin point, (0,0), relative to the stage.
     position: Vec2,
@@ -83,7 +83,7 @@ impl Puppet {
             param_uuid_index.insert(param.uuid, name.clone());
         }
 
-        Ok(Self(Arc::new(RwLock::new(PuppetInner {
+        Ok(Self(Arc::new(Mutex::new(PuppetInner {
             position: Vec2::new(0.0, 0.0),
             scale: 1.0,
             puppet_json,
@@ -98,7 +98,7 @@ impl Puppet {
     }
 
     pub fn ensure_render_initialized(&mut self) {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.0.lock().unwrap();
         if !inner.is_render_initialized {
             inner.model.puppet.init_transforms();
             inner.model.puppet.init_rendering();
@@ -114,50 +114,46 @@ impl Puppet {
     }
 
     pub fn model(&self) -> impl Deref<Target = Model> {
-        OwningRef::new(self.0.read().unwrap()).map(|me| &me.model)
+        OwningRef::new(self.0.lock().unwrap()).map(|me| &me.model)
     }
 
     pub fn model_mut(&mut self) -> impl DerefMut<Target = Model> {
-        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.model)
+        OwningRefMut::new(self.0.lock().unwrap()).map_mut(|me| &mut me.model)
     }
 
     pub fn position(&self) -> Vec2 {
-        self.0.read().unwrap().position
+        self.0.lock().unwrap().position
     }
 
     pub fn set_position(&mut self, new_pos: Vec2) {
-        self.0.write().unwrap().position = new_pos;
+        self.0.lock().unwrap().position = new_pos;
     }
 
     pub fn scale(&self) -> f32 {
-        self.0.read().unwrap().scale
+        self.0.lock().unwrap().scale
     }
 
     pub fn set_scale(&mut self, new_scale: f32) {
-        self.0.write().unwrap().scale = new_scale
+        self.0.lock().unwrap().scale = new_scale
     }
 
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
         self.0
-            .write()
+            .lock()
             .unwrap()
             .expression_eval
             .set_tracker_packet(packet);
     }
 
     /// Get the current puppet bounds.
-    pub fn bounds(&self) -> Option<impl Deref<Target = RectBounds>> {
-        let me = self.0.read().unwrap();
+    pub fn bounds(&self) -> Option<RectBounds> {
+        let me = self.0.lock().unwrap();
 
-        if me.bounds.is_none() {
-            return None;
-        }
-
-        Some(OwningRef::new(me).map(|me| me.bounds.as_ref().unwrap()))
+        me.bounds.clone()
     }
 
     pub fn param_by_uuid(&self, uuid: ParamUuid) -> Option<impl Deref<Target = Param>> {
-        let me = self.0.read().unwrap();
+        let me = self.0.lock().unwrap();
 
         OwningRef::new(me)
             .try_map(|me| {
@@ -168,13 +164,13 @@ impl Puppet {
     }
 
     pub fn bindings(&self) -> impl Deref<Target = [(Binding, f32, f32, Option<LuaError>)]> {
-        OwningRef::new(self.0.read().unwrap()).map(|me| me.bindings.as_slice())
+        OwningRef::new(self.0.lock().unwrap()).map(|me| me.bindings.as_slice())
     }
 
     pub fn bindings_mut(
         &mut self,
     ) -> impl DerefMut<Target = [(Binding, f32, f32, Option<LuaError>)]> {
-        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| me.bindings.as_mut_slice())
+        OwningRefMut::new(self.0.lock().unwrap()).map_mut(|me| me.bindings.as_mut_slice())
     }
 
     /// Update the puppet's physics and apply tracker data to this puppet.
@@ -196,7 +192,7 @@ impl Puppet {
             );
         }
 
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.0.lock().unwrap();
 
         if dt > 0.0 {
             inner.model.puppet.begin_frame();

@@ -33,7 +33,7 @@ where
     let ex = Rc::new(LocalExecutor::new());
     let inner_ex = ex.clone();
 
-    block_on(ex.run(async move {
+    let main = ex.spawn(async move {
         let mut tasks = HashMap::new();
         loop {
             let inner_send = send.clone();
@@ -69,7 +69,9 @@ where
                 }
             }
         }
-    }));
+    });
+
+    block_on(ex.run(main));
 }
 
 /// Spawn the IO thread.

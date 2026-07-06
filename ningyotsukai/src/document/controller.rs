@@ -9,6 +9,7 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::error::Error;
 use std::rc::Rc;
+use std::time::Duration;
 
 use crate::artboard::ArtboardPanel;
 use crate::bindings::BindingPanel;
@@ -76,15 +77,19 @@ impl ObjectImpl for DocumentControllerImp {
                             callback_self.window().as_ref(),
                             Some(&gio::Cancellable::new()),
                             move |file_or_error| {
-                                let maybe_error: Result<(), Box<dyn Error>> = (|| {
-                                    callback2_self.import_puppet(file_or_error?)?;
-                                    Ok(())
-                                })(
-                                );
+                                glib::timeout_add_local_once(Duration::from_millis(1), {
+                                    move || {
+                                        let maybe_error: Result<(), Box<dyn Error>> = (|| {
+                                            callback2_self.import_puppet(file_or_error?)?;
+                                            Ok(())
+                                        })(
+                                        );
 
-                                if let Err(e) = maybe_error {
-                                    eprintln!("{:?}", e);
-                                }
+                                        if let Err(e) = maybe_error {
+                                            eprintln!("{:?}", e);
+                                        }
+                                    }
+                                });
                             },
                         )
                     }
@@ -353,13 +358,14 @@ impl DocumentController {
 
         let mut state = self.imp().state.borrow_mut();
         let document = &mut state.as_mut().unwrap().document;
+        let size = document.stage().size();
 
         // This heuristic is here to ensure very large puppets get scaled down
         // to something reasonable.
         let bounds = puppet.model().puppet.bounds();
         if let Some(bounds) = bounds {
             let longer_bounds_length = bounds.width().max(bounds.height());
-            let shorter_stage_length = document.stage().size().x.min(document.stage().size().y);
+            let shorter_stage_length = size.x.min(size.y);
 
             let recommended_zoom = shorter_stage_length / longer_bounds_length;
 

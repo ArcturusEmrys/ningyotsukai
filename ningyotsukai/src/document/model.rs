@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, Mutex, Weak};
 
 use generational_arena::Index;
 use owning_ref::{OwningRef, OwningRefMut};
@@ -12,10 +12,10 @@ use crate::tracker::Trackers;
 
 /// A Ningyotsukai document.
 #[derive(Clone)]
-pub struct Document(Arc<RwLock<DocumentInner>>);
+pub struct Document(Arc<Mutex<DocumentInner>>);
 
 #[derive(Clone, Debug)]
-pub struct WeakDocument(Weak<RwLock<DocumentInner>>);
+pub struct WeakDocument(Weak<Mutex<DocumentInner>>);
 
 struct DocumentInner {
     stage: Stage,
@@ -24,7 +24,7 @@ struct DocumentInner {
 
 impl Default for Document {
     fn default() -> Self {
-        Document(Arc::new(RwLock::new(DocumentInner {
+        Document(Arc::new(Mutex::new(DocumentInner {
             stage: Stage::new_with_size((1920.0, 1080.0)),
             trackers: Trackers::new(),
         })))
@@ -41,27 +41,28 @@ impl Debug for Document {
 
 impl Document {
     pub fn stage(&self) -> impl Deref<Target = Stage> {
-        OwningRef::new(self.0.read().unwrap()).map(|me| &me.stage)
+        OwningRef::new(self.0.lock().unwrap()).map(|me| &me.stage)
     }
 
     pub fn stage_mut(&mut self) -> impl DerefMut<Target = Stage> {
-        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.stage)
+        OwningRefMut::new(self.0.lock().unwrap()).map_mut(|me| &mut me.stage)
     }
 
     pub fn trackers(&self) -> impl Deref<Target = Trackers> {
-        OwningRef::new(self.0.read().unwrap()).map(|me| &me.trackers)
+        OwningRef::new(self.0.lock().unwrap()).map(|me| &me.trackers)
     }
 
     pub fn trackers_mut(&mut self) -> impl DerefMut<Target = Trackers> {
-        OwningRefMut::new(self.0.write().unwrap()).map_mut(|me| &mut me.trackers)
+        OwningRefMut::new(self.0.lock().unwrap()).map_mut(|me| &mut me.trackers)
     }
 
     /// Given a map of puppet-associated items, clear out any entries whose
     /// keys do not correspond to a puppet on the current stage.
     pub fn collect_garbage<T>(&self, map: &mut HashMap<Index, T>) {
+        let stage = self.stage();
         let mut garbage = vec![];
         for index in map.keys() {
-            if !self.stage().contains_puppet(*index) {
+            if !stage.contains_puppet(*index) {
                 garbage.push(*index);
             }
         }
@@ -72,9 +73,10 @@ impl Document {
     }
 
     pub fn collect_garbage_set(&self, set: &mut HashSet<Index>) {
+        let stage = self.stage();
         let mut garbage = vec![];
         for index in set.iter() {
-            if !self.stage().contains_puppet(*index) {
+            if !stage.contains_puppet(*index) {
                 garbage.push(*index);
             }
         }

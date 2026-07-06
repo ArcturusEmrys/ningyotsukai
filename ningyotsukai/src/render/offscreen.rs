@@ -8,6 +8,7 @@ use inox2d::render::InoxRendererExt;
 
 use crate::document::{Document, WeakDocument};
 use crate::render::SinkPlugin;
+use crate::stage::Puppet;
 
 pub struct OffscreenRender {
     /// The document we want to render.
@@ -132,7 +133,7 @@ impl OffscreenRender {
                     );
                 }
 
-                self.apply_viewport_to_renderer(index);
+                self.apply_viewport_to_renderer(index, puppet);
 
                 let renderer = self.puppet_renderers.get_mut(&index).unwrap();
                 renderer.draw(&puppet.model().puppet).unwrap();
@@ -164,23 +165,19 @@ impl OffscreenRender {
         }
     }
 
-    pub fn apply_viewport_to_renderer(&mut self, index: Index) {
+    pub fn apply_viewport_to_renderer(&mut self, index: Index, puppet: &Puppet) {
         let renderer = self.puppet_renderers.get_mut(&index).unwrap();
-        if let Some(document) = self.document.upgrade() {
-            if let Some(puppet) = document.stage().puppet(index) {
-                let mut x = 0.0;
-                let mut y = 0.0;
+        let mut x = 0.0;
+        let mut y = 0.0;
 
-                //Cancel out the center coordinate offset Inox uses
-                x += puppet.position().x;
-                y += puppet.position().y;
+        //Cancel out the center coordinate offset Inox uses
+        x += puppet.position().x;
+        y += puppet.position().y;
 
-                renderer.camera.position.x = x / puppet.scale();
-                renderer.camera.position.y = y / puppet.scale();
-                renderer.camera.scale.x = puppet.scale();
-                renderer.camera.scale.y = puppet.scale();
-            }
-        }
+        renderer.camera.position.x = x / puppet.scale();
+        renderer.camera.position.y = y / puppet.scale();
+        renderer.camera.scale.x = puppet.scale();
+        renderer.camera.scale.y = puppet.scale();
     }
 
     pub fn take_last_viewport_message(&mut self) -> Option<(wgpu::Texture, f32, f32, f32)> {
@@ -202,7 +199,13 @@ impl OffscreenRender {
         // TODO: Do we need to apply the puppet position at this time?
         let indexes: Vec<_> = self.puppet_renderers.keys().map(|i| *i).collect();
         for index in indexes {
-            self.apply_viewport_to_renderer(index);
+            if let Some(puppet) = self
+                .document()
+                .upgrade()
+                .and_then(|d| d.stage().puppet(index))
+            {
+                self.apply_viewport_to_renderer(index, &puppet);
+            }
         }
 
         let mut render_target = self.render_target.lock().unwrap();
