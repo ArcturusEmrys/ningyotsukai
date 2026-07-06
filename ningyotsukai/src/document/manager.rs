@@ -157,18 +157,29 @@ impl DocumentManager {
             state.documents.remove(index);
         }
 
+        let mut last_frame_update = false;
+        let mut last_render_complete = None;
+
         while let Ok(e) = state.recv.try_recv() {
             match e {
                 RenderResponse::DidFrameUpdate => {
-                    for callback in state.callbacks.iter() {
-                        callback();
-                    }
+                    last_frame_update = true;
                 }
                 RenderResponse::RenderComplete(doc, index) => {
-                    for callback in state.render_callbacks.iter() {
-                        callback(doc.clone(), index.clone());
-                    }
+                    last_render_complete = Some((doc, index));
                 }
+            }
+        }
+
+        if last_frame_update {
+            for callback in state.callbacks.iter() {
+                callback();
+            }
+        }
+
+        if let Some((doc, index)) = last_render_complete {
+            for callback in state.render_callbacks.iter() {
+                callback(doc.clone(), index.clone());
             }
         }
     }
