@@ -30,7 +30,7 @@ jobs:
         app:
           - name: Ningyotsukai
             exe: ningyotsukai
-            features: branding,pipewire
+            features: branding,spout
     
     runs-on: windows-latest
 
