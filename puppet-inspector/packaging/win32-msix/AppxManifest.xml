@@ -21,7 +21,7 @@
   </Resources>
   <Applications>
     <Application
-      Id="Puppet Inspector"
+      Id="PuppetInspector"
       Executable="puppet-inspector.exe"
       uap10:RuntimeBehavior="packagedClassicApp" 
       uap10:TrustLevel="mediumIL">
