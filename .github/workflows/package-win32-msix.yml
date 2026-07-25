@@ -31,6 +31,9 @@ jobs:
           - name: Ningyotsukai
             exe: ningyotsukai
             features: branding,spout
+          - name: Puppet Inspector
+            exe: puppet-inspector
+            features: branding
     
     runs-on: windows-latest
 
