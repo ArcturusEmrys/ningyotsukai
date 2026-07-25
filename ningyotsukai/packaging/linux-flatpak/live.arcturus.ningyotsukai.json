@@ -1,0 +1,63 @@
+{
+  "id": "live.arcturus.ningyotsukai",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "49",
+  "sdk": "org.gnome.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable",
+    "org.freedesktop.Sdk.Extension.llvm22"
+  ],
+  "command": "ningyotsukai",
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm22/bin",
+    "env": {
+      "CARGO_HOME": "/run/build/ningyotsukai/cargo-home",
+      "LIBCLANG_PATH": "/usr/lib/sdk/llvm22/lib"
+    }
+  },
+  "finish-args": [
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--share=ipc",
+    "--filesystem=host-os:ro",
+    "--filesystem=/etc/fonts:ro",
+    "--filesystem=~/.local/share/fonts:ro",
+    "--filesystem=xdg-config/fontconfig:ro",
+    "--filesystem=xdg-config/gtk-4.0:ro",
+    "--metadata=X-DConf=org/gnome/desktop/interface/",
+    "--socket=pulseaudio",
+    "--talk-name=org.a11y.Bus",
+    "--talk-name=org.freedesktop.portal.Desktop",
+    "--talk-name=org.freedesktop.portal.Documents"
+  ],
+  "modules": [
+    {
+      "name": "ningyotsukai",
+      "buildsystem": "simple",
+      "build-commands": [
+        "mkdir -p .cargo",
+        "cp /run/build/ningyotsukai/cargo/config .cargo/config.toml",
+        "cargo build --release --package=ningyotsukai --features=branding,pipewire",
+        "mkdir -p /app/bin",
+        "install -D -m 755 target/release/ningyotsukai /app/bin/ningyotsukai",
+        "install -D -m 644 ningyotsukai/branding/live.arcturus.ningyotsukai.desktop /app/share/applications/live.arcturus.ningyotsukai.desktop",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 16.png\" /app/share/icons/hicolor/16x16/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 16@2x.png\" /app/share/icons/hicolor/16x16@2/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 32.png\" /app/share/icons/hicolor/32x32/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 32@2x.png\" /app/share/icons/hicolor/32x32@2/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 64.png\" /app/share/icons/hicolor/64x64/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 64@2x.png\" /app/share/icons/hicolor/64x64@2/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 128.png\" /app/share/icons/hicolor/128x128/apps/live.arcturus.ningyotsukai.png",
+        "install -D -m 644 \"ningyotsukai/branding/Ningyotsukai Icon 128@2x.png\" /app/share/icons/hicolor/128x128@2/apps/live.arcturus.ningyotsukai.png"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../../../"
+        },
+        "../../../cargo-sources.yaml"
+      ]
+    }
+  ]
+}

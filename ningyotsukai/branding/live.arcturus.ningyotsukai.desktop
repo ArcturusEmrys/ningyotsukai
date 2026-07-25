@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Ningyotsukai
+Comment=A grimoire that brings virtual puppets to life.
+Exec=ningyotsukai
+Icon=live.arcturus.ningyotsukai
+Terminal=false
