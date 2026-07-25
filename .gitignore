@@ -1,5 +1,5 @@
 /target
 /vcpkg_installed
 /ningyotsukai/build
-#/puppet-inspector/build
+/puppet-inspector/build
 /cert.pfx
