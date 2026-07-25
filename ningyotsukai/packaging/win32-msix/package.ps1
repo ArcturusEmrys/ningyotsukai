@@ -56,14 +56,16 @@ Copy-Item "$PackagingPath\AppxManifest.xml" -Destination "$StagingDirectory\Appx
 #Inject the Subject of the certificate we intend to sign with.
 #If the Subject was unspecified, assume we're doing local signing and grab the
 #subject out of a cert on disk.
-if (Test-Path $CertPath && $CertPassword) {
+if ((Test-Path $CertPath) -and ($CertPassword)) {
     $Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertPath, $CertPassword)
     $CertSubject = $Cert.Subject;
 }
 
-[xml]$Manifest = Get-Content "$StagingDirectory\AppxManifest.xml"
-$Manifest.Package.Identity.Publisher = $CertSubject;
-$Manifest.Save("$StagingDirectory\AppxManifest.xml")
+if ($CertSubject) {
+    [xml]$Manifest = Get-Content "$StagingDirectory\AppxManifest.xml"
+    $Manifest.Package.Identity.Publisher = $CertSubject;
+    $Manifest.Save("$StagingDirectory\AppxManifest.xml")
+}
 
 #Find makeappx & assemble the package
 $WindowsSdkRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots").KitsRoot10
