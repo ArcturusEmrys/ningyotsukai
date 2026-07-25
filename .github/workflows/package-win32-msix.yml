@@ -82,7 +82,9 @@ jobs:
         .\ningyotsukai\packaging\win32-msix\package.ps1 "${{ matrix.app.name }}" "${{ matrix.app.exe }}" "${{ matrix.arch.msname }}" "${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\bin" $SuperSecretCertPassword
     
     - name: Sign MSIX with SUPER SECRET SELF-SIGNING CERTIFICATE
-      if: ${{ secrets.MSIX_SIGNING_CERT != '' }}
+      if: ${{ env.MSIX_SIGNING_CERT != '' }}
+      env:
+        MSIX_SIGNING_CERT: ${{ secrets.MSIX_SIGNING_CERT }}
       shell: pwsh
       run: |
         $SuperSecretCert = [Convert]::FromBase64String("${{ secrets.MSIX_SIGNING_CERT }}")
@@ -97,7 +99,7 @@ jobs:
         archive: false
     
     - name: Upload as release artifact
-      if: ${{ github.ref_type == "tag" }}
+      if: ${{ github.ref_type == 'tag' }}
       uses: softprops/action-gh-release@v3
       with:
         draft: true
