@@ -1,0 +1,105 @@
+name: Package (Win32 MSIX)
+
+on:
+  push:
+    tags:
+     - 'v*'
+     - 'test-*'
+  
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Specific commit SHA (leave blank if running on a tag/branch head)'
+        required: false
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  packages: write
+  contents: write
+
+jobs:
+  build_release:
+    strategy:
+      matrix:
+        arch:
+          - msname: x64
+            target: x86_64
+        app:
+          - name: Ningyotsukai
+            exe: ningyotsukai
+            features: branding,pipewire
+    
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.commit_sha || github.sha }}
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ matrix.arch.target }}-pc-windows-msvc
+    
+    - name: Cache native dependencies (Windows)
+      run: |
+        dotnet nuget add source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" `
+          --name "GitHubPackages" `
+          --username "${{ github.repository_owner }}" `
+          --password "${{ secrets.GITHUB_TOKEN }}" `
+          --store-password-in-clear-text
+    
+    - name: Cache compiled Rust
+      uses: swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.arch.target }}
+
+    - name: Install Dependencies
+      env:
+        VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json,readwrite"
+      run: |
+        vcpkg install --triplet=${{ matrix.arch.msname }}-windows
+
+        echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+        echo "RUST_VCPKG_DEFAULT_BINARIES=1" >> $env:GITHUB_ENV
+        echo "PKG_CONFIG_PATH=${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\lib\pkgconfig" >> $env:GITHUB_ENV
+        echo "GTK_LIB_DIR=${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\lib" >> $env:GITHUB_ENV
+        echo "PKG_CONFIG=${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\tools\pkgconf\pkgconf.exe" >> $env:GITHUB_ENV
+        echo "${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\bin" >> $env:GITHUB_PATH
+        echo "${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\tools\pkgconf" >> $env:GITHUB_PATH
+        echo "${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\tools\glib" >> $env:GITHUB_PATH
+    
+    - name: Build with features
+      run: cargo build --bin=${{ matrix.app.exe }} --verbose --release --features ${{ matrix.app.features }}
+    
+    - name: Create MSIX package
+      shell: pwsh
+      run: |
+        .\ningyotsukai\packaging\win32-msix\package.ps1 "${{ matrix.app.name }}" "${{ matrix.app.exe }}" "${{ matrix.arch.msname }}" "${{ github.workspace }}\vcpkg_installed\${{ matrix.arch.msname }}-windows\bin" $SuperSecretCertPassword
+    
+    - name: Sign MSIX with SUPER SECRET SELF-SIGNING CERTIFICATE
+      if: ${{ secrets.MSIX_SIGNING_CERT != '' }}
+      shell: pwsh
+      run: |
+        $SuperSecretCert = [Convert]::FromBase64String("${{ secrets.MSIX_SIGNING_CERT }}")
+        [IO.File]::WriteAllBytes("cert.pfx", $SuperSecretCert)
+        $SuperSecretCertPassword = "${{ secrets.MSIX_SIGNING_CERT_PASSWORD }}"
+        .\ningyotsukai\packaging\win32-msix\sign-local.ps1 "${{ matrix.app.name }}" "${{ matrix.arch.msname }}" $SuperSecretCertPassword
+
+    - name: Upload as workflow artifact
+      uses: actions/upload-artifact@v7
+      with:
+        path: ${{ matrix.app.name }}.${{ matrix.arch.msname }}.msix
+        archive: false
+    
+    - name: Upload as release artifact
+      if: ${{ github.ref_type == "tag" }}
+      uses: softprops/action-gh-release@v3
+      with:
+        draft: true
+        files: |
+          ${{ matrix.app.name }}.${{ matrix.arch.msname }}.msix

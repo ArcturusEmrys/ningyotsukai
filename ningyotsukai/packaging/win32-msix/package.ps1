@@ -11,8 +11,11 @@ param (
     [Parameter(Mandatory=$true, HelpMessage="Where the DLLs are")]
     [string]$VcpkgDllPath,
 
-    [Parameter(Mandatory=$true, HelpMessage="Just put the word 'placebo'")]
-    [string]$CertPassword
+    [Parameter(Mandatory=$false, HelpMessage="Just put the word 'placebo'")]
+    [string]$CertPassword,
+
+    [Parameter(Mandatory=$false, HelpMessage="Provide the certificate subject")]
+    [string]$CertSubject
 )
 
 $ProjectRoot = "$PSScriptRoot\..\..\.."
@@ -51,13 +54,16 @@ Copy-Item "$VcpkgDllPath\*.dll" -Destination "$StagingDirectory\"
 Copy-Item "$PackagingPath\AppxManifest.xml" -Destination "$StagingDirectory\AppxManifest.xml"
 
 #Inject the Subject of the certificate we intend to sign with.
-$Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertPath, $CertPassword)
-[xml]$Manifest = Get-Content "$StagingDirectory\AppxManifest.xml"
-
-if ($Cert) {
-    $Manifest.Package.Identity.Publisher = $Cert.Subject;
-    $Manifest.Save("$StagingDirectory\AppxManifest.xml")
+#If the Subject was unspecified, assume we're doing local signing and grab the
+#subject out of a cert on disk.
+if (!$CertSubject) {
+    $Cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($CertPath, $CertPassword)
+    $CertSubject = $Cert.Subject;
 }
+
+[xml]$Manifest = Get-Content "$StagingDirectory\AppxManifest.xml"
+$Manifest.Package.Identity.Publisher = $CertSubject;
+$Manifest.Save("$StagingDirectory\AppxManifest.xml")
 
 #Find makeappx & assemble the package
 $WindowsSdkRoot = (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots").KitsRoot10
@@ -73,4 +79,7 @@ $SdkBins = "$WindowsSdkRoot\bin\$LatestVersion\$SdkArch\"
 & "$SdkBins\makepri.exe" createconfig /cf "$TargetDirectory\priconfig.xml" /dq "Language-en" /pv "10.0" /o
 & "$SdkBins\makepri.exe" new /pr $StagingDirectory /cf "$TargetDirectory\priconfig.xml" /of "$StagingDirectory\resources.pri" /o
 & "$SdkBins\makeappx.exe" pack /d $StagingDirectory /p "$AppName.$ArchName.msix" /o
-& "$SdkBins\signtool.exe" sign /fd SHA256 /f $CertPath /p "$CertPassword" "$AppName.$ArchName.msix"
+
+if ($CertPassword) {
+    & "$SdkBins\signtool.exe" sign /fd SHA256 /f $CertPath /p "$CertPassword" "$AppName.$ArchName.msix"
+}
