@@ -18,8 +18,8 @@ generational-arena = "0.2.9"
 glow = "0.14.1"
 gl46 = "0.2.1"
 glam = "0.29.0"
-inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7df36f1f167d655539e59abc18c2" }
-inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "c672d35f364f7df36f1f167d655539e59abc18c2" }
+inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "9d48bc1fb76a72b608f283efaba1b07caff95010" }
+inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "9d48bc1fb76a72b608f283efaba1b07caff95010" }
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel", optional=true }
 ningyo-extensions = { path = "../ningyo-extensions" }
 ningyo-binding = { path = "../ningyo-binding" }
