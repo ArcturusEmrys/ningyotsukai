@@ -61,7 +61,11 @@ pub struct BindingFormImp {
     #[template_child]
     expression_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
-    expression_error_label: gtk4::TemplateChild<gtk4::TextView>,
+    expression_value_label: gtk4::TemplateChild<gtk4::Label>,
+    #[template_child]
+    expression_value_entry: gtk4::TemplateChild<gtk4::Entry>,
+    #[template_child]
+    expression_error_display: gtk4::TemplateChild<gtk4::TextView>,
     #[template_child]
     error_indicator: gtk4::TemplateChild<gtk4::Image>,
     #[template_child]
@@ -288,6 +292,9 @@ impl BindingFormImp {
 
     fn set_has_error(&self, value: bool) {
         self.error_indicator.set_visible(value);
+        self.expression_error_display.set_visible(value);
+        self.expression_value_entry.set_visible(!value);
+        self.expression_value_label.set_visible(!value);
     }
 
     fn value_in(&self) -> f32 {
@@ -306,6 +313,9 @@ impl BindingFormImp {
     fn set_value_out(&self, value: f32) {
         self.value_out.borrow_mut().1 = value;
         self.update_level_bar(*self.value_out.borrow(), &self.value_out_display);
+        self.expression_value_entry
+            .buffer()
+            .set_text(format!("{}", value));
     }
 
     fn expression(&self) -> String {
@@ -317,13 +327,13 @@ impl BindingFormImp {
     }
 
     fn expression_error(&self) -> String {
-        self.expression_error_label
+        self.expression_error_display
             .buffer()
             .property::<String>("text")
     }
 
     fn set_expression_error(&self, value: String) {
-        self.expression_error_label.buffer().set_text(&value);
+        self.expression_error_display.buffer().set_text(&value);
     }
 
     /// Set the target level bar to display the range (min, value, max).
