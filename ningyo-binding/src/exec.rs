@@ -43,6 +43,21 @@ impl ExpressionEval {
             })?,
         )?;
 
+        lua.globals().set(
+            "sin",
+            lua.create_function({ move |_, x: f64| Ok(x.sin()) })?,
+        )?;
+
+        lua.globals().set(
+            "cos",
+            lua.create_function({ move |_, x: f64| Ok(x.cos()) })?,
+        )?;
+
+        lua.globals().set(
+            "tan",
+            lua.create_function({ move |_, x: f64| Ok(x.tan()) })?,
+        )?;
+
         Ok(self_eval)
     }
 
