@@ -25,179 +25,221 @@
                     </object>
                 </property>
                 <property name="child">
-                    <object class="GtkGrid">
+                    <object class="GtkBox">
+                        <property name="orientation">vertical</property>
                         <child>
-                            <object class="GtkLabel">
-                                <property name="xalign">0.0</property>
-                                <property name="label">Parameter</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="row">1</property>
-                                </layout>
+                            <object class="GtkStackSwitcher">
+                                <property name="stack">binding_type_stack</property>
                             </object>
                         </child>
                         <child>
-                            <object class="GtkDropDown">
-                                <property name="factory">
-                                    <object class="GtkSignalListItemFactory" id="tracker_param_factory">
-                                    </object>
-                                </property>
-                                <property name="model">
-                                    <object class="GtkSingleSelection" id="tracker_param_select">
-                                        <property name="model">
-                                            <object class="GListStore" id="tracker_param_model">
+                            <object class="GtkStack" id="binding_type_stack">
+                                <property name="vhomogeneous">false</property>
+                                <child>
+                                    <object class="GtkStackPage">
+                                        <property name="name">Ratio</property>
+                                        <property name="title">Ratio</property>
+                                        <property name="child">
+                                            <object class="GtkGrid" id="binding_type_ratio">
+                                                <child>
+                                                    <object class="GtkLabel">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Parameter</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">1</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkDropDown">
+                                                        <property name="factory">
+                                                            <object class="GtkSignalListItemFactory" id="tracker_param_factory">
+                                                            </object>
+                                                        </property>
+                                                        <property name="model">
+                                                            <object class="GtkSingleSelection" id="tracker_param_select">
+                                                                <property name="model">
+                                                                    <object class="GListStore" id="tracker_param_model">
+                                                                    </object>
+                                                                </property>
+                                                            </object>
+                                                        </property>
+                                                        <layout>
+                                                            <property name="column">1</property>
+                                                            <property name="column-span">2</property>
+                                                            <property name="row">1</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Dampening</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">2</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="dampening_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">1</property>
+                                                            <property name="column-span">2</property>
+                                                            <property name="row">2</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Value In</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">3</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="value_in_from_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">1</property>
+                                                            <property name="row">3</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="value_in_to_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">2</property>
+                                                            <property name="row">3</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLevelBar" id="value_in_display">
+                                                        <property name="hexpand">true</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="column-span">3</property>
+                                                            <property name="row">4</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkCheckButton" id="value_invert_check">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="label">Inverse</property>
+                                                        <layout>
+                                                            <property name="column-span">2</property>
+                                                            <property name="column">1</property>
+                                                            <property name="row">5</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Value Out</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">6</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="value_out_from_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">1</property>
+                                                            <property name="row">6</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="value_out_to_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">2</property>
+                                                            <property name="row">6</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLevelBar" id="value_out_display">
+                                                        <property name="hexpand">true</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="column-span">3</property>
+                                                            <property name="row">7</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
                                             </object>
                                         </property>
                                     </object>
-                                </property>
-                                <layout>
-                                    <property name="column">1</property>
-                                    <property name="column-span">2</property>
-                                    <property name="row">1</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="xalign">0.0</property>
-                                <property name="label">Dampening</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="row">2</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="dampening_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">1</property>
-                                    <property name="column-span">2</property>
-                                    <property name="row">2</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="xalign">0.0</property>
-                                <property name="label">Value In</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="row">3</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="value_in_from_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">1</property>
-                                    <property name="row">3</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="value_in_to_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">2</property>
-                                    <property name="row">3</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLevelBar" id="value_in_display">
-                                <property name="hexpand">true</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="column-span">3</property>
-                                    <property name="row">4</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkCheckButton" id="value_invert_check">
-                                <property name="hexpand">true</property>
-                                <property name="label">Inverse</property>
-                                <layout>
-                                    <property name="column-span">2</property>
-                                    <property name="column">1</property>
-                                    <property name="row">5</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="xalign">0.0</property>
-                                <property name="label">Value Out</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="row">6</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="value_out_from_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">1</property>
-                                    <property name="row">6</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="value_out_to_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">2</property>
-                                    <property name="row">6</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLevelBar" id="value_out_display">
-                                <property name="hexpand">true</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="column-span">3</property>
-                                    <property name="row">7</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkLabel">
-                                <property name="xalign">0.0</property>
-                                <property name="label">Expression</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="row">8</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkEntry" id="expression_entry">
-                                <property name="hexpand">true</property>
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">1</property>
-                                    <property name="column-span">2</property>
-                                    <property name="row">8</property>
-                                </layout>
-                            </object>
-                        </child>
-                        <child>
-                            <object class="GtkTextView" id="expression_error_label">
-                                <property name="editable">false</property>
-                                <layout>
-                                    <property name="column">0</property>
-                                    <property name="column-span">3</property>
-                                    <property name="row">9</property>
-                                </layout>
+                                </child>
+                                <child>
+                                    <object class="GtkStackPage">
+                                        <property name="name">Expression</property>
+                                        <property name="title">Expression</property>
+                                        <property name="child">
+                                            <object class="GtkGrid" id="binding_type_expression">
+                                                <child>
+                                                    <object class="GtkEntry" id="expression_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="column-span">3</property>
+                                                            <property name="row">0</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkLabel" id="expression_value_label">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Value</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">1</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="expression_value_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">1</property>
+                                                            <property name="column-span">2</property>
+                                                            <property name="row">1</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkTextView" id="expression_error_display">
+                                                        <property name="editable">false</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="column-span">3</property>
+                                                            <property name="row">3</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                            </object>
+                                        </property>
+                                    </object>
+                                </child>
                             </object>
                         </child>
                     </object>
