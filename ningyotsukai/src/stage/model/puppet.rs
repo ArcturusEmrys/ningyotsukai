@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut};
+use std::time::Instant;
 
 use inox2d::math::rect::RectBounds;
 use inox2d::model::Model;
@@ -61,6 +62,12 @@ struct PuppetInner {
 
     /// The Lua expression evaluation environment.
     expression_eval: ExpressionEval,
+
+    /// The timestamp this puppet was loaded.
+    ///
+    /// This should be created once at the time the puppet is loaded and NOT
+    /// stored or recovered from anywhere.
+    time_started: Instant,
 }
 
 impl Puppet {
@@ -94,6 +101,7 @@ impl Puppet {
             bindings,
             param_uuid_index,
             expression_eval: ExpressionEval::new()?,
+            time_started: Instant::now(),
         }))))
     }
 
@@ -138,11 +146,12 @@ impl Puppet {
     }
 
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
-        self.0
-            .lock()
-            .unwrap()
-            .expression_eval
-            .set_tracker_packet(packet);
+        let me = self.0.lock().unwrap();
+
+        me.expression_eval.set_tracker_packet(packet);
+
+        me.expression_eval
+            .set_jiffies(Instant::now() - me.time_started);
     }
 
     /// Get the current puppet bounds.

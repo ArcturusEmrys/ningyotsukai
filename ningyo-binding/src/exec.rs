@@ -1,7 +1,10 @@
 //! Lua expression execution
 
 use mlua::{Error as LuaError, Lua, LuaOptions, StdLib};
-use std::sync::{Arc, RwLock, Weak};
+use std::{
+    sync::{Arc, RwLock, Weak},
+    time::Duration,
+};
 
 use crate::tracker::TrackerPacket;
 
@@ -10,7 +13,12 @@ use crate::tracker::TrackerPacket;
 pub struct ExpressionEval(Arc<RwLock<ExpressionEvalImp>>);
 pub struct ExpressionEvalImp {
     lua: Lua,
+
+    /// Latest tracker data.
     tracker_packet: Option<TrackerPacket>,
+
+    /// Time since opening program.
+    jiffies: Duration,
 }
 
 impl ExpressionEval {
@@ -20,6 +28,7 @@ impl ExpressionEval {
         let self_eval = ExpressionEval(Arc::new(RwLock::new(ExpressionEvalImp {
             lua: lua.clone(),
             tracker_packet: None,
+            jiffies: Duration::from_secs(0),
         })));
 
         lua.globals().set(
@@ -58,6 +67,20 @@ impl ExpressionEval {
             lua.create_function({ move |_, x: f64| Ok(x.tan()) })?,
         )?;
 
+        lua.globals().set(
+            "time",
+            lua.create_function({
+                let callback_self = self_eval.downgrade();
+                move |_, _: ()| {
+                    if let Some(callback_self) = callback_self.upgrade() {
+                        return Ok(callback_self.0.read().unwrap().jiffies.as_secs_f64());
+                    }
+
+                    Err(LuaError::CallbackDestructed)
+                }
+            })?,
+        )?;
+
         Ok(self_eval)
     }
 
@@ -74,6 +97,10 @@ impl ExpressionEval {
 
     pub fn set_tracker_packet(&self, packet: TrackerPacket) {
         self.0.write().unwrap().tracker_packet = Some(packet);
+    }
+
+    pub fn set_jiffies(&self, jiffies: Duration) {
+        self.0.write().unwrap().jiffies = jiffies;
     }
 
     pub fn eval(&self, expr: String) -> Result<f64, LuaError> {
