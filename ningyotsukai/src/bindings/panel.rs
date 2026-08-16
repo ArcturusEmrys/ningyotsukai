@@ -8,6 +8,7 @@ use ningyo_binding::{Binding, BindingType};
 use ningyo_extensions::prelude::*;
 
 use crate::bindings::form::BindingForm;
+use crate::bindings::form::BindingTypeEnum;
 use crate::document::Document;
 use crate::stage::{StageWidget, StageWidgetExt};
 use generational_arena::Index;
@@ -105,6 +106,7 @@ impl BindingPanelImp {
 
                     match &binding.binding_type {
                         BindingType::Ratio(ratio) => {
+                            form.set_binding_type(BindingTypeEnum::Ratio);
                             form.set_value_in_from(ratio.in_range.x);
                             form.set_value_in_to(ratio.in_range.y);
                             form.set_value_out_from(ratio.out_range.x);
@@ -112,6 +114,7 @@ impl BindingPanelImp {
                             form.set_inverse(ratio.inverse);
                         }
                         BindingType::Expression(expr) => {
+                            form.set_binding_type(BindingTypeEnum::Expression);
                             form.set_expression(expr.as_str());
 
                             if let Some(last_error) = last_error {

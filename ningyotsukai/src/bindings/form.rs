@@ -7,6 +7,29 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::str::FromStr;
 
+/// Value-less version of BindingType suitable for representing the state of the
+/// form's binding type.
+///
+/// Since we're a GTK widget, it's actually perfectly valid (if meaningless)
+/// behavior to set the binding type separately from the settings that would
+/// otherwise be bundled with the value.
+#[derive(Default, Copy, Clone, glib::Enum)]
+#[enum_type(name = "NGTBindingTypeEnum")]
+pub enum BindingTypeEnum {
+    #[default]
+    Ratio,
+    Expression,
+}
+
+impl From<ningyo_binding::BindingType> for BindingTypeEnum {
+    fn from(value: ningyo_binding::BindingType) -> Self {
+        match value {
+            ningyo_binding::BindingType::Ratio(..) => Self::Ratio,
+            ningyo_binding::BindingType::Expression(..) => Self::Expression,
+        }
+    }
+}
+
 #[derive(CompositeTemplate, Default, Properties)]
 #[template(resource = "/live/arcturus/ningyotsukai/bindings/form.ui")]
 #[properties(wrapper_type=BindingForm)]
@@ -41,6 +64,12 @@ pub struct BindingFormImp {
     expression_error_label: gtk4::TemplateChild<gtk4::TextView>,
     #[template_child]
     error_indicator: gtk4::TemplateChild<gtk4::Image>,
+    #[template_child]
+    binding_type_stack: gtk4::TemplateChild<gtk4::Stack>,
+    #[template_child]
+    binding_type_ratio: gtk4::TemplateChild<gtk4::Grid>,
+    #[template_child]
+    binding_type_expression: gtk4::TemplateChild<gtk4::Grid>,
 
     /// Un-normalized range (min, value, max) of in value
     value_in: RefCell<(f32, f32, f32)>,
@@ -65,6 +94,9 @@ pub struct BindingFormImp {
     #[property(name="inverse", get=Self::inverse, set=Self::set_inverse)]
     #[property(name="has-error", get=Self::has_error, set=Self::set_has_error)]
     _synths_bool: RefCell<bool>,
+
+    #[property(name="binding-type", get=Self::binding_type, set=Self::set_binding_type, default)]
+    _synths_binding_type: RefCell<BindingTypeEnum>,
 }
 
 #[glib::object_subclass]
@@ -174,6 +206,15 @@ impl ObjectImpl for BindingFormImp {
             connect_visible_notify,
             notify_has_error
         );
+
+        self.binding_type_stack.connect_visible_child_notify({
+            let callback_self = self.obj().downgrade().clone();
+            move |_stack| {
+                if let Some(callback_self) = callback_self.upgrade() {
+                    callback_self.notify_binding_type();
+                }
+            }
+        });
     }
 }
 
@@ -194,6 +235,31 @@ macro_rules! float_property_impl {
 }
 
 impl BindingFormImp {
+    fn binding_type(&self) -> BindingTypeEnum {
+        let widget = self.binding_type_stack.visible_child();
+        if let Some(widget) = widget {
+            if widget == *self.binding_type_ratio {
+                BindingTypeEnum::Ratio
+            } else {
+                // widget == self.binding_type_expression
+                BindingTypeEnum::Expression
+            }
+        } else {
+            BindingTypeEnum::Ratio
+        }
+    }
+
+    fn set_binding_type(&self, binding_type: BindingTypeEnum) {
+        match binding_type {
+            BindingTypeEnum::Ratio => self
+                .binding_type_stack
+                .set_visible_child(&*self.binding_type_ratio),
+            BindingTypeEnum::Expression => self
+                .binding_type_stack
+                .set_visible_child(&*self.binding_type_expression),
+        }
+    }
+
     fn binding_name(&self) -> String {
         self.name.label().into()
     }
