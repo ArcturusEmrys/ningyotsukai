@@ -195,33 +195,44 @@
                                         <property name="child">
                                             <object class="GtkGrid" id="binding_type_expression">
                                                 <child>
-                                                    <object class="GtkLabel">
-                                                        <property name="xalign">0.0</property>
-                                                        <property name="label">Expression</property>
+                                                    <object class="GtkEntry" id="expression_entry">
+                                                        <property name="hexpand">true</property>
+                                                        <property name="editable">false</property>
                                                         <layout>
                                                             <property name="column">0</property>
+                                                            <property name="column-span">3</property>
                                                             <property name="row">0</property>
                                                         </layout>
                                                     </object>
                                                 </child>
                                                 <child>
-                                                    <object class="GtkEntry" id="expression_entry">
+                                                    <object class="GtkLabel" id="expression_value_label">
+                                                        <property name="xalign">0.0</property>
+                                                        <property name="label">Value</property>
+                                                        <layout>
+                                                            <property name="column">0</property>
+                                                            <property name="row">1</property>
+                                                        </layout>
+                                                    </object>
+                                                </child>
+                                                <child>
+                                                    <object class="GtkEntry" id="expression_value_entry">
                                                         <property name="hexpand">true</property>
                                                         <property name="editable">false</property>
                                                         <layout>
                                                             <property name="column">1</property>
                                                             <property name="column-span">2</property>
-                                                            <property name="row">0</property>
+                                                            <property name="row">1</property>
                                                         </layout>
                                                     </object>
                                                 </child>
                                                 <child>
-                                                    <object class="GtkTextView" id="expression_error_label">
+                                                    <object class="GtkTextView" id="expression_error_display">
                                                         <property name="editable">false</property>
                                                         <layout>
                                                             <property name="column">0</property>
                                                             <property name="column-span">3</property>
-                                                            <property name="row">1</property>
+                                                            <property name="row">3</property>
                                                         </layout>
                                                     </object>
                                                 </child>
