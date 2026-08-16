@@ -119,6 +119,12 @@ impl Puppet {
         }
 
         inner.is_render_initialized = true;
+
+        // NOTE: Time should move forward even if we aren't getting tracker
+        // updates.
+        inner
+            .expression_eval
+            .set_jiffies(Instant::now() - inner.time_started);
     }
 
     pub fn model(&self) -> impl Deref<Target = Model> {
@@ -148,10 +154,9 @@ impl Puppet {
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
         let me = self.0.lock().unwrap();
 
-        me.expression_eval.set_tracker_packet(packet);
-
         me.expression_eval
             .set_jiffies(Instant::now() - me.time_started);
+        me.expression_eval.set_tracker_packet(packet);
     }
 
     /// Get the current puppet bounds.
