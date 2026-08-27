@@ -91,6 +91,14 @@
                             </patterns>
                         </object>
                     </child>
+                    <child>
+                        <object class="GtkFileFilter">
+                            <property name="name" translatable="yes">Inochi Creator Document (*.inx)</property>
+                            <patterns>
+                                <pattern>*.inx</pattern>
+                            </patterns>
+                        </object>
+                    </child>
                 </object>
             </property>
         </object>
