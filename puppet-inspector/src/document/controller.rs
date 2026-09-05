@@ -31,6 +31,36 @@ pub struct DocumentControllerState {
     history: Vec<Path>,
     current: Option<Path>,
     future: Vec<Path>,
+
+    // Meta note: all of the following flags exist to work around various
+    // consequences of how GTK fires events. Namely, user interaction as well
+    // as our own code setting the same values fires the same event and there's
+    // no built-in way to tell which. We also rely on this doing the same thing
+    // so that we can just change tabs or selection to actually jump between
+    // pages of the UI.
+    /// Indicates TRUE if the current tab switch is being caused by program
+    /// code instead of a user action. If TRUE, disables "automatic jump to
+    /// JSON" so that the back/fwd buttons work.
+    no_automatic_jump_on_tab_switch: bool,
+
+    /// Indicates TRUE if the current page switch is being caused by back/fwd
+    /// action, in which case the future stack should not automatically be
+    /// cleared. Otherwise, it DOES get cleared, because user navigation to new
+    /// pages should NOT preserve the forward stack
+    preserve_future: bool,
+
+    /// Indicates TRUE if an event is currently being handled; if so, do
+    /// nothing.
+    ///
+    /// The following functions ignore reentrant calls from one another:
+    ///
+    /// * tabs.switch_page's event handler
+    /// * json/nav selection.selection_changed's event handler(s)
+    /// * jump_back
+    /// * jump_fwd
+    /// * jump_up
+    /// * jump_to
+    fuck_reentrancy: bool,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -195,53 +225,72 @@ impl DocumentController {
         );
         self.connect_factory(self.imp().json_factory.clone(), &self.imp().json_selection);
 
-        let json_selection = self.imp().json_selection.clone();
-        let callback_self = self.clone();
-        json_selection.connect_selection_changed(move |model, position, count| {
-            for position in position..position + count {
-                if !model.is_selected(position) {
-                    continue;
-                }
+        self.append_history(Path::Section(Section::PuppetMeta));
+        self.populate_detail(NavigationItem::new(Path::Section(Section::PuppetMeta)));
 
-                let tree_row = model.item(position);
-                if let Some(tree_row) = tree_row {
-                    let item = tree_row
-                        .downcast::<gtk4::TreeListRow>()
-                        .expect("tree row")
-                        .item();
-                    if let Some(item) = item {
-                        let item = item.downcast::<NavigationItem>().expect("nav item");
-                        callback_self.populate_detail(item);
+        self.imp().tabs.connect_switch_page({
+            let switch_self = self.downgrade();
+            move |_note, _page, page_num| {
+                if let Some(switch_self) = switch_self.upgrade() {
+                    if switch_self.imp().state.borrow().fuck_reentrancy {
+                        return;
                     }
+
+                    switch_self.imp().state.borrow_mut().fuck_reentrancy = true;
+
+                    let state = switch_self.imp().state.borrow_mut();
+                    let document = state.open_doc.clone().unwrap();
+                    let document = document.lock().unwrap();
+                    if !state.no_automatic_jump_on_tab_switch && page_num == 1 && false {
+                        // Automatic Jump to JSON
+                        if let Some(json_path) = state
+                            .current
+                            .as_ref()
+                            .and_then(|c| c.as_json_path(&document))
+                        {
+                            drop(document);
+                            drop(state);
+
+                            let path: Path = json_path.into();
+
+                            switch_self.select_path_on_tree(path.clone());
+                            switch_self.append_history(path.clone());
+                            switch_self.populate_detail(NavigationItem::new(path));
+                            switch_self.imp().state.borrow_mut().fuck_reentrancy = false;
+
+                            return;
+                        }
+                    }
+
+                    drop(document);
+                    drop(state);
+
+                    let model = match page_num {
+                        0 => &switch_self.imp().navigation_selection, //Resources page
+                        1 => &switch_self.imp().json_selection,       //JSON page
+                        unk => panic!("Unknown page {}", unk),
+                    };
+
+                    if let Some((_, selected_id)) = gtk4::BitsetIter::init_first(&model.selection())
+                    {
+                        let tree_row = model.item(selected_id).expect("valid selection");
+                        let item = tree_row
+                            .downcast::<gtk4::TreeListRow>()
+                            .expect("tree row")
+                            .item()
+                            .expect("nav item obj")
+                            .downcast::<NavigationItem>()
+                            .expect("nav item");
+
+                        switch_self.select_path_on_tree(item.as_path());
+                        switch_self.append_history(item.as_path());
+                        switch_self.populate_detail(item);
+                    }
+
+                    switch_self.imp().state.borrow_mut().fuck_reentrancy = false;
                 }
             }
         });
-
-        self.populate_detail(NavigationItem::new(Path::Section(Section::PuppetMeta)));
-
-        let notebook_self = self.clone();
-        self.imp()
-            .tabs
-            .connect_switch_page(move |_note, _page, page_num| {
-                let model = match page_num {
-                    0 => &notebook_self.imp().navigation_selection, //Resources page
-                    1 => &notebook_self.imp().json_selection,       //JSON page
-                    unk => panic!("Unknown page {}", unk),
-                };
-
-                if let Some((_, selected_id)) = gtk4::BitsetIter::init_first(&model.selection()) {
-                    let tree_row = model.item(selected_id).expect("valid selection");
-                    let item = tree_row
-                        .downcast::<gtk4::TreeListRow>()
-                        .expect("tree row")
-                        .item()
-                        .expect("nav item obj")
-                        .downcast::<NavigationItem>()
-                        .expect("nav item");
-
-                    notebook_self.populate_detail(item);
-                }
-            });
     }
 
     fn connect_factory(
@@ -309,6 +358,12 @@ impl DocumentController {
 
         let callback_self = self.clone();
         selection.connect_selection_changed(move |model, position, count| {
+            if callback_self.imp().state.borrow().fuck_reentrancy {
+                return;
+            }
+
+            callback_self.imp().state.borrow_mut().fuck_reentrancy = true;
+
             for position in position..position + count {
                 if !model.is_selected(position) {
                     continue;
@@ -322,22 +377,33 @@ impl DocumentController {
                         .item();
                     if let Some(item) = item {
                         let item = item.downcast::<NavigationItem>().expect("nav item");
+                        callback_self.select_path_on_tabs(item.as_path());
+                        callback_self.append_history(item.as_path());
                         callback_self.populate_detail(item);
                     }
                 }
             }
+
+            callback_self.imp().state.borrow_mut().fuck_reentrancy = false;
         });
     }
 
-    fn populate_detail(&self, item: NavigationItem) {
-        let detail_view = self.imp().detail_view.clone();
+    fn append_history(&self, path: Path) {
         let mut state = self.imp().state.borrow_mut();
         if let Some(prior) = state.current.take() {
             state.history.push(prior);
         }
 
-        let path = item.as_path();
+        if !state.preserve_future {
+            state.future.clear();
+        }
         state.current = Some(path.clone());
+    }
+
+    fn populate_detail(&self, item: NavigationItem) {
+        let detail_view = self.imp().detail_view.clone();
+        let state = self.imp().state.borrow_mut();
+        let path = item.as_path();
         self.imp().navbar.set_path(path);
 
         state
@@ -423,6 +489,12 @@ impl DocumentController {
 
     fn jump_back(&self) {
         let mut state = self.imp().state.borrow_mut();
+        if state.fuck_reentrancy {
+            return;
+        }
+
+        state.fuck_reentrancy = true;
+
         let back = state.history.pop();
 
         if let Some(back) = back {
@@ -432,47 +504,105 @@ impl DocumentController {
                 state.future.push(current);
             }
 
+            // We need to tell populate_detail not to obliterate the future
+            // stack we just made
+            state.preserve_future = true;
+
             drop(state);
             self.jump_to_inner(back);
+
+            self.imp().state.borrow_mut().preserve_future = false;
         }
+
+        self.imp().state.borrow_mut().fuck_reentrancy = false;
     }
 
     fn jump_fwd(&self) {
         let mut state = self.imp().state.borrow_mut();
+        if state.fuck_reentrancy {
+            return;
+        }
+
+        state.fuck_reentrancy = true;
+
         let fwd = state.future.pop();
+
+        // We should, obviously, be allowed to go forward more than once.
+        state.preserve_future = true;
 
         drop(state);
         if let Some(fwd) = fwd {
             self.jump_to_inner(fwd);
         }
+
+        self.imp().state.borrow_mut().preserve_future = false;
+        self.imp().state.borrow_mut().fuck_reentrancy = false;
     }
 
     pub fn jump_to(&self, path: Path) {
         let mut state = self.imp().state.borrow_mut();
-        state.future.clear();
+
+        if state.fuck_reentrancy {
+            return;
+        }
+
+        state.fuck_reentrancy = true;
 
         drop(state);
         self.jump_to_inner(path);
+
+        self.imp().state.borrow_mut().fuck_reentrancy = false;
     }
 
     pub fn jump_up(&self) {
         let mut state = self.imp().state.borrow_mut();
+
+        if state.fuck_reentrancy {
+            return;
+        }
+
+        state.fuck_reentrancy = true;
         if let Some(current) = state.current.as_ref() {
             let parent = current.parent(&*state.open_doc.as_ref().unwrap().lock().unwrap());
             if let Some(parent) = parent {
-                state.future.clear();
                 drop(state);
                 self.jump_to_inner(parent);
             }
         }
+
+        self.imp().state.borrow_mut().fuck_reentrancy = false;
     }
 
     fn jump_to_inner(&self, path: Path) {
+        self.select_path_on_tabs(path.clone());
+        self.select_path_on_tree(path.clone());
+        self.append_history(path.clone());
+        self.populate_detail(NavigationItem::new(path));
+    }
+
+    /// Select a particular path on the tabs WITHOUT selecting tree items.
+    fn select_path_on_tabs(&self, path: Path) {
         let notebook_page = path.notebook_page();
 
-        self.imp().tabs.set_current_page(Some(notebook_page));
+        if notebook_page != self.imp().tabs.current_page().unwrap_or(u32::MAX) {
+            // Disable Automatic Jump To JSON behavior since the current page
+            // change signal triggers for both back/fwd interactions and the
+            // user switching pages
+            self.imp()
+                .state
+                .borrow_mut()
+                .no_automatic_jump_on_tab_switch = true;
+            self.imp().tabs.set_current_page(Some(notebook_page));
+            self.imp()
+                .state
+                .borrow_mut()
+                .no_automatic_jump_on_tab_switch = false;
+        }
+    }
 
-        let tree_selection = match notebook_page {
+    /// Select a particular path on the tree WITHOUT switching tabs.
+    fn select_path_on_tree(&self, path: Path) {
+        let tree_selection = match path.notebook_page() {
             0 => self.imp().navigation_selection.clone(),
             1 => self.imp().json_selection.clone(),
             _ => return,
