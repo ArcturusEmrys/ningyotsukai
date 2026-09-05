@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 
 mod detail_views;
 mod document;
+mod navbar;
 mod navigation;
 mod render_preview;
 mod window;
@@ -19,6 +20,8 @@ fn main() -> glib::ExitCode {
 
     #[cfg(feature = "branding")]
     ningyo_look_and_feel::init();
+
+    navbar::NavbarController::ensure_type();
 
     let laf_css = gtk4::CssProvider::new();
     laf_css.load_from_resource("/live/arcturus/puppet-inspector/style.css");

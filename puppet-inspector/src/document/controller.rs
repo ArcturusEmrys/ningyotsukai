@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
+use crate::navbar::NavbarController;
 use crate::navigation::{NavigationItem, Path, Section};
 use crate::render_preview::InoxRenderPreview;
 use ningyo_extensions::prelude::*;
@@ -47,6 +48,9 @@ pub struct DocumentControllerImp {
     detail_view: TemplateChild<gtk4::ScrolledWindow>,
     #[template_child]
     tabs: TemplateChild<gtk4::Notebook>,
+    #[template_child]
+    navbar: TemplateChild<NavbarController>,
+
     state: RefCell<DocumentControllerState>,
 }
 
@@ -86,6 +90,10 @@ impl DocumentController {
         let selfish: DocumentController = glib::Object::builder().build();
 
         selfish.imp().state.borrow_mut().open_doc = Some(open_doc.clone());
+        selfish
+            .imp()
+            .navbar
+            .set_document_and_parent(open_doc, selfish.clone());
         selfish.bind_actions();
         selfish.populate_navigation();
 
@@ -327,7 +335,10 @@ impl DocumentController {
         if let Some(prior) = state.current.take() {
             state.history.push(prior);
         }
-        state.current = Some(item.as_path());
+
+        let path = item.as_path();
+        state.current = Some(path.clone());
+        self.imp().navbar.set_path(path);
 
         state
             .doc
@@ -436,12 +447,24 @@ impl DocumentController {
         }
     }
 
-    fn jump_to(&self, path: Path) {
+    pub fn jump_to(&self, path: Path) {
         let mut state = self.imp().state.borrow_mut();
         state.future.clear();
 
         drop(state);
         self.jump_to_inner(path);
+    }
+
+    pub fn jump_up(&self) {
+        let mut state = self.imp().state.borrow_mut();
+        if let Some(current) = state.current.as_ref() {
+            let parent = current.parent(&*state.open_doc.as_ref().unwrap().lock().unwrap());
+            if let Some(parent) = parent {
+                state.future.clear();
+                drop(state);
+                self.jump_to_inner(parent);
+            }
+        }
     }
 
     fn jump_to_inner(&self, path: Path) {
