@@ -569,6 +569,10 @@ impl DocumentController {
             return;
         }
 
+        if state.current == Some(path.clone()) {
+            return;
+        }
+
         state.fuck_reentrancy = true;
 
         drop(state);
@@ -587,10 +591,13 @@ impl DocumentController {
         state.fuck_reentrancy = true;
         if let Some(current) = state.current.as_ref() {
             let parent = current.parent(&*state.open_doc.as_ref().unwrap().lock().unwrap());
+            drop(state);
+
             if let Some(parent) = parent {
-                drop(state);
                 self.jump_to_inner(parent);
             }
+        } else {
+            drop(state);
         }
 
         self.imp().state.borrow_mut().fuck_reentrancy = false;
