@@ -80,6 +80,7 @@ impl NodeSearch {
 
         *selfish.imp().state.borrow_mut() = Some((document, list_store));
         selfish.bind();
+        selfish.search();
 
         selfish
     }
