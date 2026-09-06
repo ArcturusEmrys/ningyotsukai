@@ -19,5 +19,6 @@
         <file compressed="true" preprocess="xml-stripblanks">render_preview/param.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">render_preview/opengl.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">render_preview/wgpu.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">navbar/controller.ui</file>
     </gresource>
 </gresources>
