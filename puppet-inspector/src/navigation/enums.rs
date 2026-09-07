@@ -40,26 +40,21 @@ impl JsonPath {
     }
 
     pub fn with_object_key(self, key: &str) -> Self {
-        match self {
-            JsonPath::PuppetJson(mut path) => {
-                path.push(JsonIndex::ObjectKey(key.to_string()));
-                Self::PuppetJson(path)
-            }
-            JsonPath::VendorJson(block, mut path) => {
-                path.push(JsonIndex::ObjectKey(key.to_string()));
-                Self::VendorJson(block, path)
-            }
-        }
+        self.with_subkey(JsonIndex::ObjectKey(key.to_string()))
     }
 
     pub fn with_list_index(self, index: u64) -> Self {
+        self.with_subkey(JsonIndex::ListIndex(index))
+    }
+
+    pub fn with_subkey(self, subkey: JsonIndex) -> Self {
         match self {
             JsonPath::PuppetJson(mut path) => {
-                path.push(JsonIndex::ListIndex(index));
+                path.push(subkey);
                 Self::PuppetJson(path)
             }
             JsonPath::VendorJson(block, mut path) => {
-                path.push(JsonIndex::ListIndex(index));
+                path.push(subkey);
                 Self::VendorJson(block, path)
             }
         }

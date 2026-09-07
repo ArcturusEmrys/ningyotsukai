@@ -42,6 +42,14 @@
                                 </property>
                             </object>
                         </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="jump_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
                     </object>
                 </child>
             </object>

@@ -30,6 +30,8 @@ pub struct JsonInspectorImp {
     #[template_child]
     value_factory: TemplateChild<gtk4::SignalListItemFactory>,
     #[template_child]
+    jump_factory: TemplateChild<gtk4::SignalListItemFactory>,
+    #[template_child]
     selection: TemplateChild<gtk4::SingleSelection>,
 }
 
@@ -224,6 +226,39 @@ impl JsonInspector {
                         None => "Undefined".to_string(),
                     });
                 });
+
+            self.imp().jump_factory.connect_bind({
+                let bind_self = self.clone();
+                move |_factory, object| {
+                    let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
+                    let subkey_item = list_item.item().unwrap();
+                    let subkey = subkey_item.downcast_ref::<JsonIndexItem>().unwrap();
+
+                    let state = bind_self.imp().document.borrow();
+                    let (document_arc, path, _list_store) = state.as_ref().unwrap();
+                    let subpath = path.clone().with_subkey(subkey.as_jsonnavpath());
+                    let document = document_arc.lock().unwrap();
+                    let (value, path) = path.as_root_and_path(&document);
+
+                    let value: Option<&JsonValue> =
+                        value.and_then(|value| value.traverse_path(path));
+
+                    match value.and_then(|value: &JsonValue| {
+                        value.traverse_path(&[subkey.as_jsonnavpath().clone()])
+                    }) {
+                        Some(JsonValue::Object(_)) | Some(JsonValue::Array(_)) => {
+                            list_item.set_child(Some(
+                                &gtk4::Button::builder()
+                                    .icon_name("go-down")
+                                    .action_name("doc.jump")
+                                    .action_target(&subpath.into())
+                                    .build(),
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+            });
         }
     }
 }
