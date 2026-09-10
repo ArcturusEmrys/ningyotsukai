@@ -1,3 +1,5 @@
+use glam::Vec2;
+
 use glib;
 use gtk4;
 use gtk4::CompositeTemplate;
@@ -70,5 +72,10 @@ impl InoxWgpuPreview {
     pub fn display_error(&self, error: &str) {
         self.append(&*self.imp().error_view);
         self.imp().error_label.set_label(error);
+    }
+
+    /// Convert a puppet coordinate to widget space.
+    pub fn puppet_to_widget(&self, canvas: Vec2) -> Vec2 {
+        canvas
     }
 }

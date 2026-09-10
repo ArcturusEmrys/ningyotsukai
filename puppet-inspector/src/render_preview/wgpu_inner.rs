@@ -18,6 +18,7 @@ use ningyo_extensions::WidgetExt2;
 
 use crate::document::Document;
 use crate::render_preview::InoxRenderPreview;
+use crate::render_preview::preview_view::PreviewView;
 use crate::render_preview::wgpu::InoxWgpuPreview;
 
 struct State {
@@ -118,6 +119,8 @@ impl WgpuAreaImpl for MyWgpuAreaImp {
         renderer
             .draw(&document.model.puppet)
             .expect("successful draw");
+
+        self.obj().closest::<PreviewView>().map(|c| c.did_update());
 
         glib::ControlFlow::Continue
     }

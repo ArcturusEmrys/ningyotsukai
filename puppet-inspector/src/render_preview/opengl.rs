@@ -1,3 +1,5 @@
+use glam::Vec2;
+
 use glib;
 use gtk4;
 use gtk4::CompositeTemplate;
@@ -14,6 +16,7 @@ use inox2d_opengl::OpenglRenderer;
 
 use crate::document::Document;
 use crate::render_preview::InoxRenderPreview;
+use crate::render_preview::preview_view::PreviewView;
 use ningyo_extensions::{GLAreaExt2, WidgetExt2};
 
 struct State {
@@ -245,7 +248,14 @@ impl InoxGLPreview {
                 render_self.display_error(e.message());
             }
 
+            render_self.closest::<PreviewView>().map(|c| c.did_update());
+
             glib::Propagation::Proceed
         });
+    }
+
+    /// Convert a puppet coordinate to widget space.
+    pub fn puppet_to_widget(&self, canvas: Vec2) -> Vec2 {
+        canvas
     }
 }

@@ -2220,6 +2220,7 @@ dependencies = [
  "glam",
  "glib",
  "glib-build-tools",
+ "graphene-rs",
  "gtk4",
  "ico",
  "inox2d",

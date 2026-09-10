@@ -33,7 +33,7 @@
                     </object>
                 </property>
                 <property name="end_child">
-                    <object class="GtkBox" id="preview_view">
+                    <object class="PIPreviewView" id="preview_view">
                     </object>
                 </property>
             </object>

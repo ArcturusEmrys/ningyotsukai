@@ -1,3 +1,4 @@
+use glam::{Vec4, Vec4Swizzles};
 use glib;
 use gtk4;
 use gtk4::CompositeTemplate;
@@ -5,14 +6,17 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use glib::subclass::InitializingObject;
+use inox2d::node::InoxNodeUuid;
 use ningyo_extensions::WidgetExt2;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
+use crate::render_preview::debug_highlight::DebugHighlight;
 use crate::render_preview::opengl::InoxGLPreview;
 use crate::render_preview::param_list::RenderParamList;
+use crate::render_preview::preview_view::PreviewView;
 use crate::render_preview::wgpu::InoxWgpuPreview;
 use crate::render_preview::wgpu_inner::MyWgpuArea;
 
@@ -28,7 +32,7 @@ pub struct InoxRenderPreviewImp {
     #[template_child]
     paned_view: TemplateChild<gtk4::Paned>,
     #[template_child]
-    preview_view: TemplateChild<gtk4::Box>,
+    preview_view: TemplateChild<PreviewView>,
     #[template_child]
     param_list: TemplateChild<RenderParamList>,
     #[template_child]
@@ -113,25 +117,17 @@ impl InoxRenderPreview {
 
     fn use_opengl(&self) {
         let document = self.imp().state.borrow().as_ref().unwrap().document.clone();
+        let widget = InoxGLPreview::new(document);
 
-        self.imp().preview_view.clear_children();
-
-        self.imp()
-            .preview_view
-            .append(&InoxGLPreview::new(document));
-
+        self.imp().preview_view.use_renderer(&widget.into());
         self.imp().renderer_menu_button.set_label("OpenGL");
     }
 
     fn use_wgpu(&self) {
         let document = self.imp().state.borrow().as_ref().unwrap().document.clone();
+        let widget = InoxWgpuPreview::new(document);
 
-        self.imp().preview_view.clear_children();
-
-        self.imp()
-            .preview_view
-            .append(&InoxWgpuPreview::new(document));
-
+        self.imp().preview_view.use_renderer(&widget.into());
         self.imp().renderer_menu_button.set_label("WGPU");
     }
 }
