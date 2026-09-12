@@ -1,4 +1,3 @@
-use glam::{Vec4, Vec4Swizzles};
 use glib;
 use gtk4;
 use gtk4::CompositeTemplate;
@@ -7,13 +6,11 @@ use gtk4::subclass::prelude::*;
 
 use glib::subclass::InitializingObject;
 use inox2d::node::InoxNodeUuid;
-use ningyo_extensions::WidgetExt2;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use crate::document::Document;
-use crate::render_preview::debug_highlight::DebugHighlight;
 use crate::render_preview::opengl::InoxGLPreview;
 use crate::render_preview::param_list::RenderParamList;
 use crate::render_preview::preview_view::PreviewView;
@@ -129,5 +126,16 @@ impl InoxRenderPreview {
 
         self.imp().preview_view.use_renderer(&widget.into());
         self.imp().renderer_menu_button.set_label("WGPU");
+    }
+
+    pub fn enable_debug_highlight(&self, node: InoxNodeUuid) {
+        self.imp().preview_view.enable_debug_highlight(
+            self.imp().state.borrow().as_ref().unwrap().document.clone(),
+            node,
+        );
+    }
+
+    pub fn disable_debug_highlight(&self) {
+        self.imp().preview_view.disable_debug_highlight();
     }
 }

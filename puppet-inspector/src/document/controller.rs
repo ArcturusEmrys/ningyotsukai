@@ -1,5 +1,6 @@
 use gio;
 use glib;
+use glib::WeakRef;
 use gtk4;
 
 use gio::prelude::*;
@@ -30,6 +31,7 @@ pub struct DocumentControllerState {
     history: Vec<Path>,
     current: Option<Path>,
     future: Vec<Path>,
+    preview_window: Option<WeakRef<InoxRenderPreview>>,
 }
 
 #[derive(CompositeTemplate, Default)]
@@ -348,6 +350,23 @@ impl DocumentController {
 
         drop(state);
         detail_view.set_child(Some(&item.child_inspector(document)));
+
+        match item.as_path() {
+            Path::PuppetNode(node) => {
+                if let Some(render_preview) =
+                    state.preview_window.as_ref().and_then(|r| r.upgrade())
+                {
+                    render_preview.enable_debug_highlight(node.into());
+                }
+            }
+            _ => {
+                if let Some(render_preview) =
+                    state.preview_window.as_ref().and_then(|r| r.upgrade())
+                {
+                    render_preview.disable_debug_highlight();
+                }
+            }
+        }
     }
 
     pub fn bind_actions(&self) {
@@ -387,6 +406,12 @@ impl DocumentController {
                         .unwrap()
                         .clone();
                     let rp_window = InoxRenderPreview::new(document);
+
+                    doc_controller_preview
+                        .imp()
+                        .state
+                        .borrow_mut()
+                        .preview_window = Some(rp_window.downgrade());
 
                     rp_window.present();
                 })

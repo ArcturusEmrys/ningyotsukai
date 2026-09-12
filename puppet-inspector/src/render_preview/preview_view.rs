@@ -85,6 +85,12 @@ impl PreviewView {
         self.did_update();
     }
 
+    pub fn disable_debug_highlight(&self) {
+        if let Some((_doc, _node, dh)) = self.imp().state.borrow_mut().debug_highlight.take() {
+            dh.unparent();
+        }
+    }
+
     /// Called by child renderers to tell the window that the puppet updated.
     pub fn did_update(&self) {
         let state = self.imp().state.borrow();
