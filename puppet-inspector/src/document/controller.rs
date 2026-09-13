@@ -394,21 +394,22 @@ impl DocumentController {
                 .build(),
             gio::ActionEntry::builder("preview")
                 .activate(move |_, _, _| {
-                    let document = doc_controller_preview
-                        .imp()
-                        .state
-                        .borrow()
-                        .open_doc
+                    let mut state = doc_controller_preview.imp().state.borrow_mut();
+
+                    if state
+                        .preview_window
                         .as_ref()
-                        .unwrap()
-                        .clone();
+                        .and_then(|r| r.upgrade())
+                        .is_some()
+                    {
+                        return;
+                    }
+
+                    let document = state.open_doc.as_ref().unwrap().clone();
                     let rp_window = InoxRenderPreview::new(document);
 
-                    doc_controller_preview
-                        .imp()
-                        .state
-                        .borrow_mut()
-                        .preview_window = Some(rp_window.downgrade());
+                    state.preview_window = Some(rp_window.downgrade());
+                    drop(state);
 
                     rp_window.present();
                 })
