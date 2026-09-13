@@ -65,6 +65,7 @@ impl PreviewView {
         }
 
         renderer_widget.insert_before(self, self.first_child().as_ref());
+        renderer_widget.measure(gtk4::Orientation::Horizontal, -1);
         renderer_widget.allocate(self.width(), self.height(), -1, None);
 
         self.imp().state.borrow_mut().current_renderer = Some(renderer_widget.clone());
