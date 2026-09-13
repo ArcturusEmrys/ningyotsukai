@@ -103,7 +103,7 @@ impl PreviewView {
                 .world()
                 .get::<inox2d::node::components::TransformStore>(*node)
             {
-                let origin = ts.absolute.mul_vec4(Vec4::ZERO).xy();
+                let origin = ts.absolute.mul_vec4(Vec4::new(0.0, 0.0, 0.0, 1.0)).xy();
 
                 // TODO: This should probably be a GTK interface.
                 let outer = if let Some(wgpu_preview) = state
