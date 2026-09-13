@@ -1,5 +1,10 @@
 pi-debug-highlight {
     border: 2px solid red;
-    padding: 10px;
+    padding: 5px;
     border-radius: 10px;
+}
+
+pi-debug-bounds {
+    border: 1px solid cyan;
+    background-color: rgba(0, 255, 255, 0.2);
 }

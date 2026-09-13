@@ -5,8 +5,11 @@ use glam::{Vec4, Vec4Swizzles};
 
 use gtk4::subclass::prelude::*;
 use gtk4::{gsk, prelude::*};
+use inox2d::math::rect::RectBounds;
+use inox2d::node::components::{Mesh, TransformStore};
 
 use crate::document::Document;
+use crate::render_preview::debug_bounds::DebugBounds;
 use crate::render_preview::debug_highlight::DebugHighlight;
 use crate::render_preview::opengl::InoxGLPreview;
 use crate::render_preview::wgpu::InoxWgpuPreview;
@@ -16,7 +19,12 @@ use inox2d::node::InoxNodeUuid;
 pub struct PreviewViewState {
     current_renderer: Option<gtk4::Widget>,
 
-    debug_highlight: Option<(Arc<Mutex<Document>>, InoxNodeUuid, DebugHighlight)>,
+    debug_highlight: Option<(
+        Arc<Mutex<Document>>,
+        InoxNodeUuid,
+        DebugHighlight,
+        DebugBounds,
+    )>,
 }
 
 #[derive(Default)]
@@ -73,21 +81,25 @@ impl PreviewView {
 
     /// Add a debug highlight for a particular node.
     pub fn enable_debug_highlight(&self, document: Arc<Mutex<Document>>, node: InoxNodeUuid) {
-        if let Some((_doc, _node, dh)) = self.imp().state.borrow_mut().debug_highlight.take() {
+        if let Some((_doc, _node, dh, db)) = self.imp().state.borrow_mut().debug_highlight.take() {
             dh.unparent();
+            db.unparent();
         }
 
-        let dh = DebugHighlight::new();
+        let db = DebugBounds::new();
+        db.set_parent(self);
 
+        let dh = DebugHighlight::new();
         dh.set_parent(self);
 
-        self.imp().state.borrow_mut().debug_highlight = Some((document, node, dh));
+        self.imp().state.borrow_mut().debug_highlight = Some((document, node, dh, db));
         self.did_update();
     }
 
     pub fn disable_debug_highlight(&self) {
-        if let Some((_doc, _node, dh)) = self.imp().state.borrow_mut().debug_highlight.take() {
+        if let Some((_doc, _node, dh, db)) = self.imp().state.borrow_mut().debug_highlight.take() {
             dh.unparent();
+            db.unparent();
         }
     }
 
@@ -95,16 +107,59 @@ impl PreviewView {
     pub fn did_update(&self) {
         let state = self.imp().state.borrow();
 
-        if let Some((document, node, dh)) = state.debug_highlight.as_ref() {
+        if let Some((document, node_uuid, dh, db)) = state.debug_highlight.as_ref() {
             let document = document.lock().unwrap();
 
             if let Some(ts) = document
                 .model
                 .puppet
                 .world()
-                .get::<inox2d::node::components::TransformStore>(*node)
+                .get::<inox2d::node::components::TransformStore>(*node_uuid)
             {
                 let origin = ts.absolute.mul_vec4(Vec4::new(0.0, 0.0, 0.0, 1.0)).xy();
+                let bounds = {
+                    let mut out = None;
+                    for other_node in document.model.puppet.nodes().iter() {
+                        let mut is_child_we_care_about = other_node.uuid == *node_uuid;
+                        let mut ancestor = other_node.uuid;
+                        while !is_child_we_care_about {
+                            is_child_we_care_about |= ancestor == *node_uuid;
+
+                            if ancestor != document.model.puppet.nodes().root_node_id {
+                                ancestor = document.model.puppet.nodes().get_parent(ancestor).uuid;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        if !is_child_we_care_about {
+                            continue;
+                        }
+
+                        if let (Some(transform), Some(mesh)) = (
+                            document
+                                .model
+                                .puppet
+                                .world()
+                                .get::<TransformStore>(other_node.uuid),
+                            document.model.puppet.world().get::<Mesh>(other_node.uuid),
+                        ) {
+                            let mvp = transform.absolute;
+
+                            for vert in &mesh.vertices {
+                                let vert =
+                                    mvp.mul_vec4(glam::Vec4::new(vert.x, vert.y, 0.0, 1.0)).xy();
+                                out = match out {
+                                    None => Some(RectBounds::from_point(vert)),
+                                    Some(rect) => Some(rect.with_union_point(vert)),
+                                };
+                            }
+                        }
+                    }
+
+                    out
+                }
+                .unwrap_or_else(|| RectBounds::from_point(origin));
 
                 // TODO: This should probably be a GTK interface.
                 let outer = if let Some(wgpu_preview) = state
@@ -135,6 +190,47 @@ impl PreviewView {
                 dh.allocate(
                     width,
                     height,
+                    baseline,
+                    Some(gsk::Transform::new().translate(&graphene::Point::new(x, y))),
+                );
+
+                //TODO: ibid.
+                let (top_left, bottom_right) = if let Some(wgpu_preview) = state
+                    .current_renderer
+                    .clone()
+                    .and_then(|r| r.downcast::<InoxWgpuPreview>().ok())
+                {
+                    (
+                        wgpu_preview.puppet_to_widget(bounds.top_left_point()),
+                        wgpu_preview.puppet_to_widget(bounds.bottom_right_point()),
+                    )
+                } else if let Some(ogl_preview) = state
+                    .current_renderer
+                    .clone()
+                    .and_then(|r| r.downcast::<InoxGLPreview>().ok())
+                {
+                    (
+                        ogl_preview.puppet_to_widget(bounds.top_left_point()),
+                        ogl_preview.puppet_to_widget(bounds.bottom_right_point()),
+                    )
+                } else {
+                    return;
+                };
+
+                let mode = db.request_mode();
+                let (_, _, _, width_base) =
+                    db.measure(gtk4::Orientation::Horizontal, bounds.width() as i32);
+                let (_, _, _, height_base) =
+                    db.measure(gtk4::Orientation::Vertical, bounds.height() as i32);
+                let x = top_left.x;
+                let y = top_left.y;
+                let baseline = match mode {
+                    gtk4::SizeRequestMode::WidthForHeight => width_base,
+                    gtk4::SizeRequestMode::HeightForWidth | _ => height_base,
+                };
+                db.allocate(
+                    (bottom_right.x - top_left.x) as i32,
+                    (bottom_right.y - top_left.y) as i32,
                     baseline,
                     Some(gsk::Transform::new().translate(&graphene::Point::new(x, y))),
                 );

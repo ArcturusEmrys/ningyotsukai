@@ -1,3 +1,4 @@
+mod debug_bounds;
 mod debug_highlight;
 mod opengl;
 mod param;
