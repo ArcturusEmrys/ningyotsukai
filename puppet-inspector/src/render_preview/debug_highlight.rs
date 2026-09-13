@@ -8,6 +8,10 @@ impl ObjectSubclass for DebugHighlightImp {
     const NAME: &'static str = "PIDebugHighlight";
     type Type = DebugHighlight;
     type ParentType = gtk4::Widget;
+
+    fn class_init(class: &mut Self::Class) {
+        class.set_css_name("pi-debug-highlight");
+    }
 }
 
 impl ObjectImpl for DebugHighlightImp {

@@ -1,5 +1,6 @@
 @import "window/controller.css";
 @import "detail_views/search.css";
+@import "render_preview/style.css";
 
 textview {
     padding: 4px;

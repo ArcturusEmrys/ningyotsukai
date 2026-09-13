@@ -79,7 +79,6 @@ impl PreviewView {
         let dh = DebugHighlight::new();
 
         dh.set_parent(self);
-        dh.allocate(0, 0, -1, None);
 
         self.imp().state.borrow_mut().debug_highlight = Some((document, node, dh));
         self.did_update();
@@ -106,6 +105,7 @@ impl PreviewView {
             {
                 let origin = ts.absolute.mul_vec4(Vec4::ZERO).xy();
 
+                // TODO: This should probably be a GTK interface.
                 let outer = if let Some(wgpu_preview) = state
                     .current_renderer
                     .clone()
@@ -119,14 +119,23 @@ impl PreviewView {
                 {
                     ogl_preview.puppet_to_widget(origin)
                 } else {
-                    unreachable!();
+                    return;
                 };
 
+                let mode = dh.request_mode();
+                let (_, width, _, width_base) = dh.measure(gtk4::Orientation::Horizontal, -1);
+                let (_, height, _, height_base) = dh.measure(gtk4::Orientation::Vertical, -1);
+                let x = outer.x - (width as f32 / 2.0);
+                let y = outer.y - (height as f32 / 2.0);
+                let baseline = match mode {
+                    gtk4::SizeRequestMode::WidthForHeight => width_base,
+                    gtk4::SizeRequestMode::HeightForWidth | _ => height_base,
+                };
                 dh.allocate(
-                    0,
-                    0,
-                    -1,
-                    Some(gsk::Transform::new().translate(&graphene::Point::new(outer.x, outer.y))),
+                    width,
+                    height,
+                    baseline,
+                    Some(gsk::Transform::new().translate(&graphene::Point::new(x, y))),
                 );
             }
         }
