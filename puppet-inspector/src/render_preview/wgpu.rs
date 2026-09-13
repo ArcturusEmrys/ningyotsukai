@@ -76,6 +76,6 @@ impl InoxWgpuPreview {
 
     /// Convert a puppet coordinate to widget space.
     pub fn puppet_to_widget(&self, canvas: Vec2) -> Vec2 {
-        canvas
+        self.imp().wgpu_view.puppet_to_widget(canvas)
     }
 }

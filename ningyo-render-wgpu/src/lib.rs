@@ -13,6 +13,7 @@ mod targets;
 mod texture;
 mod uploads;
 
+pub use camera::CameraExt;
 pub use error::WgpuRendererError;
 pub use renderer::WgpuRenderer;
 pub use resources::WgpuResources;

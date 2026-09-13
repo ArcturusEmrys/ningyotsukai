@@ -351,18 +351,15 @@ impl DocumentController {
         drop(state);
         detail_view.set_child(Some(&item.child_inspector(document)));
 
-        match item.as_path() {
-            Path::PuppetNode(node) => {
-                if let Some(render_preview) =
-                    state.preview_window.as_ref().and_then(|r| r.upgrade())
-                {
+        let state = self.imp().state.borrow_mut();
+        if let Some(render_preview) = state.preview_window.as_ref().and_then(|r| r.upgrade()) {
+            match item.as_path() {
+                Path::PuppetNode(node) => {
+                    drop(state);
                     render_preview.enable_debug_highlight(node.into());
                 }
-            }
-            _ => {
-                if let Some(render_preview) =
-                    state.preview_window.as_ref().and_then(|r| r.upgrade())
-                {
+                _ => {
+                    drop(state);
                     render_preview.disable_debug_highlight();
                 }
             }

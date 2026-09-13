@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
+use glam::{Vec2, Vec4, Vec4Swizzles};
+
 use glib::subclass::InitializingObject;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
@@ -12,7 +14,7 @@ use ningyo_gtk_wgpu::WgpuArea;
 use ningyo_gtk_wgpu::prelude::*;
 use ningyo_gtk_wgpu::subclass::prelude::*;
 
-use ningyo_render_wgpu::{RenderTarget, WgpuRenderer, WgpuResources};
+use ningyo_render_wgpu::{CameraExt, RenderTarget, WgpuRenderer, WgpuResources};
 
 use ningyo_extensions::WidgetExt2;
 
@@ -120,6 +122,8 @@ impl WgpuAreaImpl for MyWgpuAreaImp {
             .draw(&document.model.puppet)
             .expect("successful draw");
 
+        drop(document);
+        drop(state_outer);
         self.obj().closest::<PreviewView>().map(|c| c.did_update());
 
         glib::ControlFlow::Continue
@@ -217,5 +221,23 @@ impl MyWgpuArea {
                 glib::ControlFlow::Continue
             }
         });
+    }
+
+    /// Convert a puppet coordinate to widget space.
+    pub fn puppet_to_widget(&self, canvas: Vec2) -> Vec2 {
+        let state = self.imp().state.borrow();
+        let state_inner = state.as_ref().unwrap();
+        let renderer = state_inner.renderer.as_ref().unwrap();
+        let target = state_inner.target.as_ref().unwrap();
+        let target_inner = target.lock().unwrap();
+
+        let vp_camera = target_inner.viewport_camera(0).unwrap();
+        let proj = vp_camera.to_artboard_matrix();
+        let artboard = renderer.camera.to_artboard_matrix();
+
+        //TODO: For some reason, we have to divide out the scale factor to get
+        //things to line up.
+        (proj * artboard * Vec4::new(canvas.x, canvas.y, 0.0, 1.0)).xy()
+            / self.scale_factor() as f32
     }
 }
