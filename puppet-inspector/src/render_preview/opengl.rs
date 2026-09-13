@@ -1,4 +1,4 @@
-use glam::Vec2;
+use glam::{Vec2, Vec4, Vec4Swizzles};
 
 use glib;
 use gtk4;
@@ -7,6 +7,8 @@ use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
 
 use glib::subclass::InitializingObject;
+use inox2d::math::camera::Camera;
+use inox2d::math::rect::RectBounds;
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -18,6 +20,7 @@ use crate::document::Document;
 use crate::render_preview::InoxRenderPreview;
 use crate::render_preview::preview_view::PreviewView;
 use ningyo_extensions::{GLAreaExt2, WidgetExt2};
+use ningyo_render_wgpu::CameraExt;
 
 struct State {
     document: Arc<Mutex<Document>>,
@@ -248,6 +251,8 @@ impl InoxGLPreview {
                 render_self.display_error(e.message());
             }
 
+            drop(document);
+            drop(state_outer);
             render_self.closest::<PreviewView>().map(|c| c.did_update());
 
             glib::Propagation::Proceed
@@ -256,6 +261,44 @@ impl InoxGLPreview {
 
     /// Convert a puppet coordinate to widget space.
     pub fn puppet_to_widget(&self, canvas: Vec2) -> Vec2 {
-        canvas
+        let state = self.imp().state.borrow();
+        let state_inner = state.as_ref().unwrap();
+        let renderer = state_inner.renderer.as_ref().unwrap();
+
+        let bounds = {
+            let document = state_inner.document.lock().unwrap();
+            document
+                .model
+                .puppet
+                .bounds()
+                .unwrap_or_else(|| RectBounds::from_point(Vec2::ZERO))
+        };
+
+        let bounds_aspect = bounds.width() / bounds.height();
+        let widget_aspect = self.width() as f32 / self.height() as f32;
+
+        let mut camera = Camera::default();
+        camera.scale = renderer.camera.scale;
+        camera.position.x = -bounds.top_left_point().x;
+        camera.position.y = -bounds.top_left_point().y;
+
+        let artboard = camera.to_artboard_matrix();
+
+        let margin_offset = if widget_aspect > bounds_aspect {
+            Vec2::new(
+                (self.width() as f32 - bounds.width() * renderer.camera.scale.x) / 2.0,
+                0.0,
+            )
+        } else {
+            Vec2::new(
+                0.0,
+                (self.height() as f32 - bounds.height() * renderer.camera.scale.y) / 2.0,
+            )
+        };
+
+        //TODO: For some reason, we have to divide out the scale factor to get
+        //things to line up.
+        (artboard * Vec4::new(canvas.x, canvas.y, 0.0, 1.0)).xy() / self.scale_factor() as f32
+            + margin_offset
     }
 }

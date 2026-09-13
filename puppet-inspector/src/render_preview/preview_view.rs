@@ -161,6 +161,8 @@ impl PreviewView {
                 }
                 .unwrap_or_else(|| RectBounds::from_point(origin));
 
+                drop(document);
+
                 // TODO: This should probably be a GTK interface.
                 let outer = if let Some(wgpu_preview) = state
                     .current_renderer
