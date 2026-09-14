@@ -115,7 +115,7 @@ impl BindingPanelImp {
                         }
                         BindingType::Expression(expr) => {
                             form.set_binding_type(BindingTypeEnum::Expression);
-                            form.set_expression(expr.as_str());
+                            form.set_expression(expr.lua.as_str());
 
                             if let Some(last_error) = last_error {
                                 form.set_expression_error(last_error.to_string());
@@ -232,7 +232,7 @@ impl BindingPanelImp {
                                         if let BindingType::Expression(expr) =
                                             &mut binding.binding_type
                                         {
-                                            *expr = value;
+                                            expr.lua = value;
                                         }
                                     });
                             }

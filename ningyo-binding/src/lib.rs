@@ -1,3 +1,6 @@
+use glam::Vec2;
+use inox2d::puppet::Puppet;
+
 pub use crate::binding::{Binding, BindingType};
 pub use crate::exec::ExpressionEval;
 use inox2d::model::VendorData;
@@ -9,10 +12,10 @@ mod exec;
 pub mod tracker;
 pub mod vts;
 
-pub fn parse_bindings(vendor_data: &[VendorData]) -> Option<Vec<Binding>> {
+pub fn parse_bindings(vendor_data: &[VendorData], puppet: &Puppet) -> Option<Vec<Binding>> {
     for vendor in vendor_data {
         if vendor.name == VENDOR_KEY {
-            return Binding::from_payload(&vendor.payload);
+            return Binding::from_payload(&vendor.payload, puppet);
         }
     }
 
