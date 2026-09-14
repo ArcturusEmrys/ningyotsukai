@@ -73,12 +73,12 @@ struct PuppetInner {
 impl Puppet {
     pub fn open(file: impl Read) -> Result<Self, Box<dyn Error>> {
         let (puppet_json, textures, vendors) = parse_inp_parts(file)?;
-        let bindings = parse_bindings(&vendors)
+        let puppet_data = InoxPuppet::new_from_json(&puppet_json)?;
+        let bindings = parse_bindings(&vendors, &puppet_data)
             .unwrap_or_else(|| vec![])
             .into_iter()
             .map(|binding| (binding, 0.0, 0.0, None))
             .collect();
-        let puppet_data = InoxPuppet::new_from_json(&puppet_json)?;
         let model = Model {
             puppet: puppet_data,
             textures,
