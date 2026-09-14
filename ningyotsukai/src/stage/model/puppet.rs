@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut};
+use std::time::Instant;
 
 use inox2d::math::rect::RectBounds;
 use inox2d::model::Model;
@@ -61,17 +62,23 @@ struct PuppetInner {
 
     /// The Lua expression evaluation environment.
     expression_eval: ExpressionEval,
+
+    /// The timestamp this puppet was loaded.
+    ///
+    /// This should be created once at the time the puppet is loaded and NOT
+    /// stored or recovered from anywhere.
+    time_started: Instant,
 }
 
 impl Puppet {
     pub fn open(file: impl Read) -> Result<Self, Box<dyn Error>> {
         let (puppet_json, textures, vendors) = parse_inp_parts(file)?;
-        let bindings = parse_bindings(&vendors)
+        let puppet_data = InoxPuppet::new_from_json(&puppet_json)?;
+        let bindings = parse_bindings(&vendors, &puppet_data)
             .unwrap_or_else(|| vec![])
             .into_iter()
             .map(|binding| (binding, 0.0, 0.0, None))
             .collect();
-        let puppet_data = InoxPuppet::new_from_json(&puppet_json)?;
         let model = Model {
             puppet: puppet_data,
             textures,
@@ -94,6 +101,7 @@ impl Puppet {
             bindings,
             param_uuid_index,
             expression_eval: ExpressionEval::new()?,
+            time_started: Instant::now(),
         }))))
     }
 
@@ -111,6 +119,12 @@ impl Puppet {
         }
 
         inner.is_render_initialized = true;
+
+        // NOTE: Time should move forward even if we aren't getting tracker
+        // updates.
+        inner
+            .expression_eval
+            .set_jiffies(Instant::now() - inner.time_started);
     }
 
     pub fn model(&self) -> impl Deref<Target = Model> {
@@ -138,11 +152,11 @@ impl Puppet {
     }
 
     pub fn apply_bindings(&mut self, packet: TrackerPacket) {
-        self.0
-            .lock()
-            .unwrap()
-            .expression_eval
-            .set_tracker_packet(packet);
+        let me = self.0.lock().unwrap();
+
+        me.expression_eval
+            .set_jiffies(Instant::now() - me.time_started);
+        me.expression_eval.set_tracker_packet(packet);
     }
 
     /// Get the current puppet bounds.

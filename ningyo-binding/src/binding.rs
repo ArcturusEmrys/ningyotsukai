@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use glam::Vec2;
-use inox2d::params::ParamUuid;
+use inox2d::{params::ParamUuid, puppet::Puppet};
 use mlua::Error as LuaError;
 
 use ningyo_extensions::prelude::*;
@@ -38,9 +40,18 @@ impl RatioBinding {
     }
 }
 
+pub struct ExpressionBinding {
+    pub lua: String,
+
+    /// The output range of the expression.
+    ///
+    /// Should match the min/max values of the axis this expression controls.
+    out_range: Vec2,
+}
+
 pub enum BindingType {
     Ratio(RatioBinding),
-    Expression(String),
+    Expression(ExpressionBinding),
 }
 
 pub struct Binding {
@@ -63,9 +74,14 @@ impl Binding {
         Some(glam::Vec2::new(x.into(), y.into()))
     }
 
-    pub fn from_payload(value: &json::JsonValue) -> Option<Vec<Binding>> {
+    pub fn from_payload(value: &json::JsonValue, puppet: &Puppet) -> Option<Vec<Binding>> {
         let list = value.as_list()?;
         let mut bindings = vec![];
+
+        let mut uuids_to_params = HashMap::new();
+        for (_name, param) in puppet.params.iter() {
+            uuids_to_params.insert(param.uuid, param);
+        }
 
         for item in list {
             if let Some(item) = item.as_object() {
@@ -84,7 +100,22 @@ impl Binding {
                         out_range: Binding::parse_vec2(item.get("outRange")?)?,
                     }),
                     "ExpressionBinding" => {
-                        BindingType::Expression(item.get("expression")?.to_string())
+                        let param_range = if let Some(param) = uuids_to_params.get(&param) {
+                            if axis == 0 {
+                                Vec2::new(param.min.x, param.max.x)
+                            } else {
+                                // axis == 1
+                                Vec2::new(param.min.y, param.max.y)
+                            }
+                        } else {
+                            //TODO: Is this sensible?
+                            Vec2::new(0.0, 1.0)
+                        };
+
+                        BindingType::Expression(ExpressionBinding {
+                            lua: item.get("expression")?.to_string(),
+                            out_range: param_range,
+                        })
                     }
                     _ => return None, //TODO: more descriptive errors
                 };
@@ -105,6 +136,11 @@ impl Binding {
         Some(bindings)
     }
 
+    /// Given an expression evaluation environment, evaluate this binding.
+    ///
+    /// Returns a pair of input and output values, or a LuaError if evaluation
+    /// failed. Input value may be None if the binding's input value is missing
+    /// from the evaluation environment, or if this is a Lua expression.
     pub fn eval(&self, eval: &ExpressionEval) -> Result<(Option<f32>, Option<f32>), LuaError> {
         match &self.binding_type {
             BindingType::Ratio(ratio) => {
@@ -122,7 +158,14 @@ impl Binding {
                     Ok((None, None))
                 }
             }
-            BindingType::Expression(expr) => Ok((None, Some(eval.eval(expr.clone())? as f32))),
+            BindingType::Expression(expr) => {
+                // Expression evaluation is expected to yield a [0, 1] value
+                // that is interpolated across the param's range of inputs.
+                let raw_value = eval.eval(expr.lua.clone())? as f32;
+                let delta_x = expr.out_range.y - expr.out_range.x;
+
+                Ok((None, Some(expr.out_range.x + raw_value * delta_x)))
+            }
         }
     }
 }

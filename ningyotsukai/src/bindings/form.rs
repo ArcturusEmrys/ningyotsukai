@@ -7,6 +7,29 @@ use gtk4::subclass::prelude::*;
 use std::cell::RefCell;
 use std::str::FromStr;
 
+/// Value-less version of BindingType suitable for representing the state of the
+/// form's binding type.
+///
+/// Since we're a GTK widget, it's actually perfectly valid (if meaningless)
+/// behavior to set the binding type separately from the settings that would
+/// otherwise be bundled with the value.
+#[derive(Default, Copy, Clone, glib::Enum)]
+#[enum_type(name = "NGTBindingTypeEnum")]
+pub enum BindingTypeEnum {
+    #[default]
+    Ratio,
+    Expression,
+}
+
+impl From<ningyo_binding::BindingType> for BindingTypeEnum {
+    fn from(value: ningyo_binding::BindingType) -> Self {
+        match value {
+            ningyo_binding::BindingType::Ratio(..) => Self::Ratio,
+            ningyo_binding::BindingType::Expression(..) => Self::Expression,
+        }
+    }
+}
+
 #[derive(CompositeTemplate, Default, Properties)]
 #[template(resource = "/live/arcturus/ningyotsukai/bindings/form.ui")]
 #[properties(wrapper_type=BindingForm)]
@@ -38,9 +61,19 @@ pub struct BindingFormImp {
     #[template_child]
     expression_entry: gtk4::TemplateChild<gtk4::Entry>,
     #[template_child]
-    expression_error_label: gtk4::TemplateChild<gtk4::TextView>,
+    expression_value_label: gtk4::TemplateChild<gtk4::Label>,
+    #[template_child]
+    expression_value_entry: gtk4::TemplateChild<gtk4::Entry>,
+    #[template_child]
+    expression_error_display: gtk4::TemplateChild<gtk4::TextView>,
     #[template_child]
     error_indicator: gtk4::TemplateChild<gtk4::Image>,
+    #[template_child]
+    binding_type_stack: gtk4::TemplateChild<gtk4::Stack>,
+    #[template_child]
+    binding_type_ratio: gtk4::TemplateChild<gtk4::Grid>,
+    #[template_child]
+    binding_type_expression: gtk4::TemplateChild<gtk4::Grid>,
 
     /// Un-normalized range (min, value, max) of in value
     value_in: RefCell<(f32, f32, f32)>,
@@ -65,6 +98,9 @@ pub struct BindingFormImp {
     #[property(name="inverse", get=Self::inverse, set=Self::set_inverse)]
     #[property(name="has-error", get=Self::has_error, set=Self::set_has_error)]
     _synths_bool: RefCell<bool>,
+
+    #[property(name="binding-type", get=Self::binding_type, set=Self::set_binding_type, default)]
+    _synths_binding_type: RefCell<BindingTypeEnum>,
 }
 
 #[glib::object_subclass]
@@ -174,6 +210,15 @@ impl ObjectImpl for BindingFormImp {
             connect_visible_notify,
             notify_has_error
         );
+
+        self.binding_type_stack.connect_visible_child_notify({
+            let callback_self = self.obj().downgrade().clone();
+            move |_stack| {
+                if let Some(callback_self) = callback_self.upgrade() {
+                    callback_self.notify_binding_type();
+                }
+            }
+        });
     }
 }
 
@@ -194,6 +239,31 @@ macro_rules! float_property_impl {
 }
 
 impl BindingFormImp {
+    fn binding_type(&self) -> BindingTypeEnum {
+        let widget = self.binding_type_stack.visible_child();
+        if let Some(widget) = widget {
+            if widget == *self.binding_type_ratio {
+                BindingTypeEnum::Ratio
+            } else {
+                // widget == self.binding_type_expression
+                BindingTypeEnum::Expression
+            }
+        } else {
+            BindingTypeEnum::Ratio
+        }
+    }
+
+    fn set_binding_type(&self, binding_type: BindingTypeEnum) {
+        match binding_type {
+            BindingTypeEnum::Ratio => self
+                .binding_type_stack
+                .set_visible_child(&*self.binding_type_ratio),
+            BindingTypeEnum::Expression => self
+                .binding_type_stack
+                .set_visible_child(&*self.binding_type_expression),
+        }
+    }
+
     fn binding_name(&self) -> String {
         self.name.label().into()
     }
@@ -222,6 +292,9 @@ impl BindingFormImp {
 
     fn set_has_error(&self, value: bool) {
         self.error_indicator.set_visible(value);
+        self.expression_error_display.set_visible(value);
+        self.expression_value_entry.set_visible(!value);
+        self.expression_value_label.set_visible(!value);
     }
 
     fn value_in(&self) -> f32 {
@@ -240,6 +313,9 @@ impl BindingFormImp {
     fn set_value_out(&self, value: f32) {
         self.value_out.borrow_mut().1 = value;
         self.update_level_bar(*self.value_out.borrow(), &self.value_out_display);
+        self.expression_value_entry
+            .buffer()
+            .set_text(format!("{}", value));
     }
 
     fn expression(&self) -> String {
@@ -251,13 +327,13 @@ impl BindingFormImp {
     }
 
     fn expression_error(&self) -> String {
-        self.expression_error_label
+        self.expression_error_display
             .buffer()
             .property::<String>("text")
     }
 
     fn set_expression_error(&self, value: String) {
-        self.expression_error_label.buffer().set_text(&value);
+        self.expression_error_display.buffer().set_text(&value);
     }
 
     /// Set the target level bar to display the range (min, value, max).
