@@ -243,7 +243,7 @@ impl DocumentController {
                     let state = switch_self.imp().state.borrow_mut();
                     let document = state.open_doc.clone().unwrap();
                     let document = document.lock().unwrap();
-                    if !state.no_automatic_jump_on_tab_switch && page_num == 1 && false {
+                    if !state.no_automatic_jump_on_tab_switch && page_num == 1 {
                         // Automatic Jump to JSON
                         if let Some(json_path) = state
                             .current
@@ -254,6 +254,25 @@ impl DocumentController {
                             drop(state);
 
                             let path: Path = json_path.into();
+
+                            switch_self.select_path_on_tree(path.clone());
+                            switch_self.append_history(path.clone());
+                            switch_self.populate_detail(NavigationItem::new(path));
+                            switch_self.imp().state.borrow_mut().fuck_reentrancy = false;
+
+                            return;
+                        }
+                    }
+
+                    if !state.no_automatic_jump_on_tab_switch && page_num == 0 {
+                        // Automatic Jump to Resource
+                        if let Some(path) = state
+                            .current
+                            .as_ref()
+                            .and_then(|c| c.as_resource_path(&document))
+                        {
+                            drop(document);
+                            drop(state);
 
                             switch_self.select_path_on_tree(path.clone());
                             switch_self.append_history(path.clone());

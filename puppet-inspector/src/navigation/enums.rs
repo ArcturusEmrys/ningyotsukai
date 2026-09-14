@@ -376,6 +376,99 @@ impl Path {
         }
     }
 
+    /// Can I see this JSON's parsed representation?
+    pub fn as_resource_path(&self, document: &Document) -> Option<Self> {
+        match self {
+            Path::PuppetJson(json_path) => {
+                let mut suspected_path = None;
+                let mut in_children = false;
+                let mut in_bindings = false;
+
+                for (index, component) in json_path.iter().enumerate() {
+                    let is_first = index == 0;
+                    let (in_nodes, in_params, param_uuid) = match suspected_path {
+                        Some(Path::PuppetNode(_)) => (true, false, None),
+                        Some(Path::Section(Section::PuppetParams)) => (false, true, None),
+                        Some(Path::PuppetParam(uuid)) => (false, false, Some(uuid)),
+                        _ => (false, false, None),
+                    };
+                    let Some(current_json) =
+                        document.puppet_json.traverse_path(&json_path[0..index + 1])
+                    else {
+                        break;
+                    };
+
+                    match component {
+                        JsonIndex::ObjectKey(key) if is_first && key == "meta" => {
+                            return Some(Path::Section(Section::PuppetMeta));
+                        }
+                        JsonIndex::ObjectKey(key) if is_first && key == "physics" => {
+                            return Some(Path::Section(Section::PuppetPhysics));
+                        }
+
+                        // Nodes parsing
+                        JsonIndex::ObjectKey(key) if is_first && key == "nodes" => {
+                            let Some(uuid) = current_json
+                                .as_object()
+                                .and_then(|o| o.get("uuid"))
+                                .and_then(|v| v.as_u32())
+                            else {
+                                break;
+                            };
+                            suspected_path = Some(Path::PuppetNode(InoxNodeUuid(uuid)))
+                        }
+                        JsonIndex::ObjectKey(key) if in_nodes && key == "children" => {
+                            in_children = true;
+                        }
+                        JsonIndex::ListIndex(_) if in_children => {
+                            in_children = false;
+
+                            let Some(uuid) = current_json
+                                .as_object()
+                                .and_then(|o| o.get("uuid"))
+                                .and_then(|v| v.as_u32())
+                            else {
+                                break;
+                            };
+                            suspected_path = Some(Path::PuppetNode(InoxNodeUuid(uuid)))
+                        }
+
+                        // Params parsing
+                        JsonIndex::ObjectKey(key) if is_first && key == "param" => {
+                            suspected_path = Some(Path::Section(Section::PuppetParams))
+                        }
+                        JsonIndex::ListIndex(_) if in_params => {
+                            let Some(uuid) = current_json
+                                .as_object()
+                                .and_then(|o| o.get("uuid"))
+                                .and_then(|v| v.as_u32())
+                            else {
+                                break;
+                            };
+
+                            suspected_path = Some(Path::PuppetParam(ParamUuid(uuid)))
+                        }
+                        JsonIndex::ObjectKey(key) if param_uuid.is_some() && key == "bindings" => {
+                            in_bindings = true;
+                        }
+                        JsonIndex::ListIndex(i) if param_uuid.is_some() && in_bindings => {
+                            in_bindings = false;
+                            suspected_path =
+                                Some(Path::PuppetParamBinding(param_uuid.unwrap(), *i));
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+
+                suspected_path
+            }
+            //TODO: impl vendor resources
+            Path::VendorJson(_, _) => None,
+            _ => Some(self.clone()),
+        }
+    }
+
     /// What children does this node have?
     pub fn child_list(&self, document: &Document) -> Vec<Path> {
         match self {
