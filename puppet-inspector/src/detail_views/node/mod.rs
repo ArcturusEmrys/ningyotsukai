@@ -1,4 +1,5 @@
 mod inspector;
+mod pages;
 mod search;
 
 pub use inspector::NodeInspector;

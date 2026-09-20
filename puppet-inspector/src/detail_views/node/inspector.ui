@@ -209,5 +209,24 @@
                 </layout>
             </object>
         </child>
+        <child>
+            <object class="GtkStackSwitcher">
+                <property name="stack">detail_pages</property>
+                <layout>
+                    <property name="column-span">4</property>
+                    <property name="column">0</property>
+                    <property name="row">9</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkStack" id="detail_pages">
+                <layout>
+                    <property name="column-span">4</property>
+                    <property name="column">0</property>
+                    <property name="row">10</property>
+                </layout>
+            </object>
+        </child>
     </template>
 </interface>

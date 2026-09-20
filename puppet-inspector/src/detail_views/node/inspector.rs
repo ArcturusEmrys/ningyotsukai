@@ -10,7 +10,9 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use inox2d::node::InoxNodeUuid;
+use inox2d::node::components::Drawable;
 
+use crate::detail_views::node::pages::DrawableDetailPage;
 use crate::document::Document;
 use ningyo_extensions::prelude::*;
 
@@ -47,6 +49,8 @@ pub struct NodeInspectorImp {
     lock_to_root_field: TemplateChild<gtk4::CheckButton>,
     #[template_child]
     transform_pixel_snap_field: TemplateChild<gtk4::CheckButton>,
+    #[template_child]
+    detail_pages: TemplateChild<gtk4::Stack>,
 }
 
 #[glib::object_subclass]
@@ -149,5 +153,24 @@ impl NodeInspector {
         self.imp()
             .transform_pixel_snap_field
             .set_active(node.trans_offset.pixel_snap);
+
+        let is_drawable = document
+            .model
+            .puppet
+            .world()
+            .get::<Drawable>(uuid)
+            .is_some();
+
+        drop(document);
+
+        if is_drawable {
+            self.imp()
+                .detail_pages
+                .add_named(
+                    &DrawableDetailPage::new(document_arc.clone(), uuid),
+                    Some("Drawable"),
+                )
+                .set_title("Drawable");
+        }
     }
 }

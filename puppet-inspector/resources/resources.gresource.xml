@@ -9,6 +9,7 @@
         <file compressed="true" preprocess="xml-stripblanks">detail_views/physics/inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/node/search.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/node/inspector.ui</file>
+        <file compressed="true" preprocess="xml-stripblanks">detail_views/node/pages/drawable.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/param/search.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/param/inspector.ui</file>
         <file compressed="true" preprocess="xml-stripblanks">detail_views/json/inspector.ui</file>
