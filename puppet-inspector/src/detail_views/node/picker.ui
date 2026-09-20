@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIPuppetNodePicker" parent="GtkBox">
+        <child>
+            <object class="GtkScrolledWindow">
+                <child>
+                    <object class="GtkColumnView" id="list">
+                        <property name="hexpand">true</property>
+                        <property name="vexpand">true</property>
+                        <property name="css-classes">data-table</property>
+                        <property name="model">
+                            <object class="GtkSingleSelection" id="selection">
+                            </object>
+                        </property>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">ID</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="id_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Name</property>
+                                <property name="expand">true</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="name_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">Kind</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="kind_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="title">ZSort</property>
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="zsort_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                        <child>
+                            <object class="GtkColumnViewColumn">
+                                <property name="factory">
+                                    <object class="GtkSignalListItemFactory" id="link_factory">
+                                    </object>
+                                </property>
+                            </object>
+                        </child>
+                    </object>
+                </child>
+            </object>
+        </child>
+    </template>
+</interface>
