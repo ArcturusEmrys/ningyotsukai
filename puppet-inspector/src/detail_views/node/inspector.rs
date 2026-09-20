@@ -170,7 +170,7 @@ impl NodeInspector {
                     &DrawableDetailPage::new(document_arc.clone(), uuid),
                     Some("Drawable"),
                 )
-                .set_title("Drawable");
+                .set_title("Blending, Opacity & Masking");
         }
     }
 }
