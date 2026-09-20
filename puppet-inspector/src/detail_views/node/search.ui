@@ -69,11 +69,7 @@
             </object>
         </child>
         <child>
-            <object class="GtkScrolledWindow">
-                <child>
-                    <object class="PIPuppetNodePicker" id="results_view"></object>
-                </child>
-            </object>
+            <object class="PIPuppetNodePicker" id="results_view"></object>
         </child>
     </template>
 </interface>
