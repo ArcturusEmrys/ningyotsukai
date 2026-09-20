@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+    <template class="PIDrawableDetailPage" parent="GtkGrid">
+        <property name="hexpand">true</property>
+        <property name="vexpand">true</property>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Blend Mode</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">0</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="blend_mode">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="column-span">3</property>
+                    <property name="row">0</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">R</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="row">1</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkLabel">
+                <property name="label">G</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">2</property>
+                    <property name="row">1</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkLabel">
+                <property name="label">B</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">3</property>
+                    <property name="row">1</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Tint</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">2</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="tint_r">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="row">2</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="tint_g">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">2</property>
+                    <property name="row">2</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="tint_b">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">3</property>
+                    <property name="row">2</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Screen Tint</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">3</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="screen_tint_r">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="row">3</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="screen_tint_g">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">2</property>
+                    <property name="row">3</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="screen_tint_b">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">3</property>
+                    <property name="row">3</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Opacity</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">4</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="opacity">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="column-span">3</property>
+                    <property name="row">4</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Mask Threshold</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">5</property>
+                </layout>
+            </object>
+        </child>
+        <child>
+            <object class="GtkEntry" id="mask_threshold">
+                <property name="hexpand">true</property>
+                <property name="editable">false</property>
+                <layout>
+                    <property name="column">1</property>
+                    <property name="column-span">3</property>
+                    <property name="row">5</property>
+                </layout>
+            </object>
+        </child>
+
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Masks</property>
+                <property name="xalign">0.0</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="row">6</property>
+                </layout>
+            </object>
+        </child>
+
+        <!-- TODO: Add a mask selector -->
+        <child>
+            <object class="GtkLabel">
+                <property name="label">Mask display not yet implemented</property>
+                <layout>
+                    <property name="column">0</property>
+                    <property name="column-span">4</property>
+                    <property name="row">7</property>
+                </layout>
+            </object>
+        </child>
+    </template>
+</interface>
