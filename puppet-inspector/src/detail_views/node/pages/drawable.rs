@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use inox2d::node::InoxNodeUuid;
 
+use crate::detail_views::node::picker::NodePicker;
 use crate::document::Document;
 use ningyo_extensions::prelude::*;
 
@@ -36,8 +37,17 @@ pub struct DrawableDetailPageImp {
     screen_tint_b: TemplateChild<gtk4::Entry>,
     #[template_child]
     opacity: TemplateChild<gtk4::Entry>,
+
+    #[template_child]
+    mask_threshold_label: TemplateChild<gtk4::Label>,
     #[template_child]
     mask_threshold: TemplateChild<gtk4::Entry>,
+    #[template_child]
+    masks_label: TemplateChild<gtk4::Label>,
+    #[template_child]
+    masks: TemplateChild<NodePicker>,
+    #[template_child]
+    masks_empty_label: TemplateChild<gtk4::Label>,
 }
 
 #[glib::object_subclass]
@@ -84,6 +94,8 @@ impl DrawableDetailPage {
     fn bind(&self) {
         let document = self.imp().document.borrow();
         let (document_arc, uuid) = document.as_ref().unwrap();
+        self.imp().masks.bind(document_arc.clone());
+
         let document = document_arc.lock().unwrap();
 
         let Some(drawable) = document.model.puppet.world().get::<Drawable>(*uuid) else {
@@ -135,13 +147,21 @@ impl DrawableDetailPage {
             .buffer()
             .set_text(&format!("{}", drawable.blending.opacity));
 
-        self.imp()
-            .mask_threshold
-            .buffer()
-            .set_text(if let Some(masks) = &drawable.masks {
-                format!("{}", masks.threshold)
-            } else {
-                "N/A".to_string()
-            });
+        if let Some(masks) = &drawable.masks {
+            //TODO: Mask Mode column
+            self.imp()
+                .mask_threshold
+                .buffer()
+                .set_text(&format!("{}", masks.threshold));
+            self.imp()
+                .masks
+                .set_nodes(&masks.masks.iter().map(|m| m.source).collect::<Vec<_>>());
+            self.imp().masks_empty_label.set_visible(false);
+        } else {
+            self.imp().mask_threshold_label.set_visible(false);
+            self.imp().mask_threshold.set_visible(false);
+            self.imp().masks_label.set_visible(false);
+            self.imp().masks.set_visible(false);
+        }
     }
 }
