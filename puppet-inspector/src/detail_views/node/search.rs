@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use inox2d::node::InoxNodeUuid;
 
+use crate::detail_views::node::picker::NodePicker;
 use crate::document::Document;
 use crate::navigation::NavigationItem;
 use ningyo_extensions::prelude::*;
@@ -18,7 +19,7 @@ use ningyo_extensions::prelude::*;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/live/arcturus/puppet-inspector/detail_views/node/search.ui")]
 pub struct NodeSearchImp {
-    state: RefCell<Option<(Arc<Mutex<Document>>, gio::ListStore)>>,
+    state: RefCell<Option<Arc<Mutex<Document>>>>,
 
     #[template_child]
     id_field: TemplateChild<gtk4::Entry>,
@@ -26,19 +27,7 @@ pub struct NodeSearchImp {
     name_field: TemplateChild<gtk4::Entry>,
 
     #[template_child]
-    results_view: TemplateChild<gtk4::ColumnView>,
-    #[template_child]
-    results_selection: TemplateChild<gtk4::SingleSelection>,
-    #[template_child]
-    id_factory: TemplateChild<gtk4::SignalListItemFactory>,
-    #[template_child]
-    name_factory: TemplateChild<gtk4::SignalListItemFactory>,
-    #[template_child]
-    kind_factory: TemplateChild<gtk4::SignalListItemFactory>,
-    #[template_child]
-    zsort_factory: TemplateChild<gtk4::SignalListItemFactory>,
-    #[template_child]
-    link_factory: TemplateChild<gtk4::SignalListItemFactory>,
+    results_view: TemplateChild<NodePicker>,
 }
 
 #[glib::object_subclass]
@@ -76,9 +65,7 @@ impl NodeSearch {
     pub fn new(document: Arc<Mutex<Document>>) -> Self {
         let selfish: Self = glib::Object::builder().build();
 
-        let list_store = gio::ListStore::builder().build();
-
-        *selfish.imp().state.borrow_mut() = Some((document, list_store));
+        *selfish.imp().state.borrow_mut() = Some(document);
         selfish.bind();
         selfish.search();
 
@@ -87,8 +74,7 @@ impl NodeSearch {
 
     fn bind(&self) {
         let borrow = self.imp().state.borrow();
-        let (document_arc, list_store) = borrow.as_ref().unwrap();
-        self.imp().results_selection.set_model(Some(list_store));
+        self.imp().results_view.bind(borrow.clone().unwrap());
 
         let action_group = gio::SimpleActionGroup::new();
         let search_self = self.clone();
@@ -96,132 +82,10 @@ impl NodeSearch {
             .activate(move |_, _, _| search_self.search())
             .build()]);
         self.insert_action_group("form", Some(&action_group));
-
-        self.imp().id_factory.connect_setup(|_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(
-                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
-            ));
-        });
-
-        self.imp().id_factory.connect_bind(move |_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-            let id: u32 = nav.as_puppet_node().unwrap().into();
-
-            let label_child = list_item.child().unwrap();
-            let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
-
-            label.set_text(&format!("{}", id));
-        });
-
-        self.imp().name_factory.connect_setup(|_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(
-                &gtk4::Label::builder().halign(gtk4::Align::Start).build(),
-            ));
-        });
-
-        let name_document = document_arc.clone();
-        self.imp().name_factory.connect_bind(move |_fac, object| {
-            let document = name_document.lock().unwrap();
-
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-            let name = nav.name(&document);
-
-            let label_child = list_item.child().unwrap();
-            let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
-
-            label.set_text(&name.escape_nulls());
-        });
-
-        self.imp().kind_factory.connect_setup(|_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(&gtk4::Label::builder().build()));
-        });
-
-        let kind_document = document_arc.clone();
-        self.imp().kind_factory.connect_bind(move |_fac, object| {
-            let document = kind_document.lock().unwrap();
-
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-
-            //Inox doesn't actually store the Kind of a node, so we have to get it ourselves.
-            //This is really dumb.
-            let json_path = nav.as_json_path(&document).unwrap();
-            let node_json = document.puppet_json.traverse_path(json_path.as_path());
-
-            if let Some(kind) = node_json.and_then(|j| j.as_object()?.get("type")?.as_str()) {
-                let label_child = list_item.child().unwrap();
-                let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
-
-                label.set_text(&kind.escape_nulls());
-            }
-        });
-
-        self.imp().zsort_factory.connect_setup(|_fac, object| {
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            list_item.set_child(Some(&gtk4::Label::builder().build()));
-        });
-
-        let zsort_document = document_arc.clone();
-        self.imp().zsort_factory.connect_bind(move |_fac, object| {
-            let document = zsort_document.lock().unwrap();
-
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-            let label_child = list_item.child().unwrap();
-            let label = label_child.downcast_ref::<gtk4::Label>().unwrap();
-
-            label.set_text(&format!(
-                "{}",
-                document
-                    .model
-                    .puppet
-                    .nodes()
-                    .get_node(nav.as_puppet_node().unwrap())
-                    .unwrap()
-                    .zsort
-            ));
-        });
-
-        let link_factory_document = document_arc.clone();
-        self.imp().link_factory.connect_bind(move |_fac, object| {
-            let document = link_factory_document.lock().unwrap();
-
-            let list_item = object.downcast_ref::<gtk4::ListItem>().unwrap();
-            let nav_item = list_item.item().unwrap();
-            let nav = nav_item.downcast_ref::<NavigationItem>().unwrap();
-
-            let jump_button = gtk4::Button::builder()
-                .label("Jump to node...")
-                .action_name("doc.jump")
-                .action_target(&nav.as_path().to_variant())
-                .build();
-            let json_jump_button = gtk4::Button::builder()
-                .label("Jump to JSON...")
-                .action_name("doc.jump")
-                .action_target(&nav.as_json_path(&document).unwrap().to_variant())
-                .build();
-
-            let gtkbox = gtk4::Box::builder()
-                .orientation(gtk4::Orientation::Horizontal)
-                .build();
-            gtkbox.append(&jump_button);
-            gtkbox.append(&json_jump_button);
-
-            list_item.set_child(Some(&gtkbox));
-        });
     }
 
     fn search(&self) {
-        let (document_arc, results) = self.imp().state.borrow().as_ref().unwrap().clone();
+        let document_arc = self.imp().state.borrow().as_ref().unwrap().clone();
         let document = document_arc.lock().unwrap();
 
         let window = self.window();
@@ -255,12 +119,11 @@ impl NodeSearch {
                 continue;
             }
 
-            new_results.push(NavigationItem::from_node(node.uuid));
+            new_results.push(node.uuid);
         }
 
         drop(document);
 
-        results.remove_all();
-        results.extend_from_slice(&new_results.as_slice());
+        self.imp().results_view.set_nodes(&new_results);
     }
 }
