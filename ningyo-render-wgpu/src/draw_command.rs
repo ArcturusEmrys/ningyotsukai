@@ -16,6 +16,37 @@ use rayon::prelude::*;
 
 use std::cmp::max;
 
+#[derive(Debug)]
+pub struct TexturedMeshRenderCtx {
+    pub index_offset: u32,
+    pub vert_offset: u32,
+    pub index_len: usize,
+    pub vert_len: usize,
+}
+
+impl From<render::TexturedMeshRenderCtx> for TexturedMeshRenderCtx {
+    fn from(value: render::TexturedMeshRenderCtx) -> Self {
+        Self {
+            index_offset: value.index_offset,
+            index_len: value.index_len,
+            vert_offset: value.vert_offset,
+            vert_len: value.vert_len,
+        }
+    }
+}
+
+impl Into<render::TexturedMeshRenderCtx> for TexturedMeshRenderCtx {
+    fn into(self) -> render::TexturedMeshRenderCtx {
+        render::TexturedMeshRenderCtx {
+            index_offset: self.index_offset,
+            index_len: self.index_len,
+            vert_offset: self.vert_offset,
+            vert_len: self.vert_len,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum DrawCommand {
     ClearCurrentStencil {
         to_composite: bool,
@@ -25,7 +56,7 @@ pub enum DrawCommand {
         using_mask: bool,
         stencil_reference: u32,
         id: InoxNodeUuid,
-        render_ctx: render::TexturedMeshRenderCtx,
+        render_ctx: TexturedMeshRenderCtx,
         to_composite: bool,
     },
     BeginComposite,
@@ -36,7 +67,7 @@ pub enum DrawCommand {
     },
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct DrawCommandList {
     commands: Vec<DrawCommand>,
 }
@@ -106,7 +137,7 @@ impl DrawCommandList {
             using_mask,
             stencil_reference,
             id,
-            render_ctx: render::TexturedMeshRenderCtx {
+            render_ctx: TexturedMeshRenderCtx {
                 index_offset: render_ctx.index_offset,
                 index_len: render_ctx.index_len,
                 vert_offset: render_ctx.vert_offset,
