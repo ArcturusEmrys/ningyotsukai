@@ -1312,7 +1312,7 @@ dependencies = [
 [[package]]
 name = "inox2d"
 version = "0.3.0"
-source = "git+https://github.com/ArcturusEmrys/inox2d?rev=9d48bc1fb76a72b608f283efaba1b07caff95010#9d48bc1fb76a72b608f283efaba1b07caff95010"
+source = "git+https://github.com/ArcturusEmrys/inox2d?rev=1f5d171145389d5a1c22c6c1430d954317b1cc9b#1f5d171145389d5a1c22c6c1430d954317b1cc9b"
 dependencies = [
  "glam",
  "image",
@@ -1328,7 +1328,7 @@ dependencies = [
 [[package]]
 name = "inox2d-opengl"
 version = "0.3.0"
-source = "git+https://github.com/ArcturusEmrys/inox2d?rev=9d48bc1fb76a72b608f283efaba1b07caff95010#9d48bc1fb76a72b608f283efaba1b07caff95010"
+source = "git+https://github.com/ArcturusEmrys/inox2d?rev=1f5d171145389d5a1c22c6c1430d954317b1cc9b#1f5d171145389d5a1c22c6c1430d954317b1cc9b"
 dependencies = [
  "glam",
  "glow 0.14.2",
