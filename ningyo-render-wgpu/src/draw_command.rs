@@ -7,7 +7,7 @@ use rayon::current_num_threads;
 use crate::draw_session::WgpuDrawSession;
 use crate::shader::UniformBlock;
 use crate::shaders::basic::basic_frag::Viewport;
-use crate::shaders::basic::basic_vert;
+use crate::shaders::basic::{basic_vert, composite_vert};
 use crate::texture::DeviceTexture;
 use crate::texture::TextureViewExt;
 use crate::uploads::WgpuUploads;
@@ -212,6 +212,7 @@ impl DrawCommandList {
                 // The good news is, we'd have to do this anyway for atlassing, soooo
                 for current_layer in 0..num_layers as usize {
                     let multiview_mask = None;
+                    let layers = current_layer as u32..current_layer as u32 + 1;
 
                     let color_view = outputs.color_target_layer_view(current_layer).unwrap();
                     let stencil_view = outputs.stencil_layer_view(current_layer).unwrap();
@@ -230,7 +231,7 @@ impl DrawCommandList {
                             DrawCommand::ClearCurrentStencil { to_composite: true } => {
                                 if render_pass.is_none() {
                                     render_pass = None; //Borrowck can't tell otherwise
-                                    composite.stencil().clear(encoder.encoder());
+                                    composite.stencil().clear(encoder.encoder(), layers.clone());
                                 } else {
                                     let render_pass = render_pass.as_mut().unwrap();
                                     composite.stencil().clear_with_render_pass(
@@ -247,7 +248,7 @@ impl DrawCommandList {
                             } => {
                                 if render_pass.is_none() {
                                     render_pass = None;
-                                    stencil.clear(encoder.encoder());
+                                    stencil.clear(encoder.encoder(), layers.clone());
                                 } else {
                                     let render_pass = render_pass.as_mut().unwrap();
                                     stencil.clear_with_render_pass(
@@ -468,7 +469,7 @@ impl DrawCommandList {
                             }
                             DrawCommand::BeginComposite => {
                                 render_pass = None;
-                                composite.clear(encoder.encoder());
+                                composite.clear(encoder.encoder(), layers.clone());
                             }
                             DrawCommand::EndComposite {
                                 render_mask,

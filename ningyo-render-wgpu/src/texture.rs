@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::num::NonZero;
+use std::ops::{Bound, RangeBounds};
 
 use wgpu;
 
@@ -260,7 +261,7 @@ impl DeviceTexture {
             array_view,
         };
 
-        empty.clear(encoder);
+        empty.clear(encoder, ..);
         empty
     }
 
@@ -294,16 +295,25 @@ impl DeviceTexture {
         Ok(empty)
     }
 
-    // Clear the texture.
-    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder) {
+    /// Clear the texture.
+    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder, layers: impl RangeBounds<u32>) {
+        let base_array_layer = match layers.start_bound() {
+            Bound::Included(i) => *i,
+            Bound::Excluded(i) => i + 1,
+            Bound::Unbounded => 0,
+        };
         encoder.clear_texture(
             self.texture(),
             &wgpu::ImageSubresourceRange {
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
                 mip_level_count: None,
-                base_array_layer: 0,
-                array_layer_count: None,
+                base_array_layer,
+                array_layer_count: match layers.end_bound() {
+                    Bound::Included(i) => Some(i + 1 - base_array_layer),
+                    Bound::Excluded(i) => Some(i - base_array_layer),
+                    Bound::Unbounded => None,
+                },
             },
         );
     }
@@ -379,20 +389,29 @@ impl DepthStencilTexture {
             view,
         };
 
-        empty.clear(encoder);
+        empty.clear(encoder, ..);
         empty
     }
 
     /// Clear the texture.
-    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder) {
+    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder, layers: impl RangeBounds<u32>) {
+        let base_array_layer = match layers.start_bound() {
+            Bound::Included(i) => *i,
+            Bound::Excluded(i) => i + 1,
+            Bound::Unbounded => 0,
+        };
         encoder.clear_texture(
             self.texture(),
             &wgpu::ImageSubresourceRange {
                 aspect: wgpu::TextureAspect::All,
                 base_mip_level: 0,
                 mip_level_count: None,
-                base_array_layer: 0,
-                array_layer_count: None,
+                base_array_layer,
+                array_layer_count: match layers.end_bound() {
+                    Bound::Included(i) => Some(i + 1 - base_array_layer),
+                    Bound::Excluded(i) => Some(i - base_array_layer),
+                    Bound::Unbounded => None,
+                },
             },
         );
     }
@@ -538,11 +557,11 @@ impl GBuffer {
         &self.stencil
     }
 
-    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder) {
-        self.albedo().clear(encoder);
-        self.emissive().clear(encoder);
-        self.bump().clear(encoder);
-        self.stencil().clear(encoder);
+    pub fn clear(&self, encoder: &mut wgpu::CommandEncoder, layers: impl RangeBounds<u32> + Clone) {
+        self.albedo().clear(encoder, layers.clone());
+        self.emissive().clear(encoder, layers.clone());
+        self.bump().clear(encoder, layers.clone());
+        self.stencil().clear(encoder, layers);
     }
 
     pub fn as_color_attachments(&self) -> [Option<wgpu::RenderPassColorAttachment<'_>>; 3] {
