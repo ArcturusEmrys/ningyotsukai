@@ -515,16 +515,12 @@ impl DrawCommandList {
                                 );
 
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_VERTS,
+                                    composite_vert::INPUT_INDEX_VERTS,
                                     draw_session.uploads.verts.slice(..),
                                 );
                                 render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_UVS,
+                                    composite_vert::INPUT_INDEX_UVS,
                                     draw_session.uploads.uvs.slice(..),
-                                );
-                                render_pass.set_vertex_buffer(
-                                    basic_vert::INPUT_INDEX_DEFORM,
-                                    draw_session.uploads.deforms.slice(..),
                                 );
                                 render_pass.set_index_buffer(
                                     draw_session.uploads.indices.slice(..),
