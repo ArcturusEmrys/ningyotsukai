@@ -552,10 +552,8 @@ impl DrawCommandList {
 
                                     let index =
                                         draw_session.buffer_indices.get(&(*id).into()).unwrap();
-                                    let vert_binding = binding_cache.bind_composite_vert(
-                                        &draw_session.resources,
-                                        viewports_config,
-                                    );
+                                    let vert_binding =
+                                        binding_cache.bind_composite_vert(&draw_session.resources);
                                     let frag_binding = binding_cache.bind_composite_frag(
                                         &draw_session.resources,
                                         &composite_albedo_view,
@@ -588,7 +586,7 @@ impl DrawCommandList {
                                     pipeline.bind_vertex(
                                         &mut render_pass,
                                         Some(&vert_binding),
-                                        &[(current_layer * Viewport::static_size()) as u32],
+                                        &[],
                                     );
                                     render_pass.draw_indexed(0..6, 0, 0..1); //TODO: Where do these vertices come from!?!?
                                 }

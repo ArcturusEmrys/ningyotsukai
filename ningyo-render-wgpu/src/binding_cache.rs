@@ -51,10 +51,8 @@ pub struct BindingCache<'a> {
 
     /// The bind group used for composite_vert.
     ///
-    /// This shader only accepts the viewport configuration, which should be
-    /// static across renderers, so we only permit one BindGroup in the cache
-    /// at a time.
-    composite_vert_bind: Option<(wgpu::BindGroup, wgpu::Buffer)>,
+    /// composite_vert has no parameters and only gets one cached binding.
+    composite_vert_bind: Option<wgpu::BindGroup>,
 
     /// The bind group used for composite_frag.
     ///
@@ -275,38 +273,20 @@ impl<'a> BindingCache<'a> {
         new_bg
     }
 
-    pub fn bind_composite_vert(
-        &mut self,
-        resources: &WgpuResources,
-        viewports: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
+    pub fn bind_composite_vert(&mut self, resources: &WgpuResources) -> wgpu::BindGroup {
         if let Some(tether) = self.tether {
-            if let Some((bg, my_viewports)) = &tether.composite_vert_bind {
-                if viewports == my_viewports {
-                    return bg.clone();
-                }
-            }
-        }
-
-        if let Some((bg, my_viewports)) = &self.composite_vert_bind {
-            if viewports == my_viewports {
+            if let Some(bg) = &tether.composite_vert_bind {
                 return bg.clone();
-            } else {
-                #[cfg(feature = "timing")]
-                eprintln!("      (composite_vert buffer changed!)");
             }
         }
 
-        let new_bg = resources.composite_shader_vert.bind(
-            &resources.device,
-            wgpu::BufferBinding {
-                buffer: viewports,
-                offset: 0,
-                size: Some(NonZero::new(basic_frag::Viewport::static_size() as u64).unwrap()),
-            },
-        );
+        if let Some(bg) = &self.composite_vert_bind {
+            return bg.clone();
+        }
 
-        self.composite_vert_bind = Some((new_bg.clone(), viewports.clone()));
+        let new_bg = resources.composite_shader_vert.bind(&resources.device);
+
+        self.composite_vert_bind = Some(new_bg.clone());
 
         new_bg
     }

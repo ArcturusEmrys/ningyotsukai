@@ -258,7 +258,7 @@ impl WgpuResources {
         let part_mask_pipeline =
             pipeline::PipelineGroup::new(part_shader_vert.clone(), part_shader_mask_frag.clone());
 
-        let composite_shader_vert = composite_vert::Shader::new(&device, true);
+        let composite_shader_vert = composite_vert::Shader::new(&device);
         let composite_shader_frag = composite_frag::Shader::new(&device, true, true);
 
         let composite_pipeline = pipeline::PipelineGroup::new(
