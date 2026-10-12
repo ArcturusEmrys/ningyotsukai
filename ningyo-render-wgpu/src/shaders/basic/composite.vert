@@ -20,5 +20,5 @@ void main() {
   // need a screen-filling quad.
 
   gl_Position = vec4(verts, 0, 1);
-  texUVs = uvs;
+  texUVs = uvs * vec2(1, -1) + vec2(0.0, 1.0); //UVs are flipped on WGPU???
 }
