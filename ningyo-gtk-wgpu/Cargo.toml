@@ -15,7 +15,7 @@ glib = { version = "0.22.0" }
 gtk4 = { version = "0.11.0", features = ["v4_14"] }
 gdk4 = { version = "0.11.0", features = ["v4_14"] }
 graphene = { package="graphene-rs", version = "0.22.0" }
-thiserror = "1.0.39"
+thiserror = "2.0.0"
 ash = "0.38.0"
 ningyo-texshare = { path="../ningyo-texshare" }
 pollster = "1.0.0"

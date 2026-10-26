@@ -16,7 +16,7 @@ wgpu = { version = "29.0.0" }
 wgpu-hal = { version = "29.0.0" }
 wgpu-core = { version = "29.0.0" }
 wgpu-types = { version = "29.0.0" }
-thiserror = "1.0.39"
+thiserror = "2.0.0"
 ash = "0.38.0"
 glib = { version = "0.22.0" }
 gtk4 = { version = "0.11.0", features = ["v4_14"] }
