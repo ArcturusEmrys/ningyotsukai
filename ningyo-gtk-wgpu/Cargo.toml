@@ -18,7 +18,7 @@ graphene = { package="graphene-rs", version = "0.22.0" }
 thiserror = "1.0.39"
 ash = "0.38.0"
 ningyo-texshare = { path="../ningyo-texshare" }
-pollster = "0.4.0"
+pollster = "1.0.0"
 
 [target.'cfg(target_os="windows")'.dependencies]
 gdk4-win32 = { version = "0.11.0", features = ["v4_20"] }

@@ -28,7 +28,7 @@ renderdoc = { version = "0.12.1", optional = true }
 mlua = { version = "0.12.0", features = ["send"] }
 ningyo-gtk-wgpu = {path = "../ningyo-gtk-wgpu" }
 ningyo-render-wgpu = {path = "../ningyo-render-wgpu" }
-pollster = "0.4.0"
+pollster = "1.0.0"
 wgpu = { version = "29.0.0" }
 wgpu-hal = { version = "29.0.0" }
 env_logger = "0.11.10"
