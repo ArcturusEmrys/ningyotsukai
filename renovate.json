@@ -11,6 +11,10 @@
         {
             "matchPackageNames": ["wgpu", "/^wgpu-/"],
             "groupName": "wgpu"
+        },
+        {
+            "matchPackageNames": ["pipewire", "libspa", "libspa-sys"],
+            "groupName": "pipewire"
         }
     ]
 }
