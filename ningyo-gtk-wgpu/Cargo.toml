@@ -9,7 +9,7 @@ keywords = ["graphics", "wgpu", "gtk"]
 categories = ["graphics", "rendering"]
 
 [dependencies]
-wgpu = { version = "29.0.0" }
+wgpu = { version = "30.0.0" }
 wgpu-hal = { version = "29.0.0" }
 glib = { version = "0.22.0" }
 gtk4 = { version = "0.11.0", features = ["v4_14"] }
@@ -24,4 +24,4 @@ pollster = "0.4.0"
 gdk4-win32 = { version = "0.11.0", features = ["v4_20"] }
 gdk4-win32-sys = { version = "0.11.0" }
 windows = { version = "0.62.2", features = ["Win32_Graphics_Direct3D12"]}
-wgpu = { version = "29.0.0", features=["dx12"] }
+wgpu = { version = "30.0.0", features=["dx12"] }

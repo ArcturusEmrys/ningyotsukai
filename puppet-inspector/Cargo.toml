@@ -17,7 +17,7 @@ ningyo-look-and-feel = { path = "../ningyo-look-and-feel", optional=true }
 ningyo-extensions = { path = "../ningyo-extensions" }
 ningyo-gtk-wgpu = { path = "../ningyo-gtk-wgpu" }
 ningyo-render-wgpu = { path = "../ningyo-render-wgpu" }
-wgpu = { version = "29.0.0" }
+wgpu = { version = "30.0.0" }
 graphene = { package="graphene-rs", version = "0.22.0" }
 
 [target.'cfg(not(windows))'.dependencies]

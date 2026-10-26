@@ -13,7 +13,7 @@ gtk4 = "0.11.0"
 gdk4 = "0.11.0"
 glow = "0.14.1"
 gl46 = "0.2.1"
-wgpu = "29.0.0"
+wgpu = "30.0.0"
 thiserror = "1.0.39"
 
 [target.'cfg(windows)'.dependencies]
