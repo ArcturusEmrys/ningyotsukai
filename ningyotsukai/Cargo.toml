@@ -17,7 +17,7 @@ graphene = { package="graphene-rs", version = "0.22.0" }
 generational-arena = "0.2.9"
 glow = "0.14.1"
 gl46 = "0.2.1"
-glam = "0.29.0"
+glam = "0.34.0"
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "1f5d171145389d5a1c22c6c1430d954317b1cc9b" }
 inox2d-opengl = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "1f5d171145389d5a1c22c6c1430d954317b1cc9b" }
 ningyo-look-and-feel = { path = "../ningyo-look-and-feel", optional=true }

@@ -8,6 +8,6 @@ authors = ["Arcturus Emrys <aemrys@arcturus.live>"]
 [dependencies]
 json = "0.12.4"
 inox2d = { git = "https://github.com/ArcturusEmrys/inox2d", rev = "1f5d171145389d5a1c22c6c1430d954317b1cc9b" }
-glam = "0.29.0"
+glam = "0.34.0"
 ningyo-extensions = { path = "../ningyo-extensions" }
 mlua = { version = "0.11.6", features = ["lua55", "vendored", "send"] }
