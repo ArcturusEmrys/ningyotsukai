@@ -229,7 +229,7 @@ impl AsTrackerPacket for VtsPacket {
         packet.insert("Head", "BoneRotRoll", self.rotation[0]);
         packet.insert("Head", "BoneRotPitch", self.rotation[1]);
         packet.insert("Head", "BoneRotYaw", self.rotation[2]);
-        packet.insert("Head", "BonePosX", self.position[0]);
+        packet.insert("Head", "BonePosX", self.position[0] * -1.0);
         packet.insert("Head", "BonePosY", self.position[1]);
         packet.insert("Head", "BonePosZ", self.position[2]);
         packet.insert("ftEyeXLeft", "Blendshape", self.eyeleft[0]);
