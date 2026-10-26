@@ -36,7 +36,7 @@ owning_ref = "0.4.1"
 
 pipewire = { version = "0.9.2", optional=true }
 libspa = { version = "0.9.2", optional=true }
-libspa-sys = { version = "0.9.2", optional=true }
+libspa-sys = { version = "0.10.0", optional=true }
 drm-fourcc = { version = "2.2.0", optional=true }
 
 ningyo-spout2 = { path = "../ningyo-spout2", optional=true }
