@@ -1,0 +1,16 @@
+{
+    "packageRules": [
+        {
+            "matchPackageNames": ["glam"],
+            "allowedVersions": "< 0.29.0"
+        },
+        {
+            "matchPackageNames": ["inox2d", "/^inox2d-/"],
+            "enabled": false
+        },
+        {
+            "matchPackageNames": ["wgpu", "/^wgpu-/"],
+            "groupName": "wgpu"
+        }
+    ]
+}
