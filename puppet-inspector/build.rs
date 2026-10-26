@@ -12,7 +12,8 @@ fn add_windows_icon() {
     ] {
         println!("cargo:rerun-if-changed={}", path);
         let file = std::fs::File::open(path).unwrap();
-        let image = ico::IconImage::read_png(file).unwrap();
+        let read = std::io::BufReader::new(file);
+        let image = ico::IconImage::read_png(read).unwrap();
         app_ico.add_entry(ico::IconDirEntry::encode(&image).unwrap());
     }
 
