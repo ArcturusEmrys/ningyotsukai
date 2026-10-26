@@ -25,7 +25,7 @@ ningyo-extensions = { path = "../ningyo-extensions" }
 ningyo-binding = { path = "../ningyo-binding" }
 ningyo-texshare = { path = "../ningyo-texshare" }
 renderdoc = { version = "0.12.1", optional = true }
-mlua = { version = "0.11.6", features = ["send"] }
+mlua = { version = "0.12.0", features = ["send"] }
 ningyo-gtk-wgpu = {path = "../ningyo-gtk-wgpu" }
 ningyo-render-wgpu = {path = "../ningyo-render-wgpu" }
 pollster = "0.4.0"
