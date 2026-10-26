@@ -14,7 +14,7 @@ chatty_debug = []
 [dependencies]
 wgpu = { version = "29.0.0" }
 wgpu-hal = { version = "29.0.0" }
-wgpu-core = { version = "29.0.0" }
+wgpu-core = { version = "30.0.0" }
 wgpu-types = { version = "29.0.0" }
 thiserror = "1.0.39"
 ash = "0.38.0"
