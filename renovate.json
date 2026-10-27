@@ -9,7 +9,7 @@
             "enabled": false
         },
         {
-            "matchPackageNames": ["wgpu", "/^wgpu-/"],
+            "matchPackageNames": ["wgpu", "/^wgpu-/", "wgpu-profiler"],
             "groupName": "wgpu"
         },
         {
