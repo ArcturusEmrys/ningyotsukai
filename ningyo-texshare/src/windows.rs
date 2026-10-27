@@ -107,8 +107,11 @@ impl ExtendedDevice {
             let (dxtexture, size, alignment) =
                 dx12device.create_texture_exportable(&inner_desc).unwrap();
             let texture = unsafe {
-                self.inner
-                    .create_texture_from_hal::<Dx12Api>(dxtexture, &texture)
+                self.inner.create_texture_from_hal::<Dx12Api>(
+                    dxtexture,
+                    &texture,
+                    wgpu::TextureUses::UNINITIALIZED,
+                )
             };
 
             Some(ExportableTexture {
