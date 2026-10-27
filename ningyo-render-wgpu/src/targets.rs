@@ -504,6 +504,7 @@ impl<'surf> RenderTarget<'surf> {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
+            color_space: wgpu::SurfaceColorSpace::Auto,
         };
 
         RenderTarget {
@@ -777,13 +778,9 @@ impl<'surf> RenderTarget<'surf> {
     /// Convenience method for presenting the rendered surface.
     ///
     /// Does nothing if this renderer is not directly rendering to a surface.
-    pub fn present(&self) -> Result<(), ningyo_extensions::SurfaceError> {
+    pub fn present(&self, queue: &wgpu::Queue) -> Result<(), ningyo_extensions::SurfaceError> {
         if let Some(surface) = self.surface() {
-            surface
-                .get_current_texture()
-                .as_surface_texture()?
-                .texture
-                .present();
+            queue.present(surface.get_current_texture().as_surface_texture()?.texture);
         }
 
         Ok(())

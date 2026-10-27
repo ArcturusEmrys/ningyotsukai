@@ -673,7 +673,7 @@ impl PipewireThread {
                         buffer.map_async(wgpu::MapMode::Read, .., |_| {});
                         device.device().poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
 
-                        let view = buffer.get_mapped_range(..);
+                        let view = buffer.get_mapped_range(..).unwrap();
                         let cpu_stride = stream_data.size.x as usize * 4;
 
                         unsafe {

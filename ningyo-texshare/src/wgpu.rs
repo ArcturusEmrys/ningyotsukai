@@ -169,7 +169,7 @@ fn map_texture_usage(
     );
     u.set(
         wgpu::TextureUses::TRANSIENT,
-        usage.contains(wgpu::TextureUsages::TRANSIENT),
+        usage.contains(wgpu::TextureUsages::TRANSIENT_ATTACHMENT),
     );
     u
 }
@@ -225,8 +225,13 @@ impl DeviceExt for Device {
             let (hal_texture, mem_req, subresource_layout) =
                 vkdevice.create_texture_exportable(&inner_desc).unwrap();
             //TODO: Really? We're going to unwrap!?
-            let texture =
-                unsafe { self.create_texture_from_hal::<VulkanApi>(hal_texture, &texture) };
+            let texture = unsafe {
+                self.create_texture_from_hal::<VulkanApi>(
+                    hal_texture,
+                    &texture,
+                    wgpu::TextureUses::UNINITIALIZED,
+                )
+            };
 
             //TODO: Once we find a DMA-BUF format that WORKS, check if this is
             //still necessary or if normal clears will work.

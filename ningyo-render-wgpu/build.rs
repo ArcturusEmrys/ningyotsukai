@@ -731,7 +731,7 @@ fn gen_vertexshader_trait_methods(
             let comma = if is_last { "" } else { "," };
             let vertex_format = spirv_to_wgpu_vertex_format(&typedesc)?;
 
-            writeln!(out, "                wgpu::VertexBufferLayout {{")?;
+            writeln!(out, "                Some(wgpu::VertexBufferLayout {{")?;
             writeln!(
                 out,
                 "                    array_stride: std::mem::size_of::<{}>() as wgpu::BufferAddress,",
@@ -756,7 +756,7 @@ fn gen_vertexshader_trait_methods(
             )?;
             writeln!(out, "                        }}")?;
             writeln!(out, "                    ]")?;
-            writeln!(out, "                }}{}", comma)?;
+            writeln!(out, "                }}){}", comma)?;
         } else {
             writeln!(
                 out,
