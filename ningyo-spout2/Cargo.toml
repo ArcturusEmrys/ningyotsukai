@@ -7,8 +7,8 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 
 [dependencies]
-windows-strings = "0.5.1"
-windows-result = "0.4.1"
+windows-strings = "0.100.0"
+windows-result = "0.100.0"
 ntapi = "0.4.3"
 thiserror="2.0.18"
 bytemuck="1.25.0"
