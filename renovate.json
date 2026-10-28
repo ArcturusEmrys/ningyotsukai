@@ -15,6 +15,10 @@
         {
             "matchPackageNames": ["pipewire", "libspa", "libspa-sys"],
             "groupName": "pipewire"
+        },
+        {
+            "matchPackageNames": ["windows", "/^windows-/"],
+            "groupName": "windows"
         }
     ]
 }
